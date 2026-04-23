@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#059669">
+<title>Mi Ruta — CreditosPro</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f3f4f6;
+    min-height: 100vh;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .topbar {
+    background: linear-gradient(135deg, #059669, #047857);
+    color: white;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .back-btn {
+    color: white; text-decoration: none;
+    background: rgba(255,255,255,0.2);
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .topbar h1 { font-size: 15px; font-weight: 700; }
+  .topbar p { font-size: 11px; opacity: 0.8; }
+  .content { padding: 12px; }
+  .info-bar {
+    background: white;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .info-bar .label { font-size: 12px; color: #6b7280; }
+  .info-bar .val { font-size: 16px; font-weight: 700; color: #059669; }
+  .parada {
+    background: white;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    overflow: hidden;
+  }
+  .parada-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+  .parada-num {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, #059669, #047857);
+    color: white;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .parada-num.vencida { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+  .parada-info { flex: 1; min-width: 0; }
+  .parada-nombre { font-size: 14px; font-weight: 600; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .parada-cedula { font-size: 11px; color: #6b7280; }
+  .parada-valor { font-size: 16px; font-weight: 700; color: #059669; }
+  .parada-body { padding: 0 16px 14px; }
+  .parada-dir { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
+  .parada-badges { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .badge {
+    padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 500;
+  }
+  .badge-yellow { background: #fef3c7; color: #92400e; }
+  .badge-red { background: #fef2f2; color: #dc2626; }
+  .badge-green { background: #f0fdf4; color: #065f46; }
+  .btn-row { display: flex; gap: 8px; }
+  .btn {
+    flex: 1; padding: 10px; border: none; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    text-decoration: none; text-align: center;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+  }
+  .btn-primary { background: #059669; color: white; }
+  .btn-ghost { background: #f3f4f6; color: #374151; }
+  .btn-maps { background: #dbeafe; color: #1d4ed8; }
+
+  /* Modal cobro */
+  .overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5); z-index: 200;
+    align-items: flex-end; justify-content: center;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    background: white; border-radius: 20px 20px 0 0;
+    padding: 24px 20px; width: 100%; max-width: 480px;
+    max-height: 90vh; overflow-y: auto;
+  }
+  .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-size: 13px; font-weight: 500; color: #374151; margin-bottom: 5px; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 11px 12px; border: 1px solid #d1d5db;
+    border-radius: 8px; font-size: 14px; outline: none;
+  }
+  .form-group input:focus, .form-group select:focus { border-color: #059669; }
+  .foto-area {
+    border: 2px dashed #d1d5db; border-radius: 8px;
+    padding: 20px; text-align: center; cursor: pointer;
+    font-size: 13px; color: #6b7280;
+  }
+  .foto-area:hover { border-color: #059669; }
+  .btn-guardar {
+    width: 100%; padding: 14px; background: #059669; color: white;
+    border: none; border-radius: 10px; font-size: 15px; font-weight: 700;
+    cursor: pointer; margin-top: 8px;
+  }
+  .btn-cancelar {
+    width: 100%; padding: 12px; background: #f3f4f6; color: #374151;
+    border: none; border-radius: 10px; font-size: 14px;
+    cursor: pointer; margin-top: 8px;
+  }
+  .empty { text-align: center; padding: 60px 20px; color: #6b7280; }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a href="/app" class="back-btn">←</a>
+  <div>
+    <h1>🗺️ Mi Ruta de Hoy</h1>
+    <p>{{ hoy }} · {{ total }} paradas {% if zona %}· {{ zona.nombre }}{% endif %}</p>
+  </div>
+</div>
+
+<div class="content">
+  {% if not ruta %}
+  <div class="empty">
+    <div class="empty-icon">✅</div>
+    <div style="font-size:16px;font-weight:600;margin-bottom:6px;">¡Todo al día!</div>
+    <div style="font-size:13px;">No tienes cuotas pendientes para hoy</div>
+  </div>
+  {% else %}
+
+  <div class="info-bar">
+    <div><div class="label">Paradas totales</div><div class="val">{{ total }}</div></div>
+    <div><div class="label">Ruta optimizada</div><div style="font-size:12px;color:#059669;">📍 Por distancia GPS</div></div>
+  </div>
+
+  {% for p in ruta %}
+  <div class="parada">
+    <div class="parada-header">
+      <div class="parada-num {% if p.dias_vencida > 0 %}vencida{% endif %}">{{ p.parada }}</div>
+      <div class="parada-info">
+        <div class="parada-nombre">{{ p.cliente_nombre }}</div>
+        <div class="parada-cedula">CC {{ p.cliente_cedula }} · 📞 {{ p.cliente_tel }}</div>
+      </div>
+      <div class="parada-valor">${{ "{:,.0f}".format(p.valor_cuota) }}</div>
+    </div>
+    <div class="parada-body">
+      <div class="parada-dir">📍 {{ p.direccion }}</div>
+      <div class="parada-badges">
+        <span class="badge badge-yellow">Cuota {{ p.num_cuota }}/{{ p.total_cuotas }}</span>
+        {% if p.dias_vencida > 0 %}
+          <span class="badge badge-red">⚠ {{ p.dias_vencida }} días vencida</span>
+        {% elif p.estado == 'Pendiente' %}
+          <span class="badge badge-yellow">Pendiente</span>
+        {% endif %}
+        {% if not p.lat %}
+          <span class="badge" style="background:#f3f4f6;color:#6b7280;">Sin GPS</span>
+        {% endif %}
+      </div>
+      <div class="btn-row">
+        {% if p.lat and p.lng %}
+        <a href="https://maps.google.com/?q={{ p.lat }},{{ p.lng }}" target="_blank" class="btn btn-maps">
+          🗺️ Maps
+        </a>
+        {% endif %}
+        <a href="tel:{{ p.cliente_tel }}" class="btn btn-ghost">📞 Llamar</a>
+        <button class="btn btn-primary"
+          onclick="abrirCobro({{ p.cuota_id }}, '{{ p.cliente_nombre }}', {{ p.valor_cuota }})">
+          💵 Cobrar
+        </button>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+
+<!-- MODAL COBRO -->
+<div class="overlay" id="overlay-cobro" onclick="if(event.target===this)cerrarModal()">
+<div class="modal">
+  <div class="modal-title" id="modal-titulo">Registrar Cobro</div>
+  <form id="form-cobro" enctype="multipart/form-data">
+    <input type="hidden" name="cuota_id" id="input-cuota-id">
+
+    <div class="form-group">
+      <label>Valor cobrado ($)</label>
+      <input type="number" name="valor_cobrado" id="input-valor" min="0" step="1000">
+    </div>
+
+    <div class="form-group">
+      <label>Método de pago</label>
+      <select name="metodo_pago">
+        <option>Efectivo</option>
+        <option>Nequi</option>
+        <option>Daviplata</option>
+        <option>Transferencia</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Novedad / Observaciones</label>
+      <textarea name="observaciones" rows="2" placeholder="Ej: Cliente pagó la mitad, acuerdo para el resto..."></textarea>
+    </div>
+
+    <div class="form-group">
+      <label>Foto de novedad (opcional)</label>
+      <div class="foto-area" onclick="document.getElementById('inp-foto').click()">
+        <div id="foto-preview">📷 Toca para tomar foto o subir imagen</div>
+      </div>
+      <input type="file" id="inp-foto" name="foto" accept="image/*" capture="environment"
+             style="display:none" onchange="previewFoto(this)">
+    </div>
+  </form>
+
+  <button class="btn-guardar" onclick="guardarCobro()">✓ Confirmar Cobro</button>
+  <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+</div>
+</div>
+
+<script>
+function abrirCobro(cuotaId, nombre, valor) {
+  document.getElementById('input-cuota-id').value = cuotaId;
+  document.getElementById('input-valor').value = valor;
+  document.getElementById('modal-titulo').textContent = 'Cobro — ' + nombre;
+  document.getElementById('foto-preview').textContent = '📷 Toca para tomar foto o subir imagen';
+  document.getElementById('overlay-cobro').classList.add('open');
+}
+
+function cerrarModal() {
+  document.getElementById('overlay-cobro').classList.remove('open');
+}
+
+function previewFoto(inp) {
+  if (inp.files && inp.files[0]) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('foto-preview').innerHTML =
+        `<img src="${e.target.result}" style="max-width:100%;max-height:150px;border-radius:8px;">`;
+    };
+    reader.readAsDataURL(inp.files[0]);
+  }
+}
+
+async function guardarCobro() {
+  const btn = document.querySelector('.btn-guardar');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  const fd = new FormData(document.getElementById('form-cobro'));
+
+  // Agregar ubicación GPS
+  if (navigator.geolocation) {
+    try {
+      const pos = await new Promise((res, rej) =>
+        navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 })
+      );
+      fd.append('lat', pos.coords.latitude);
+      fd.append('lng', pos.coords.longitude);
+    } catch(e) {}
+  }
+
+  try {
+    const r = await fetch('/app/cobrar', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.ok) {
+      cerrarModal();
+      mostrarToast('✅ ' + d.mensaje);
+      setTimeout(() => location.reload(), 1200);
+    } else {
+      mostrarToast('❌ ' + (d.detail || 'Error'), 'error');
+    }
+  } catch(e) {
+    mostrarToast('❌ Error de conexión', 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '✓ Confirmar Cobro';
+}
+
+function mostrarToast(msg, tipo = 'ok') {
+  const t = document.createElement('div');
+  t.style.cssText = `
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:${tipo === 'error' ? '#dc2626' : '#059669'};
+    color:white; padding:12px 24px; border-radius:10px;
+    font-size:14px; font-weight:600; z-index:999;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  `;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+</script>
+</body>
+</html>

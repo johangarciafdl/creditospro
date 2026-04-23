@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CreditosPro — Iniciar Sesión</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --verde-800:#0f3d28;--verde-600:#1a6b4a;--verde-500:#2d9e6e;--verde-400:#52c49a;
+  --verde-100:#d1f0e3;--rojo:#c0392b;--bg:#f0f4f2;--card:#fff;
+  --text-1:#111827;--text-2:#6b7280;--border:#e5e7eb;
+  --shadow:0 20px 60px rgba(0,0,0,0.12);
+  --font:'DM Sans',system-ui,sans-serif;--radius:14px;
+}
+body{font-family:var(--font);background:var(--bg);min-height:100vh;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
+
+/* Fondo decorativo */
+body::before{content:'';position:fixed;top:-30%;left:-10%;width:60%;height:80%;border-radius:50%;background:radial-gradient(ellipse,rgba(45,158,110,0.12) 0%,transparent 70%);pointer-events:none;}
+body::after{content:'';position:fixed;bottom:-20%;right:-10%;width:50%;height:60%;border-radius:50%;background:radial-gradient(ellipse,rgba(15,61,40,0.08) 0%,transparent 70%);pointer-events:none;}
+
+.login-wrap{width:100%;max-width:420px;padding:24px;position:relative;z-index:1;}
+.login-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;}
+
+.login-header{
+  background:linear-gradient(135deg,var(--verde-800) 0%,var(--verde-600) 100%);
+  padding:36px 36px 32px;text-align:center;
+}
+.login-icon{
+  width:64px;height:64px;border-radius:18px;
+  background:rgba(255,255,255,0.15);
+  display:flex;align-items:center;justify-content:center;
+  font-size:30px;margin:0 auto 16px;
+  border:1px solid rgba(255,255,255,0.2);
+}
+.login-title{color:#fff;font-size:22px;font-weight:600;letter-spacing:-0.4px;}
+.login-sub{color:rgba(255,255,255,0.55);font-size:13px;margin-top:4px;}
+
+.login-body{padding:32px 36px;}
+.form-group{margin-bottom:18px;}
+.form-group label{display:block;font-size:12px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px;}
+.form-group input{
+  width:100%;padding:11px 14px;border:1.5px solid var(--border);
+  border-radius:9px;font-size:14px;font-family:var(--font);
+  color:var(--text-1);transition:border-color 0.2s,box-shadow 0.2s;
+  background:#fafafa;
+}
+.form-group input:focus{outline:none;border-color:var(--verde-500);box-shadow:0 0 0 3px rgba(45,158,110,0.12);background:#fff;}
+.input-icon{position:relative;}
+.input-icon span{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:16px;pointer-events:none;}
+.input-icon input{padding-left:38px;}
+
+.btn-login{
+  width:100%;padding:13px;background:linear-gradient(135deg,var(--verde-600),var(--verde-500));
+  color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;
+  font-family:var(--font);cursor:pointer;transition:all 0.2s;letter-spacing:0.2px;
+  margin-top:8px;
+}
+.btn-login:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 6px 20px rgba(26,107,74,0.35);}
+.btn-login:active{transform:translateY(0);}
+.btn-login:disabled{opacity:0.6;cursor:not-allowed;transform:none;}
+
+.error-box{
+  background:#fef2f2;border:1px solid #fecaca;border-radius:8px;
+  padding:11px 14px;margin-bottom:18px;color:#b91c1c;font-size:13px;
+  display:flex;align-items:center;gap:8px;
+}
+.login-footer{padding:16px 36px 28px;text-align:center;border-top:1px solid var(--border);}
+.login-footer p{font-size:12px;color:var(--text-2);}
+.version-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--verde-100);color:var(--verde-600);
+  padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;
+  margin-top:8px;
+}
+</style>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-icon">💰</div>
+      <div class="login-title">CreditosPro</div>
+      <div class="login-sub">Sistema de Gestión de Créditos</div>
+    </div>
+    <div class="login-body">
+      {% if error %}
+      <div class="error-box">⚠️ {{ error }}</div>
+      {% endif %}
+      <form method="post" action="/auth/login" id="form-login">
+        <input type="hidden" name="next" value="{{ next }}">
+        <div class="form-group">
+          <label>Usuario</label>
+          <div class="input-icon">
+            <span>👤</span>
+            <input type="text" name="username" value="{{ username or '' }}" placeholder="Tu usuario" autocomplete="username" required autofocus>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Contraseña</label>
+          <div class="input-icon">
+            <span>🔒</span>
+            <input type="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+          </div>
+        </div>
+        <button type="submit" class="btn-login" id="btn-login">Iniciar Sesión →</button>
+      </form>
+    </div>
+    <div class="login-footer">
+      <p>Credenciales por defecto: <strong>admin</strong> / <strong>admin123</strong></p>
+      <div class="version-badge">✅ v2.0 — Seguridad activa</div>
+    </div>
+  </div>
+</div>
+<script>
+document.getElementById('form-login').addEventListener('submit', function() {
+  const btn = document.getElementById('btn-login');
+  btn.disabled = true;
+  btn.textContent = 'Iniciando sesión...';
+});
+</script>
+</body>
+</html>

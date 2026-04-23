@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Bot WhatsApp{% endblock %}
+{% block topbar_title %}Bot WhatsApp{% endblock %}
+{% block topbar_sub %}Notificaciones automáticas{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-primary" onclick="enviarAhora()">▶ Enviar recordatorios ahora</button>
+{% endblock %}
+
+{% block content %}
+
+<!-- STATS -->
+<div class="stats-grid mb-3" style="grid-template-columns:repeat(4,1fr);">
+  <div class="stat-card green">
+    <div class="stat-label">Enviados total</div>
+    <div class="stat-val green">{{ stats.enviados }}</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-label">Enviados hoy</div>
+    <div class="stat-val blue">{{ stats.hoy }}</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-label">Errores</div>
+    <div class="stat-val red">{{ stats.errores }}</div>
+  </div>
+  <div class="stat-card gray">
+    <div class="stat-label">Próx. a vencer</div>
+    <div class="stat-val">{{ stats.pendientes }}</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+
+<!-- CONFIG -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">⚙️ Configuración WhatsApp</div>
+    <span class="badge {% if config.wp_activo %}badge-green{% else %}badge-gray{% endif %}">
+      {% if config.wp_activo %}🟢 Bot activo{% else %}⚪ Simulación{% endif %}
+    </span>
+  </div>
+  <div class="card-body">
+    <form id="form-config">
+      <div class="form-group mb-2">
+        <label>Empresa</label>
+        <input type="text" name="empresa_nombre" value="{{ config.empresa_nombre }}">
+      </div>
+      <div class="form-group mb-2">
+        <label>Teléfono empresa</label>
+        <input type="text" name="empresa_tel" value="{{ config.empresa_tel or '' }}" placeholder="3001234567">
+      </div>
+      <div class="form-group mb-2">
+        <label>Días de aviso previo</label>
+        <input type="number" name="dias_aviso" value="{{ config.dias_aviso_vencimiento }}" min="1" max="7">
+      </div>
+      <div style="border-top:1px solid var(--border);margin:12px 0;padding-top:12px;">
+        <div class="fs-11 text-2 mb-2" style="font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Meta WhatsApp API (recomendado)</div>
+        <div class="form-group mb-2"><label>Phone ID</label><input type="text" name="wp_phone_id" value="{{ config.wp_phone_id or '' }}" placeholder="1234567890"></div>
+        <div class="form-group mb-2"><label>Token de acceso</label><input type="password" name="wp_token" value="{{ config.wp_token or '' }}" placeholder="EAABxx..."></div>
+        <div style="border-top:1px solid var(--border);margin:10px 0;padding-top:10px;">
+          <div class="fs-11 text-2 mb-2" style="font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">CallMeBot (alternativa gratuita)</div>
+          <div class="form-group mb-2"><label>API Key</label><input type="text" name="wp_api_key" value="{{ config.wp_api_key or '' }}" placeholder="123456"></div>
+        </div>
+      </div>
+      <div class="form-group mb-3">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" name="wp_activo" {% if config.wp_activo %}checked{% endif %} style="width:16px;height:16px;">
+          Activar envío real (desactivado = modo simulación)
+        </label>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="guardarConfig()">Guardar configuración</button>
+    </form>
+  </div>
+</div>
+
+<!-- BOT TEST + MENSAJES -->
+<div style="display:flex;flex-direction:column;gap:16px;">
+  <div class="card">
+    <div class="card-header"><div class="card-title">🤖 Probar Bot Conversacional</div></div>
+    <div class="card-body">
+      <p class="fs-12 text-2 mb-3">Simula lo que vería un cliente al escribirle al bot.</p>
+      <div class="form-group mb-2"><label>Teléfono cliente</label><input type="text" id="bot-tel" placeholder="3001234567" style="width:100%;"></div>
+      <div class="form-group mb-2"><label>Mensaje</label>
+        <input type="text" id="bot-msg" placeholder='Ej: "SALDO", "cuánto debo", "hola"' style="width:100%;" onkeydown="if(event.key==='Enter')testBot()">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="testBot()">Enviar →</button>
+      <div id="bot-respuesta" style="display:none;margin-top:12px;padding:12px;background:#f0faf5;border-radius:8px;border-left:3px solid var(--verde-500);">
+        <div class="fs-11 text-2 mb-1">Respuesta del bot:</div>
+        <pre id="bot-resp-texto" style="white-space:pre-wrap;font-family:var(--font);font-size:13px;"></pre>
+      </div>
+      <div class="fs-11 text-2 mt-3" style="line-height:1.6;">
+        Comandos: <strong>SALDO</strong> · <strong>CUOTAS</strong> · <strong>PAGUE</strong> · <strong>RECIBO</strong> · <strong>AYUDA</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">📨 Mensaje manual</div></div>
+    <div class="card-body">
+      <div class="form-group mb-2"><label>ID Cliente</label><input type="number" id="man-cliente" placeholder="ID del cliente" style="width:100%;"></div>
+      <div class="form-group mb-2"><label>Mensaje</label><textarea id="man-msg" rows="3" style="width:100%;" placeholder="Escribe tu mensaje personalizado..."></textarea></div>
+      <button class="btn btn-primary btn-sm" onclick="enviarManual()">Enviar mensaje</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- MENSAJES CONFIG -->
+<div class="card mb-3">
+  <div class="card-header"><div class="card-title">💬 Plantillas de mensajes</div></div>
+  <div class="card-body">
+    <p class="fs-12 text-2 mb-3">Variables disponibles: <code>{nombre}</code> <code>{num_cuota}</code> <code>{valor}</code> <code>{fecha}</code> <code>{dias}</code> <code>{empresa}</code></p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="form-group">
+        <label>Recordatorio (cuota próxima a vencer)</label>
+        <textarea name="wp_mensaje_recordatorio" form="form-config" rows="4" style="width:100%;font-size:12px;">{{ config.wp_mensaje_recordatorio }}</textarea>
+      </div>
+      <div class="form-group">
+        <label>Aviso de vencimiento</label>
+        <textarea name="wp_mensaje_vencida" form="form-config" rows="4" style="width:100%;font-size:12px;">{{ config.wp_mensaje_vencida }}</textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CUOTAS PRÓXIMAS -->
+{% if proximas %}
+<div class="card mb-3">
+  <div class="card-header">
+    <div class="card-title">⏰ Cuotas próximas a vencer ({{ proximas|length }})</div>
+  </div>
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead><tr><th>Cliente</th><th>Teléfono</th><th>Cuota</th><th>Valor</th><th>Vencimiento</th><th>Días</th></tr></thead>
+      <tbody>
+        {% for p in proximas %}
+        <tr>
+          <td class="fw-600 fs-13">{{ p.cliente }}</td>
+          <td class="fs-12">{{ p.tel }}</td>
+          <td class="num fs-12">{{ p.num_cuota }}</td>
+          <td class="num fw-600">${{ "{:,.0f}".format(p.valor) }}</td>
+          <td class="fs-12">{{ p.vencimiento }}</td>
+          <td>
+            {% if p.dias == 0 %}<span class="badge badge-red">Hoy</span>
+            {% elif p.dias == 1 %}<span class="badge badge-yellow">Mañana</span>
+            {% else %}<span class="badge badge-gray">{{ p.dias }} días</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- HISTORIAL -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">📋 Historial de notificaciones</div>
+  </div>
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead><tr><th>Cliente</th><th>Teléfono</th><th>Tipo</th><th>Mensaje</th><th>Estado</th><th>Enviado</th></tr></thead>
+      <tbody>
+        {% for n in notifs %}
+        <tr>
+          <td class="fs-13 fw-600">{{ n.cliente }}</td>
+          <td class="fs-12">{{ n.telefono }}</td>
+          <td><span class="badge badge-gray fs-10">{{ n.tipo }}</span></td>
+          <td class="fs-12 text-2" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ n.mensaje }}</td>
+          <td>
+            {% if n.estado == 'Enviado' %}<span class="badge badge-green">✓ Enviado</span>
+            {% elif n.estado == 'Error' %}<span class="badge badge-red">✕ Error</span>
+            {% else %}<span class="badge badge-yellow">Pendiente</span>{% endif %}
+          </td>
+          <td class="fs-12 text-2">{{ n.enviado }}</td>
+        </tr>
+        {% endfor %}
+        {% if not notifs %}
+        <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-3);">Sin notificaciones aún</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function guardarConfig() {
+  const fd = new FormData(document.getElementById('form-config'));
+  // Also grab textareas with form="form-config"
+  document.querySelectorAll('[form="form-config"]').forEach(el => {
+    fd.append(el.name, el.value);
+  });
+  const r = await fetch('/whatsapp/configurar', { method:'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) toast(d.mensaje);
+  else toast(d.detail || 'Error', 'error');
+}
+
+async function enviarAhora() {
+  toast('Enviando recordatorios...', 'info');
+  const r = await fetch('/whatsapp/enviar-ahora', { method:'POST' });
+  const d = await r.json();
+  if (d.ok) {
+    toast(`✓ ${d.enviados} enviados, ${d.errores} errores`);
+    setTimeout(() => location.reload(), 1500);
+  } else toast('Error al enviar', 'error');
+}
+
+async function testBot() {
+  const tel = document.getElementById('bot-tel').value;
+  const msg = document.getElementById('bot-msg').value;
+  if (!tel || !msg) { toast('Ingresa teléfono y mensaje', 'error'); return; }
+  const fd = new FormData();
+  fd.append('telefono', tel);
+  fd.append('mensaje', msg);
+  const r = await fetch('/whatsapp/test-bot', { method:'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) {
+    document.getElementById('bot-resp-texto').textContent = d.respuesta;
+    document.getElementById('bot-respuesta').style.display = 'block';
+  } else toast('Error', 'error');
+}
+
+async function enviarManual() {
+  const clienteId = document.getElementById('man-cliente').value;
+  const msg = document.getElementById('man-msg').value;
+  if (!clienteId || !msg) { toast('Completa todos los campos', 'error'); return; }
+  const fd = new FormData();
+  fd.append('cliente_id', clienteId);
+  fd.append('mensaje', msg);
+  const r = await fetch('/whatsapp/enviar-manual', { method:'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) toast(d.mensaje);
+  else toast(d.error || 'Error', 'error');
+}
+</script>
+{% endblock %}

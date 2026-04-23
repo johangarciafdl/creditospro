@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}Préstamos{% endblock %}
+{% block topbar_title %}Préstamos{% endblock %}
+{% block topbar_sub %}{{ prestamos|length }} registros{% endblock %}
+{% block topbar_actions %}
+  <a href="/reportes/cartera" class="btn btn-excel">↓ Excel Cartera</a>
+  <button class="btn btn-primary" onclick="document.getElementById('modal-prestamo').classList.add('open')">+ Nuevo Préstamo</button>
+{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body" style="padding:10px 16px;">
+    <form method="get" class="flex gap-2 flex-wrap">
+      <select name="estado" style="width:160px;">
+        <option value="">Todos los estados</option>
+        <option {% if estado_sel=='Activo' %}selected{% endif %} value="Activo">Activo</option>
+        <option {% if estado_sel=='Atrasado' %}selected{% endif %} value="Atrasado">Atrasado</option>
+        <option {% if estado_sel=='Cancelado' %}selected{% endif %} value="Cancelado">Cancelado</option>
+      </select>
+      <select name="zona_id" style="width:160px;">
+        <option value="">Todas las zonas</option>
+        {% for z in zonas %}<option value="{{ z.id }}" {% if zona_id_sel==z.id %}selected{% endif %}>{{ z.nombre }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn btn-primary btn-sm">Filtrar</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><div class="card-title">Lista de Préstamos</div></div>
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead>
+        <tr><th>Cliente</th><th>Capital</th><th>Total</th><th>Saldo</th><th>Cuota</th><th>Vencidas</th><th>Zona</th><th>Inicio</th><th>Estado</th></tr>
+      </thead>
+      <tbody>
+        {% for p in prestamos %}
+        <tr onclick="window.location='/clientes/{{ p.id }}'" style="cursor:pointer;">
+          <td>
+            <div class="fw-600 fs-13">{{ p.cliente }}</div>
+            <div class="fs-11 text-2">{{ p.cedula }}</div>
+          </td>
+          <td class="num">${{ "{:,.0f}".format(p.capital) }}</td>
+          <td class="num">${{ "{:,.0f}".format(p.total) }}</td>
+          <td class="num {% if p.saldo > 0 %}text-red fw-600{% else %}text-green{% endif %}">${{ "{:,.0f}".format(p.saldo) }}</td>
+          <td class="num fs-12">{{ p.cuota_actual }}/{{ p.num_cuotas }}</td>
+          <td>{% if p.vencidas > 0 %}<span class="badge badge-red">{{ p.vencidas }}</span>{% else %}<span class="text-3">—</span>{% endif %}</td>
+          <td class="fs-12">{{ p.zona }}</td>
+          <td class="fs-12 text-2">{{ p.fecha_inicio }}</td>
+          <td>
+            {% if p.estado=='Cancelado' %}<span class="badge badge-green">Cancelado</span>
+            {% elif p.vencidas > 0 %}<span class="badge badge-red">Atrasado</span>
+            {% else %}<span class="badge badge-blue">Activo</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL NUEVO PRÉSTAMO -->
+<div class="modal-overlay" id="modal-prestamo" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal modal-lg" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Nuevo Préstamo</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-prestamo').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <form id="form-prest">
+      <div class="form-grid">
+        <div class="form-group full" style="position:relative;">
+          <label>Cliente (buscar por nombre o cédula)</label>
+          <input type="text" id="buscar-cliente" placeholder="Escribe para buscar..." autocomplete="off" oninput="buscarCliente(this.value)">
+          <input type="hidden" name="cliente_id" id="cliente-id-sel">
+          <div id="lista-clientes" style="display:none;position:absolute;z-index:999;width:100%;border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;margin-top:2px;background:var(--bg-card);box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div>
+        </div>
+        <div class="form-group">
+          <label>Zona</label>
+          <select name="zona_id">{% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}</select>
+        </div>
+        <div class="form-group">
+          <label>Capital ($)</label>
+          <input type="number" name="capital" min="1000" step="1000" oninput="calcPrev()">
+        </div>
+        <div class="form-group">
+          <label>Tasa interés (%)</label>
+          <input type="number" name="tasa_interes" value="20" step="0.5" oninput="calcPrev()">
+        </div>
+        <div class="form-group">
+          <label>Número de cuotas</label>
+          <input type="number" name="num_cuotas" value="30" oninput="calcPrev()">
+        </div>
+        <div class="form-group">
+          <label>Plazo días/cuota</label>
+          <input type="number" name="plazo_dias" value="30">
+        </div>
+        <div class="form-group">
+          <label>Fecha inicio</label>
+          <input type="date" name="fecha_inicio" id="fp-fecha">
+        </div>
+        <div class="form-group">
+          <label>Cobrador</label>
+          <input type="text" name="cobrador" value="{{ current_user.nombre_completo if current_user else '' }}">
+        </div>
+      </div>
+      <div id="prest-prev" style="display:none;background:var(--verde-50,#f0fdf4);border:1px solid var(--verde-100,#bbf7d0);padding:12px;border-radius:8px;font-size:12px;margin-top:12px;">
+        Capital · Interés <strong id="pp-int"></strong> · Total <strong id="pp-tot"></strong> · Cuota <strong id="pp-cuo" class="text-green"></strong>
+      </div>
+    </form>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-prestamo').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-primary" onclick="guardarPrestamoNuevo()">Guardar Préstamo</button>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('fp-fecha').value = new Date().toISOString().split('T')[0];
+
+function fmtCOP(n) {
+  return new Intl.NumberFormat('es-CO', {style:'currency', currency:'COP', minimumFractionDigits:0}).format(n);
+}
+
+// ── BUSCADOR DE CLIENTES ──────────────────────────────────────────────
+let searchTimeout = null;
+
+async function buscarCliente(q) {
+  const lista = document.getElementById('lista-clientes');
+  if (q.length < 2) {
+    lista.style.display = 'none';
+    return;
+  }
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(async () => {
+    try {
+      // Llamada al endpoint JSON de búsqueda
+      const r = await fetch(`/clientes/buscar?q=${encodeURIComponent(q)}`);
+      if (!r.ok) return;
+      const clientes = await r.json();
+      if (!clientes.length) {
+        lista.innerHTML = '<div style="padding:10px 14px;color:var(--text-3,#9ca3af);font-size:13px;">Sin resultados</div>';
+        lista.style.display = 'block';
+        return;
+      }
+      lista.innerHTML = clientes.map(c => `
+        <div onclick="seleccionarCliente(${c.id}, '${c.nombre.replace(/'/g,"\\'")} — ${c.cedula}')"
+             style="padding:8px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);"
+             onmouseover="this.style.background='var(--bg-hover,#f3f4f6)'"
+             onmouseout="this.style.background=''">
+          <strong>${c.nombre}</strong> <span style="color:var(--text-3,#9ca3af)">${c.cedula}</span>
+        </div>`).join('');
+      lista.style.display = 'block';
+    } catch(e) {
+      console.error('Error buscando cliente:', e);
+    }
+  }, 250);
+}
+
+function seleccionarCliente(id, label) {
+  document.getElementById('cliente-id-sel').value = id;
+  document.getElementById('buscar-cliente').value = label;
+  document.getElementById('lista-clientes').style.display = 'none';
+}
+
+// Cerrar lista al hacer click fuera
+document.addEventListener('click', e => {
+  if (!e.target.closest('#buscar-cliente') && !e.target.closest('#lista-clientes')) {
+    document.getElementById('lista-clientes').style.display = 'none';
+  }
+});
+
+// ── CÁLCULO PREVIO ────────────────────────────────────────────────────
+async function calcPrev() {
+  const cap   = document.querySelector('[name=capital]').value;
+  const tasa  = document.querySelector('[name=tasa_interes]').value;
+  const cuotas = document.querySelector('[name=num_cuotas]').value;
+  if (!cap || !tasa || !cuotas) return;
+  try {
+    const r = await fetch(`/prestamos/calcular?capital=${cap}&tasa=${tasa}&cuotas=${cuotas}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('prest-prev').style.display = 'block';
+    document.getElementById('pp-int').textContent = fmtCOP(d.interes_total);
+    document.getElementById('pp-tot').textContent = fmtCOP(d.total_pagar);
+    document.getElementById('pp-cuo').textContent = fmtCOP(d.valor_cuota);
+  } catch(e) {
+    console.error('Error al calcular:', e);
+  }
+}
+
+// ── GUARDAR PRÉSTAMO ──────────────────────────────────────────────────
+async function guardarPrestamoNuevo() {
+  const clienteId = document.getElementById('cliente-id-sel').value;
+  if (!clienteId) {
+    alert('Por favor selecciona un cliente de la lista');
+    document.getElementById('buscar-cliente').focus();
+    return;
+  }
+
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  const fd = new FormData(document.getElementById('form-prest'));
+
+  try {
+    const r = await fetch('/prestamos/nuevo', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.ok) {
+      alert('Préstamo creado exitosamente ✓');
+      location.reload();
+    } else {
+      alert('Error: ' + (d.detail || d.error || 'No se pudo guardar'));
+      btn.disabled = false;
+      btn.textContent = 'Guardar Préstamo';
+    }
+  } catch(e) {
+    alert('Error de red: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = 'Guardar Préstamo';
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% block title %}{{ cliente.nombre }}{% endblock %}
+{% block topbar_title %}{{ cliente.nombre }}{% endblock %}
+{% block topbar_sub %}CC {{ cliente.cedula }} · {{ zona.nombre if zona else '' }}{% endblock %}
+{% block topbar_actions %}
+  <a href="/clientes" class="btn btn-ghost btn-sm">â† Volver</a>
+  <button class="btn btn-primary" onclick="abrirModalPrestamo()">+ Nuevo Préstamo</button>
+{% endblock %}
+
+{% block content %}
+<div class="grid-2 mb-3">
+  <!-- PERFIL -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Perfil del Afiliado</div>
+      <button class="btn btn-ghost btn-sm" onclick="abrirEditar()">âœ Editar</button>
+    </div>
+    <div class="card-body">
+      <div class="flex-center gap-3 mb-3">
+        {% if cliente.foto_path %}
+          <img src="/uploads/{{ cliente.foto_path }}" style="width:72px;height:72px;border-radius:12px;object-fit:cover;border:2px solid var(--border);">
+        {% else %}
+          <div class="avatar {% if cliente.tipo_cliente=='Bueno' %}avatar-green{% elif cliente.tipo_cliente=='Riesgo' %}avatar-red{% else %}avatar-blue{% endif %}" style="width:72px;height:72px;font-size:24px;border-radius:12px;">
+            {{ cliente.nombre[:2].upper() }}
+          </div>
+        {% endif %}
+        <div>
+          <div style="font-size:18px;font-weight:600;">{{ cliente.nombre }}</div>
+          <div class="text-2">CC {{ cliente.cedula }}</div>
+          <div class="mt-1">
+            {% if cliente.tipo_cliente=='Bueno' %}<span class="badge badge-green">Bueno</span>
+            {% elif cliente.tipo_cliente=='Riesgo' %}<span class="badge badge-red">Riesgo</span>
+            {% else %}<span class="badge badge-gray">Regular</span>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:13px;">
+        <span class="text-2">ðŸ“ž Teléfono</span><span>{{ cliente.telefono }}</span>
+        {% if cliente.whatsapp %}<span class="text-2">ðŸ’¬ WhatsApp</span><span>{{ cliente.whatsapp }}</span>{% endif %}
+        <span class="text-2">ðŸ“ Dirección</span><span>{{ cliente.direccion or '"”' }}</span>
+        <span class="text-2">ðŸ˜ Barrio</span><span>{{ cliente.barrio or '"”' }}</span>
+        <span class="text-2">ðŸ—º Zona</span><span>{{ zona.nombre if zona else '"”' }}</span>
+        {% if cliente.codeudor_nombre %}
+        <span class="text-2">ðŸ‘¥ Codeudor</span><span>{{ cliente.codeudor_nombre }} · {{ cliente.codeudor_tel or '' }}</span>
+        {% endif %}
+      </div>
+
+      <!-- Subir foto -->
+      <div class="mt-2">
+        <label style="font-size:12px;font-weight:500;color:var(--text-2);display:block;margin-bottom:6px;">Foto del afiliado</label>
+        <div class="photo-drop" onclick="document.getElementById('inp-foto-edit').click()">
+          {% if cliente.foto_path %}
+          <img src="/uploads/{{ cliente.foto_path }}" style="width:64px;height:64px;border-radius:8px;object-fit:cover;">
+          <div class="fs-11 mt-1">Clic para cambiar</div>
+          {% else %}
+          <div style="font-size:24px;">ðŸ“·</div>
+          <div class="fs-12">Subir foto del cliente</div>
+          {% endif %}
+        </div>
+        <input type="file" id="inp-foto-edit" accept="image/*" style="display:none" onchange="subirFoto(this)">
+      </div>
+    </div>
+  </div>
+
+  <!-- MAPA -->
+  <div>
+    <div class="card mb-3">
+      <div class="card-header">
+        <div class="card-title">Ubicación</div>
+        <button class="btn btn-ghost btn-sm" onclick="abrirMaps()">ðŸ—º Ver en Maps</button>
+      </div>
+      <div class="card-body" style="padding:0;">
+        {% if cliente.lat and cliente.lng %}
+        <div id="mapa" style="height:180px;background:#e8f5ef;border-radius:0 0 10px 10px;overflow:hidden;"></div>
+        <script>
+          document.addEventListener('DOMContentLoaded', () => {
+            const lat = {{ cliente.lat }}, lng = {{ cliente.lng }};
+            const div = document.getElementById('mapa');
+            div.innerHTML = `<iframe width="100%" height="180" frameborder="0" style="border:0" loading="lazy"
+              src="https://maps.google.com/maps?q=${lat},${lng}&z=16&output=embed"></iframe>`;
+          });
+        </script>
+        {% else %}
+        <div class="map-box" style="border-radius:0 0 10px 10px;height:180px;" onclick="capturarUbicacion()">
+          <div style="font-size:32px;">ðŸ“</div>
+          <div style="font-weight:500;">Sin ubicación registrada</div>
+          <div class="fs-12 text-2">Clic para registrar ubicación actual</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- RESUMEN FINANCIERO -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">Resumen Financiero</div></div>
+      <div class="card-body">
+        {% set total_prestado = namespace(v=0) %}
+        {% set total_pagado_t = namespace(v=0) %}
+        {% set total_saldo = namespace(v=0) %}
+        {% for p in prestamos %}
+          {% set total_prestado.v = total_prestado.v + p.capital %}
+          {% set total_pagado_t.v = total_pagado_t.v + p.pagado %}
+          {% set total_saldo.v = total_saldo.v + p.saldo %}
+        {% endfor %}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div style="background:var(--bg);border-radius:8px;padding:12px;">
+            <div class="fs-11 text-2 mb-1">Total prestado</div>
+            <div class="num fw-600 fs-13">${{ "{:,.0f}".format(total_prestado.v) }}</div>
+          </div>
+          <div style="background:var(--bg);border-radius:8px;padding:12px;">
+            <div class="fs-11 text-2 mb-1">Total pagado</div>
+            <div class="num fw-600 fs-13 text-green">${{ "{:,.0f}".format(total_pagado_t.v) }}</div>
+          </div>
+          <div style="background:#fef2f2;border-radius:8px;padding:12px;">
+            <div class="fs-11 text-2 mb-1">Saldo pendiente</div>
+            <div class="num fw-600 fs-13 text-red">${{ "{:,.0f}".format(total_saldo.v) }}</div>
+          </div>
+          <div style="background:var(--bg);border-radius:8px;padding:12px;">
+            <div class="fs-11 text-2 mb-1">Préstamos totales</div>
+            <div class="fw-600 fs-13">{{ prestamos|length }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HISTORIAL DE PRÃ‰STAMOS -->
+{% for p in prestamos %}
+<div class="card mb-3">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Préstamo #{{ p.id }}</div>
+      <div class="card-subtitle">Iniciado {{ p.fecha_inicio }} · {{ p.num_cuotas }} cuotas</div>
+    </div>
+    <div class="flex-center gap-2">
+      <div class="progress" style="width:120px;">
+        <div class="progress-fill {% if p.vencidas > 0 %}red{% endif %}" style="width:{{ (p.pagado/p.capital*100) if p.capital else 0 | round }}%"></div>
+      </div>
+      {% if p.estado=='Cancelado' %}<span class="badge badge-green">Cancelado</span>
+      {% elif p.vencidas > 0 %}<span class="badge badge-red">{{ p.vencidas }} vencida(s)</span>
+      {% else %}<span class="badge badge-blue">Activo</span>{% endif %}
+    </div>
+  </div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
+      <div><div class="fs-11 text-2">Capital</div><div class="num fw-600">${{ "{:,.0f}".format(p.capital) }}</div></div>
+      <div><div class="fs-11 text-2">Total a pagar</div><div class="num fw-600">${{ "{:,.0f}".format(p.total) }}</div></div>
+      <div><div class="fs-11 text-2">Pagado</div><div class="num fw-600 text-green">${{ "{:,.0f}".format(p.pagado) }}</div></div>
+      <div><div class="fs-11 text-2">Saldo</div><div class="num fw-600 text-red">${{ "{:,.0f}".format(p.saldo) }}</div></div>
+    </div>
+    <details>
+      <summary style="cursor:pointer;font-size:12px;color:var(--verde-600);font-weight:500;">Ver plan de cuotas ({{ p.num_cuotas }})</summary>
+      <div style="margin-top:10px;max-height:200px;overflow-y:auto;">
+        <table>
+          <thead><tr><th>#</th><th>Vencimiento</th><th>Valor</th><th>Pagado</th><th>Estado</th></tr></thead>
+          <tbody>
+            {% for c in p.cuotas %}
+            <tr>
+              <td class="num text-2">{{ c.num }}</td>
+              <td class="fs-12">{{ c.vencimiento.strftime('%d/%m/%Y') }}</td>
+              <td class="num">${{ "{:,.0f}".format(c.valor) }}</td>
+              <td class="num {% if c.pagado > 0 %}text-green{% endif %}">${{ "{:,.0f}".format(c.pagado) }}</td>
+              <td>
+                {% if c.estado=='Pagada' %}<span class="badge badge-green">Pagada</span>
+                {% elif c.estado=='Vencida' %}<span class="badge badge-red">Vencida</span>
+                {% elif c.estado=='Parcial' %}<span class="badge badge-yellow">Parcial</span>
+                {% else %}<span class="badge badge-gray">Pendiente</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</div>
+{% endfor %}
+
+
+<!-- MODAL EDITAR CLIENTE -->
+<div class="modal-overlay" id="modal-editar" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Editar Cliente</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-editar').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <form id="form-editar">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Nombre completo</label>
+          <input type="text" name="nombre" value="{{ cliente.nombre }}" required>
+        </div>
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="tel" name="telefono" value="{{ cliente.telefono }}">
+        </div>
+        <div class="form-group">
+          <label>WhatsApp</label>
+          <input type="tel" name="whatsapp" value="{{ cliente.whatsapp or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Dirección</label>
+          <input type="text" name="direccion" value="{{ cliente.direccion or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Zona</label>
+          <select name="zona_id">
+            {% for z in zonas %}<option value="{{ z.id }}" {% if z.id==cliente.zona_id %}selected{% endif %}>{{ z.nombre }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Tipo de cliente</label>
+          <select name="tipo_cliente">
+            <option value="Regular" {% if cliente.tipo_cliente=="Regular" %}selected{% endif %}>Regular</option>
+            <option value="Bueno" {% if cliente.tipo_cliente=="Bueno" %}selected{% endif %}>Bueno</option>
+            <option value="Riesgo" {% if cliente.tipo_cliente=="Riesgo" %}selected{% endif %}>Riesgo</option>
+          </select>
+        </div>
+      </div>
+    </form>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-editar').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-primary" onclick="guardarEdicion()">Guardar Cambios</button>
+  </div>
+</div>
+</div>
+
+<!-- MODAL NUEVO PRÃ‰STAMO -->
+<div class="modal-overlay" id="modal-prestamo" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Nuevo Préstamo "” {{ cliente.nombre }}</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-prestamo').classList.remove('open')">âœ•</button>
+  </div>
+  <div class="modal-body">
+    <form id="form-prestamo">
+      <input type="hidden" name="cliente_id" value="{{ cliente.id }}">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Zona</label>
+          <select name="zona_id">
+            {% for z in zonas %}
+            <option value="{{ z.id }}" {% if zona and z.id==zona.id %}selected{% endif %}>{{ z.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Capital ($)</label>
+          <input type="number" name="capital" min="1000" step="1000" placeholder="360000" oninput="calcularPrev()">
+        </div>
+        <div class="form-group">
+          <label>Tasa de interés (%)</label>
+          <input type="number" name="tasa_interes" value="20" step="0.5" oninput="calcularPrev()">
+        </div>
+        <div class="form-group">
+          <label>Número de cuotas</label>
+          <input type="number" name="num_cuotas" value="30" min="1" oninput="calcularPrev()">
+        </div>
+        <div class="form-group">
+          <label>Plazo (días por cuota)</label>
+          <input type="number" name="plazo_dias" value="30">
+        </div>
+        <div class="form-group">
+          <label>Fecha inicio</label>
+          <input type="date" name="fecha_inicio" id="fecha-inicio-prest">
+        </div>
+        <div class="form-group">
+          <label>Cobrador</label>
+          <input type="text" name="cobrador" value="{{ zona.cobrador_nombre if zona else '' }}">
+        </div>
+        <div class="form-group full">
+          <label>Observaciones</label>
+          <textarea name="observaciones" rows="2" placeholder="Notas..."></textarea>
+        </div>
+      </div>
+      <div id="preview-calc" style="display:none;background:var(--verde-50);border:1px solid var(--verde-100);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;">
+        <div class="fw-600 text-green mb-1">Resumen del préstamo:</div>
+        <div class="flex gap-3">
+          <span>Interés: <strong id="pv-int" class="num"></strong></span>
+          <span>Total: <strong id="pv-tot" class="num"></strong></span>
+          <span>Cuota: <strong id="pv-cuo" class="num"></strong></span>
+        </div>
+      </div>
+    </form>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-prestamo').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-primary" onclick="guardarPrestamo()">Guardar Préstamo</button>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+
+function abrirEditar() {
+  document.getElementById('modal-editar').classList.add('open');
+}
+
+async function guardarEdicion() {
+  const fd = new FormData(document.getElementById('form-editar'));
+  try {
+    const r = await fetch('/clientes/{{ cliente.id }}/editar', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.ok) { toast('Cliente actualizado ✓'); setTimeout(() => location.reload(), 800); }
+    else toast(d.error || 'Error al guardar', 'error');
+  } catch(e) { toast('Error de conexión', 'error'); }
+}
+
+document.getElementById('fecha-inicio-prest').value = new Date().toISOString().split('T')[0];
+
+function abrirModalPrestamo() {
+  document.getElementById('modal-prestamo').classList.add('open');
+}
+
+async function calcularPrev() {
+  const capital = document.querySelector('[name=capital]').value;
+  const tasa = document.querySelector('[name=tasa_interes]').value;
+  const cuotas = document.querySelector('[name=num_cuotas]').value;
+  if (!capital || !tasa || !cuotas) return;
+  try {
+    const r = await fetch(`/prestamos/calcular?capital=${capital}&tasa=${tasa}&cuotas=${cuotas}`);
+    const d = await r.json();
+    document.getElementById('preview-calc').style.display = 'block';
+    document.getElementById('pv-int').textContent = fmtCOP(d.interes_total);
+    document.getElementById('pv-tot').textContent = fmtCOP(d.total_pagar);
+    document.getElementById('pv-cuo').textContent = fmtCOP(d.valor_cuota);
+  } catch(e) {}
+}
+
+async function guardarPrestamo() {
+  const form = document.getElementById('form-prestamo');
+  const fd = new FormData(form);
+  try {
+    const r = await fetch('/prestamos/nuevo', { method:'POST', body: fd });
+    const d = await r.json();
+    if (d.ok) { toast('Préstamo registrado âœ“'); setTimeout(() => location.reload(), 1000); }
+    else toast(d.detail || 'Error', 'error');
+  } catch(e) { toast('Error', 'error'); }
+}
+
+async function subirFoto(inp) {
+  if (!inp.files[0]) return;
+  const fd = new FormData();
+  fd.append('foto', inp.files[0]);
+  fd.append('nombre', '{{ cliente.nombre }}');
+  fd.append('telefono', '{{ cliente.telefono }}');
+  fd.append('zona_id', '{{ cliente.zona_id }}');
+  fd.append('tipo_cliente', '{{ cliente.tipo_cliente }}');
+  const r = await fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) { toast('Foto actualizada'); setTimeout(() => location.reload(), 800); }
+}
+
+function abrirMaps() {
+  {% if cliente.lat and cliente.lng %}
+  window.open(`https://maps.google.com/?q={{ cliente.lat }},{{ cliente.lng }}`, '_blank');
+  {% else %}
+  toast('Sin coordenadas registradas', 'error');
+  {% endif %}
+}
+
+function capturarUbicacion() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const fd = new FormData();
+      fd.append('nombre', '{{ cliente.nombre }}');
+      fd.append('telefono', '{{ cliente.telefono }}');
+      fd.append('zona_id', '{{ cliente.zona_id }}');
+      fd.append('tipo_cliente', '{{ cliente.tipo_cliente }}');
+      fd.append('lat', pos.coords.latitude);
+      fd.append('lng', pos.coords.longitude);
+      const r = await fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
+      const d = await r.json();
+      if (d.ok) { toast('Ubicación guardada âœ“'); setTimeout(() => location.reload(), 800); }
+    });
+  }
+}
+</script>
+{% endblock %}
+

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#059669">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>CreditosPro — App Cobrador</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f3f4f6;
+    min-height: 100vh;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .topbar {
+    background: linear-gradient(135deg, #059669, #047857);
+    color: white;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .topbar h1 { font-size: 16px; font-weight: 700; }
+  .topbar p { font-size: 12px; opacity: 0.8; }
+  .logout-btn {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .content { padding: 16px; }
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .card-title { font-size: 14px; font-weight: 600; color: #111; margin-bottom: 4px; }
+  .card-sub { font-size: 12px; color: #6b7280; }
+  .menu-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .menu-item {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 16px;
+    text-align: center;
+    text-decoration: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    transition: transform 0.1s;
+  }
+  .menu-item:active { transform: scale(0.97); }
+  .menu-icon { font-size: 32px; margin-bottom: 8px; }
+  .menu-label { font-size: 13px; font-weight: 600; color: #111; }
+  .menu-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .stat-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .stat {
+    background: #f0fdf4;
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+  .stat-val { font-size: 20px; font-weight: 700; color: #059669; }
+  .stat-label { font-size: 10px; color: #6b7280; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div>
+    <h1>💰 CreditosPro</h1>
+    <p>Hola, {{ current_user.nombre_completo }}</p>
+  </div>
+  <a href="/auth/logout" class="logout-btn">Salir</a>
+</div>
+
+<div class="content">
+  <div class="card">
+    <div class="card-title">📅 Hoy — Tu jornada de cobro</div>
+    <div class="card-sub">Gestiona tus cobros del día desde aquí</div>
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-val" id="stat-pendientes">—</div>
+        <div class="stat-label">Pendientes</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="stat-cobrados">—</div>
+        <div class="stat-label">Cobrados</div>
+      </div>
+      <div class="stat" style="background:#fff7ed;">
+        <div class="stat-val" style="color:#ea580c;" id="stat-total">—</div>
+        <div class="stat-label">Total $</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="menu-grid">
+    <a href="/app/ruta" class="menu-item">
+      <div class="menu-icon">🗺️</div>
+      <div class="menu-label">Mi Ruta</div>
+      <div class="menu-sub">Paradas ordenadas</div>
+    </a>
+    <a href="/app/resumen" class="menu-item">
+      <div class="menu-icon">📊</div>
+      <div class="menu-label">Resumen</div>
+      <div class="menu-sub">Cobros del día</div>
+    </a>
+    <a href="/clientes" class="menu-item">
+      <div class="menu-icon">👤</div>
+      <div class="menu-label">Clientes</div>
+      <div class="menu-sub">Ver y registrar</div>
+    </a>
+    <a href="/cobros" class="menu-item">
+      <div class="menu-icon">💵</div>
+      <div class="menu-label">Cobrar</div>
+      <div class="menu-sub">Registrar pago</div>
+    </a>
+  </div>
+</div>
+
+<script>
+// Cargar stats del día
+async function cargarStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    document.getElementById('stat-pendientes').textContent = d.cuotas_vencidas || 0;
+    document.getElementById('stat-cobrados').textContent = d.cobros_hoy_cantidad || 0;
+    const total = d.cobros_hoy || 0;
+    document.getElementById('stat-total').textContent =
+      '$' + new Intl.NumberFormat('es-CO').format(total);
+  } catch(e) {}
+}
+cargarStats();
+</script>
+</body>
+</html>

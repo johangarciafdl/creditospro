@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CreditosPro — Configuración Inicial</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #064e3b 0%, #065f46 50%, #047857 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    background: white;
+    border-radius: 16px;
+    padding: 40px;
+    width: 100%;
+    max-width: 480px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .logo {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .logo-icon {
+    width: 64px; height: 64px;
+    background: linear-gradient(135deg, #059669, #047857);
+    border-radius: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+  .logo h1 { font-size: 22px; font-weight: 700; color: #111; }
+  .logo p { font-size: 13px; color: #6b7280; margin-top: 4px; }
+  .step {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #065f46;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #9ca3af;
+    letter-spacing: 0.5px;
+    margin: 20px 0 12px;
+  }
+  .form-group { margin-bottom: 14px; }
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 5px;
+  }
+  .form-group input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #111;
+    outline: none;
+    transition: border 0.2s;
+  }
+  .form-group input:focus { border-color: #059669; box-shadow: 0 0 0 3px #d1fae5; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .btn {
+    width: 100%;
+    padding: 13px;
+    background: linear-gradient(135deg, #059669, #047857);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: opacity 0.2s;
+  }
+  .btn:hover { opacity: 0.9; }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #dc2626;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+  .success {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #065f46;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+    text-align: center;
+  }
+  .divider {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 20px 0;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-icon">💰</div>
+    <h1>CreditosPro</h1>
+    <p>Sistema de gestión de créditos y cobros</p>
+  </div>
+
+  <div class="step">
+    🎉 ¡Bienvenido! Configura tu empresa para comenzar
+  </div>
+
+  <form id="form-setup">
+    <div class="section-label">📋 Datos de la empresa</div>
+
+    <div class="form-group">
+      <label>Nombre de la empresa *</label>
+      <input type="text" name="empresa_nombre" placeholder="Créditos Rápidos S.A.S" required>
+    </div>
+
+    <div class="grid-2">
+      <div class="form-group">
+        <label>NIT / RUT</label>
+        <input type="text" name="empresa_nit" placeholder="900.123.456-1">
+      </div>
+      <div class="form-group">
+        <label>Teléfono</label>
+        <input type="tel" name="empresa_tel" placeholder="3001234567">
+      </div>
+    </div>
+
+    <hr class="divider">
+    <div class="section-label">👤 Cuenta de administrador</div>
+
+    <div class="form-group">
+      <label>Nombre completo del admin *</label>
+      <input type="text" name="admin_nombre" placeholder="Juan Pérez" required>
+    </div>
+
+    <div class="grid-2">
+      <div class="form-group">
+        <label>Usuario *</label>
+        <input type="text" name="admin_username" placeholder="admin" required
+               pattern="[a-zA-Z0-9_]+" title="Solo letras, números y _">
+      </div>
+      <div class="form-group">
+        <label>Contraseña *</label>
+        <input type="password" name="admin_password" placeholder="Mínimo 6 caracteres" required minlength="6">
+      </div>
+    </div>
+
+    <div class="error" id="msg-error"></div>
+    <div class="success" id="msg-success">✅ ¡Empresa configurada! Redirigiendo al login...</div>
+
+    <button type="button" class="btn" onclick="guardarSetup()" id="btn-guardar">
+      🚀 Crear mi cuenta y comenzar
+    </button>
+  </form>
+</div>
+
+<script>
+async function guardarSetup() {
+  const btn = document.getElementById('btn-guardar');
+  const errDiv = document.getElementById('msg-error');
+  const okDiv = document.getElementById('msg-success');
+  errDiv.style.display = 'none';
+  okDiv.style.display = 'none';
+
+  const fd = new FormData(document.getElementById('form-setup'));
+  btn.disabled = true;
+  btn.textContent = 'Configurando...';
+
+  try {
+    const r = await fetch('/setup/', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.ok) {
+      okDiv.style.display = 'block';
+      setTimeout(() => window.location.href = '/auth/login', 2000);
+    } else {
+      errDiv.textContent = d.error || 'Error al configurar';
+      errDiv.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '🚀 Crear mi cuenta y comenzar';
+    }
+  } catch(e) {
+    errDiv.textContent = 'Error de conexión. Intenta de nuevo.';
+    errDiv.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '🚀 Crear mi cuenta y comenzar';
+  }
+}
+</script>
+</body>
+</html>

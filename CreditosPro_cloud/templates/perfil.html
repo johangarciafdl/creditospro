@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Mi Perfil{% endblock %}
+{% block topbar_title %}Mi Perfil{% endblock %}
+{% block topbar_sub %}Cuenta y seguridad{% endblock %}
+
+{% block content %}
+<div style="max-width:560px;">
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Información de cuenta</div></div>
+    <div class="card-body">
+      <div class="flex-center gap-3 mb-3">
+        <div class="avatar avatar-blue" style="width:56px;height:56px;font-size:20px;border-radius:14px;background:var(--verde-600);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;flex-shrink:0;">
+          {{ current_user.avatar_initials or current_user.username[:2].upper() }}
+        </div>
+        <div>
+          <div style="font-size:18px;font-weight:600;">{{ current_user.nombre_completo }}</div>
+          <div style="font-size:13px;color:var(--text-2);">@{{ current_user.username }} · {{ current_user.rol }}</div>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div><div class="fs-11 text-2 mb-1">Email</div><div class="fs-13">{{ current_user.email or '—' }}</div></div>
+        <div><div class="fs-11 text-2 mb-1">Último login</div><div class="fs-13">{{ current_user.ultimo_login.strftime('%d/%m/%Y %H:%M') if current_user.ultimo_login else 'Esta sesión' }}</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">🔒 Cambiar contraseña</div></div>
+    <div class="card-body">
+      <form id="form-pw">
+        <div class="form-group mb-3"><label>Contraseña actual</label><input type="password" name="password_actual" required></div>
+        <div class="form-group mb-3"><label>Nueva contraseña</label><input type="password" name="password_nuevo" minlength="6" required></div>
+        <button type="button" class="btn btn-primary" onclick="cambiarPw()">Actualizar contraseña</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function cambiarPw() {
+  const fd = new FormData(document.getElementById('form-pw'));
+  const r = await fetch('/auth/perfil/cambiar-password', { method:'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) { toast(d.mensaje); document.getElementById('form-pw').reset(); }
+  else toast(d.error, 'error');
+}
+</script>
+{% endblock %}

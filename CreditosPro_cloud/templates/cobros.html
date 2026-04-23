@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Cobros{% endblock %}
+{% block topbar_title %}Cobros del Día{% endblock %}
+{% block topbar_sub %}{{ fecha_sel }}{% endblock %}
+{% block topbar_actions %}
+  <a href="/reportes/cobros-diarios?fecha={{ fecha_sel }}" class="btn btn-excel">⬇ Excel</a>
+{% endblock %}
+
+{% block content %}
+<!-- FILTROS -->
+<div class="card mb-3">
+  <div class="card-body" style="padding:10px 16px;">
+    <form method="get" class="flex gap-2 flex-wrap">
+      <select name="zona_id" style="width:160px;">
+        <option value="">Todas las zonas</option>
+        {% for z in zonas %}
+          <option value="{{ z.id }}" {% if zona_id_sel==z.id %}selected{% endif %}>{{ z.nombre }}</option>
+        {% endfor %}
+      </select>
+      <input type="date" name="fecha" value="{{ fecha_sel }}" style="width:150px;">
+      <button type="submit" class="btn btn-primary btn-sm">Filtrar</button>
+    </form>
+  </div>
+</div>
+
+<!-- RESUMEN DÍA -->
+<div class="stats-grid mb-3" style="grid-template-columns:repeat(3,1fr);">
+  <div class="stat-card green">
+    <div class="stat-label">Cobrado hoy</div>
+    <div class="stat-val green num">${{ "{:,.0f}".format(total_cobrado) }}</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-label">Pendiente por cobrar</div>
+    <div class="stat-val red num">${{ "{:,.0f}".format(total_pendiente) }}</div>
+  </div>
+  <div class="stat-card gray">
+    <div class="stat-label">Cuotas en lista</div>
+    <div class="stat-val">{{ pendientes|length }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Lista de Cobro</div>
+    <span class="badge badge-yellow">
+      {{ pendientes|selectattr('estado','eq','Vencida')|list|length }} vencidas
+    </span>
+  </div>
+
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Cliente</th><th>Zona</th><th>Cuota</th>
+          <th>Valor</th><th>Vencimiento</th><th>Estado</th><th>Acción</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for p in pendientes %}
+        <tr>
+          <td>
+            <div class="flex-center gap-2">
+              <div class="avatar avatar-blue" style="width:28px;height:28px;font-size:10px;border-radius:6px;">
+                {{ p.cliente[:2].upper() }}
+              </div>
+              <div>
+                <div class="fw-600 fs-13">{{ p.cliente }}</div>
+                <div class="fs-11 text-2">{{ p.cedula }}</div>
+              </div>
+            </div>
+          </td>
+
+          <td class="fs-12 text-2">{{ p.zona }}</td>
+          <td class="num fs-12">{{ p.num_cuota }}/{{ p.total_cuotas }}</td>
+          <td class="num fw-600">${{ "{:,.0f}".format(p.valor) }}</td>
+
+          <td class="fs-12 {% if p.dias_diff > 0 %}text-red{% endif %}">
+            {{ p.vencimiento }}
+            {% if p.dias_diff > 0 %}
+              <div class="fs-11 text-red">{{ p.dias_diff }} días vencida</div>
+            {% endif %}
+          </td>
+
+          <td>
+            {% if p.cobrado %}
+              <span class="badge badge-green">✓ Cobrado</span>
+            {% elif p.estado=='Vencida' %}
+              <span class="badge badge-red">Vencida</span>
+            {% else %}
+              <span class="badge badge-yellow">Pendiente</span>
+            {% endif %}
+          </td>
+
+          <td>
+            {% if not p.cobrado %}
+              <button class="btn btn-primary btn-xs"
+                data-cuota-id="{{ p.cuota_id }}"
+                data-cliente-nombre="{{ p.cliente }}"
+                data-valor="{{ p.valor }}"
+                onclick="abrirCobroDesdeBoton(this)">
+                💰 Registrar
+              </button>
+            {% else %}
+              <span class="fs-11 text-green">
+                ${{ "{:,.0f}".format(p.valor_cobrado) }}
+              </span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL COBRO -->
+<div class="modal-overlay" id="modal-cobro" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title" id="cobro-titulo">Registrar Cobro</div>
+      <button class="btn btn-ghost btn-icon"
+        onclick="document.getElementById('modal-cobro').classList.remove('open')">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <form id="form-cobro">
+        <input type="hidden" name="cuota_id" id="cobro-cuota-id">
+
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>Valor cobrado ($)</label>
+            <input type="number" name="valor_cobrado" id="cobro-valor" min="0" step="1000">
+          </div>
+
+          <div class="form-group">
+            <label>Método de pago</label>
+            <select name="metodo_pago">
+              <option>Efectivo</option>
+              <option>Transferencia</option>
+              <option>Nequi</option>
+              <option>Daviplata</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Cobrador</label>
+            <input type="text" name="cobrador" value="William Badillo">
+          </div>
+
+          <div class="form-group full">
+            <label>Observaciones</label>
+            <textarea name="observaciones" rows="2"></textarea>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn"
+        onclick="document.getElementById('modal-cobro').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCobro()">✓ Confirmar Cobro</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function abrirCobroDesdeBoton(boton) {
+  const cuotaId = boton.getAttribute('data-cuota-id');
+  const nombre = boton.getAttribute('data-cliente-nombre');
+  const valor = boton.getAttribute('data-valor');
+
+  document.getElementById('cobro-titulo').textContent = `Cobro — ${nombre}`;
+  document.getElementById('cobro-cuota-id').value = cuotaId;
+  document.getElementById('cobro-valor').value = valor;
+  document.getElementById('modal-cobro').classList.add('open');
+}
+
+async function guardarCobro() {
+  const fd = new FormData(document.getElementById('form-cobro'));
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      fd.append('lat', pos.coords.latitude);
+      fd.append('lng', pos.coords.longitude);
+    });
+  }
+
+  try {
+    const r = await fetch('/cobros/registrar', {
+      method: 'POST',
+      body: fd
+    });
+
+    const d = await r.json();
+
+    if (d.ok) {
+      toast(d.mensaje);
+      document.getElementById('modal-cobro').classList.remove('open');
+      setTimeout(() => location.reload(), 800);
+    } else {
+      toast(d.detail || 'Error', 'error');
+    }
+  } catch(e) {
+    toast('Error', 'error');
+  }
+}
+</script>
+{% endblock %}
