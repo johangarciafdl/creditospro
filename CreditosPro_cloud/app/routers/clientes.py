@@ -1,3 +1,4 @@
+"""Clientes router - FIXED"""
 from fastapi import APIRouter, Request, Depends, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -8,33 +9,46 @@ import shutil, uuid
 from app.database import get_db, Cliente, Prestamo, Cuota, Zona
 from app.auth import require_login, get_current_empresa
 
-BASE_DIR = Path(__file__).parent.parent.parent
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+BASE_DIR = Path(__file__).parent.parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads" / "fotos"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.get("/")
-async def listar_clientes(request: Request, q: str = "", zona_id: int = None, db: Session = Depends(get_db), empresa_id: int = Depends(get_current_empresa), current_user=Depends(require_login)):
+async def listar_clientes(
+    request: Request,
+    q: str = "",
+    zona_id: int = None,
+    db: Session = Depends(get_db),
+    empresa_id: int = Depends(get_current_empresa),
+    current_user=Depends(require_login)
+):
     query = db.query(Cliente).filter(Cliente.activo == True, Cliente.empresa_id == empresa_id)
     if q:
         query = query.filter((Cliente.nombre.contains(q)) | (Cliente.cedula.contains(q)))
     if zona_id:
         query = query.filter(Cliente.zona_id == zona_id)
     clientes = query.order_by(Cliente.nombre).all()
-
     zonas = db.query(Zona).filter(Zona.empresa_id == empresa_id).all()
+
     clientes_data = []
     for c in clientes:
-        prestamo_activo = db.query(Prestamo).filter(Prestamo.cliente_id == c.id, Prestamo.estado.in_(["Activo", "Atrasado", "Mora"])).first()
+        prestamo_activo = db.query(Prestamo).filter(
+            Prestamo.cliente_id == c.id,
+            Prestamo.estado.in_(["Activo", "Atrasado"])
+        ).first()
         zona = db.query(Zona).filter(Zona.id == c.zona_id).first()
         saldo = 0
         cuota_actual = None
         if prestamo_activo:
             pagado = sum(cu.valor_pagado or 0 for cu in prestamo_activo.cuotas)
             saldo = max(0, prestamo_activo.total_pagar - pagado)
-            cuota_actual = next((cu for cu in sorted(prestamo_activo.cuotas, key=lambda x: x.numero) if cu.estado in ["Pendiente", "Vencida"]), None)
+            cuota_actual = next((
+                cu for cu in sorted(prestamo_activo.cuotas, key=lambda x: x.numero)
+                if cu.estado in ["Pendiente", "Vencida"]
+            ), None)
         clientes_data.append({
             "id": c.id, "cedula": c.cedula, "nombre": c.nombre,
             "telefono": c.telefono, "whatsapp": c.whatsapp,
@@ -42,21 +56,20 @@ async def listar_clientes(request: Request, q: str = "", zona_id: int = None, db
             "zona_id": c.zona_id, "tipo_cliente": c.tipo_cliente,
             "foto_path": c.foto_path, "activo": c.activo,
             "prestamo": {
-                "id": prestamo_activo.id, "capital": prestamo_activo.capital,
+                "id": prestamo_activo.id,
+                "capital": prestamo_activo.capital,
                 "total": prestamo_activo.total_pagar,
                 "cuotas": f"{(cuota_actual.numero if cuota_actual else 0)}/{prestamo_activo.num_cuotas}",
                 "saldo": saldo, "estado": prestamo_activo.estado,
-                "progreso": round((cuota_actual.numero - 1 if cuota_actual else prestamo_activo.num_cuotas) / prestamo_activo.num_cuotas * 100, 1),
             } if prestamo_activo else None,
         })
 
-    return templates.TemplateResponse("clientes.html", context={
+    return templates.TemplateResponse("clientes.html", {
         "request": request, "page": "clientes",
         "clientes": clientes_data, "zonas": zonas,
         "q": q, "zona_id_sel": zona_id,
         "current_user": current_user,
     })
-
 
 
 @router.get("/buscar")
@@ -65,7 +78,6 @@ async def buscar_clientes_json(
     db: Session = Depends(get_db),
     empresa_id: int = Depends(get_current_empresa),
 ):
-    """Endpoint JSON para autocompletar búsqueda de clientes en modal préstamo."""
     if len(q) < 2:
         return []
     clientes = db.query(Cliente).filter(
@@ -75,13 +87,24 @@ async def buscar_clientes_json(
     ).order_by(Cliente.nombre).limit(10).all()
     return [{"id": c.id, "nombre": c.nombre, "cedula": c.cedula} for c in clientes]
 
+
 @router.get("/{cliente_id}")
-async def detalle_cliente(request: Request, cliente_id: int, db: Session = Depends(get_db), empresa_id: int = Depends(get_current_empresa), current_user=Depends(require_login)):
-    cliente = db.query(Cliente).filter(Cliente.id == cliente_id, Cliente.empresa_id == empresa_id).first()
+async def detalle_cliente(
+    request: Request,
+    cliente_id: int,
+    db: Session = Depends(get_db),
+    empresa_id: int = Depends(get_current_empresa),
+    current_user=Depends(require_login)
+):
+    cliente = db.query(Cliente).filter(
+        Cliente.id == cliente_id, Cliente.empresa_id == empresa_id
+    ).first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     zona = db.query(Zona).filter(Zona.id == cliente.zona_id).first()
-    prestamos = db.query(Prestamo).filter(Prestamo.cliente_id == cliente_id).order_by(Prestamo.creado.desc()).all()
+    prestamos = db.query(Prestamo).filter(
+        Prestamo.cliente_id == cliente_id
+    ).order_by(Prestamo.creado.desc()).all()
     zonas = db.query(Zona).filter(Zona.empresa_id == empresa_id).all()
 
     prestamos_data = []
@@ -94,10 +117,14 @@ async def detalle_cliente(request: Request, cliente_id: int, db: Session = Depen
             "saldo": saldo, "num_cuotas": p.num_cuotas,
             "pagado": pagado, "vencidas": vencidas,
             "estado": p.estado, "fecha_inicio": p.fecha_inicio,
-            "cuotas": [{"num": c.numero, "valor": c.valor, "vencimiento": c.fecha_vencimiento, "estado": c.estado, "pagado": c.valor_pagado or 0} for c in sorted(p.cuotas, key=lambda x: x.numero)],
+            "cuotas": [{
+                "num": c.numero, "valor": c.valor,
+                "vencimiento": c.fecha_vencimiento,
+                "estado": c.estado, "pagado": c.valor_pagado or 0
+            } for c in sorted(p.cuotas, key=lambda x: x.numero)],
         })
 
-    return templates.TemplateResponse("cliente_detalle.html", context={
+    return templates.TemplateResponse("cliente_detalle.html", {
         "request": request, "page": "clientes",
         "cliente": cliente, "zona": zona, "zonas": zonas,
         "prestamos": prestamos_data, "current_user": current_user,
@@ -106,112 +133,112 @@ async def detalle_cliente(request: Request, cliente_id: int, db: Session = Depen
 
 @router.post("/nuevo")
 async def crear_cliente(
-    cedula: str = Form(...), nombre: str = Form(...), telefono: str = Form(...),
-    whatsapp: str = Form(""), direccion: str = Form(""), barrio: str = Form(""),
-    zona_id: str = Form(""), tipo_cliente: str = Form("Regular"),
-    codeudor_nombre: str = Form(""), codeudor_cedula: str = Form(""), codeudor_tel: str = Form(""),
-    lat: str = Form(""), lng: str = Form(""),
+    cedula: str = Form(...),
+    nombre: str = Form(...),
+    telefono: str = Form(...),
+    whatsapp: str = Form(""),
+    direccion: str = Form(""),
+    barrio: str = Form(""),
+    zona_id: str = Form(""),
+    tipo_cliente: str = Form("Regular"),
+    codeudor_nombre: str = Form(""),
+    codeudor_cedula: str = Form(""),
+    codeudor_tel: str = Form(""),
+    lat: str = Form(""),
+    lng: str = Form(""),
     foto: UploadFile = File(None),
-    db: Session = Depends(get_db), empresa_id: int = Depends(get_current_empresa)
+    db: Session = Depends(get_db),
+    empresa_id: int = Depends(get_current_empresa),
+    current_user=Depends(require_login)
 ):
-    # Validaciones básicas
     cedula = cedula.strip()
-    if not cedula or not nombre.strip():
-        return JSONResponse({"error": "Cédula y nombre son obligatorios"}, status_code=400)
-    
-    # Validar zona_id
+    nombre = nombre.strip()
+
+    if not cedula or not nombre:
+        return JSONResponse({"error": "Cedula y nombre son obligatorios"}, status_code=400)
+
     if not zona_id or not zona_id.strip():
-        return JSONResponse(
-            {"error": "Debes seleccionar una zona. Si no hay zonas disponibles, créalas primero en la sección Zonas."}, 
-            status_code=400
-        )
+        return JSONResponse({"error": "Debes seleccionar una zona"}, status_code=400)
+
     try:
         zona_id_int = int(zona_id)
     except ValueError:
-        return JSONResponse({"error": "ID de zona inválido"}, status_code=400)
-    
-    # Verificar que la zona existe y pertenece a la empresa
-    zona = db.query(Zona).filter(Zona.id == zona_id_int, Zona.empresa_id == empresa_id).first()
-    if not zona:
-        return JSONResponse({"error": "La zona seleccionada no existe o no pertenece a tu empresa"}, status_code=400)
-    
-    # Verificar cliente duplicado
-    if db.query(Cliente).filter(Cliente.cedula == cedula, Cliente.empresa_id == empresa_id).first():
-        return JSONResponse({"error": f"Ya existe un cliente con la cédula {cedula}"}, status_code=400)
+        return JSONResponse({"error": "Zona invalida"}, status_code=400)
 
-    # Convertir lat/lng de forma segura
-    try:
-        lat_val = float(lat) if lat and lat.strip() else None
-        lng_val = float(lng) if lng and lng.strip() else None
-    except (ValueError, AttributeError):
-        lat_val = None
-        lng_val = None
+    if db.query(Cliente).filter(
+        Cliente.cedula == cedula, Cliente.empresa_id == empresa_id
+    ).first():
+        return JSONResponse({"error": f"Ya existe un cliente con cedula {cedula}"}, status_code=400)
 
     foto_path = None
     if foto and foto.filename:
         ext = Path(foto.filename).suffix.lower()
-        if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
-            return JSONResponse({"error": "Solo se permiten imágenes JPG, PNG o WEBP"}, status_code=400)
-        nombre_archivo = f"{uuid.uuid4()}{ext}"
-        with open(UPLOAD_DIR / nombre_archivo, "wb") as f:
-            shutil.copyfileobj(foto.file, f)
-        foto_path = f"fotos/{nombre_archivo}"
+        if ext in [".jpg", ".jpeg", ".png", ".webp"]:
+            nombre_archivo = f"{uuid.uuid4()}{ext}"
+            with open(UPLOAD_DIR / nombre_archivo, "wb") as f:
+                shutil.copyfileobj(foto.file, f)
+            foto_path = f"fotos/{nombre_archivo}"
 
-    cliente = Cliente(
-        empresa_id=empresa_id,
-        cedula=cedula, nombre=nombre.strip(), telefono=telefono,
-        whatsapp=whatsapp or telefono, direccion=direccion, barrio=barrio,
-        zona_id=zona_id_int, tipo_cliente=tipo_cliente,
-        codeudor_nombre=codeudor_nombre or None,
-        codeudor_cedula=codeudor_cedula or None,
-        codeudor_tel=codeudor_tel or None,
-        lat=lat_val, lng=lng_val, foto_path=foto_path,
-    )
-    db.add(cliente)
-    db.commit()
-    db.refresh(cliente)
-    return JSONResponse({"ok": True, "id": cliente.id, "mensaje": "Cliente creado exitosamente"})
+    try:
+        cliente = Cliente(
+            empresa_id=empresa_id,
+            cedula=cedula,
+            nombre=nombre,
+            telefono=telefono.strip(),
+            whatsapp=whatsapp.strip() or telefono.strip(),
+            direccion=direccion.strip(),
+            barrio=barrio.strip(),
+            zona_id=zona_id_int,
+            tipo_cliente=tipo_cliente,
+            codeudor_nombre=codeudor_nombre.strip() or None,
+            codeudor_cedula=codeudor_cedula.strip() or None,
+            codeudor_tel=codeudor_tel.strip() or None,
+            lat=float(lat) if lat and lat.strip() else None,
+            lng=float(lng) if lng and lng.strip() else None,
+            foto_path=foto_path,
+        )
+        db.add(cliente)
+        db.commit()
+        db.refresh(cliente)
+        return JSONResponse({"ok": True, "id": cliente.id, "mensaje": "Cliente creado exitosamente"})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse({"error": f"Error al guardar: {str(e)}"}, status_code=500)
 
 
 @router.post("/{cliente_id}/editar")
 async def editar_cliente(
     cliente_id: int,
-    nombre: str = Form(...), telefono: str = Form(...), whatsapp: str = Form(""),
-    direccion: str = Form(""), zona_id: str = Form(""), tipo_cliente: str = Form("Regular"),
-    lat: str = Form(""), lng: str = Form(""),
+    nombre: str = Form(...),
+    telefono: str = Form(...),
+    whatsapp: str = Form(""),
+    direccion: str = Form(""),
+    zona_id: str = Form(""),
+    tipo_cliente: str = Form("Regular"),
+    lat: str = Form(""),
+    lng: str = Form(""),
     foto: UploadFile = File(None),
-    db: Session = Depends(get_db), current_user=Depends(require_login)
+    db: Session = Depends(get_db),
+    empresa_id: int = Depends(get_current_empresa),
+    current_user=Depends(require_login)
 ):
-    cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+    cliente = db.query(Cliente).filter(
+        Cliente.id == cliente_id, Cliente.empresa_id == empresa_id
+    ).first()
     if not cliente:
         return JSONResponse({"error": "Cliente no encontrado"}, status_code=404)
 
     cliente.nombre = nombre.strip()
-    cliente.telefono = telefono
-    cliente.whatsapp = whatsapp or telefono
-    cliente.direccion = direccion
-    
-    # Validar zona_id si se proporciona
-    if zona_id and zona_id.strip():
-        try:
-            zona_id_int = int(zona_id)
-            cliente.zona_id = zona_id_int
-        except ValueError:
-            return JSONResponse({"error": "ID de zona inválido"}, status_code=400)
-    
+    cliente.telefono = telefono.strip()
+    cliente.whatsapp = whatsapp.strip() or telefono.strip()
+    cliente.direccion = direccion.strip()
     cliente.tipo_cliente = tipo_cliente
-    
-    # Convertir lat/lng de forma segura
+    if zona_id and zona_id.strip():
+        cliente.zona_id = int(zona_id)
     if lat and lat.strip():
-        try:
-            cliente.lat = float(lat)
-        except ValueError:
-            pass
+        cliente.lat = float(lat)
     if lng and lng.strip():
-        try:
-            cliente.lng = float(lng)
-        except ValueError:
-            pass
+        cliente.lng = float(lng)
 
     if foto and foto.filename:
         ext = Path(foto.filename).suffix.lower()
@@ -222,12 +249,19 @@ async def editar_cliente(
             cliente.foto_path = f"fotos/{nombre_archivo}"
 
     db.commit()
-    return JSONResponse({"ok": True, "mensaje": "Cliente actualizado correctamente"})
+    return JSONResponse({"ok": True, "mensaje": "Cliente actualizado"})
 
 
 @router.delete("/{cliente_id}")
-async def eliminar_cliente(cliente_id: int, db: Session = Depends(get_db), current_user=Depends(require_login)):
-    cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+async def eliminar_cliente(
+    cliente_id: int,
+    db: Session = Depends(get_db),
+    empresa_id: int = Depends(get_current_empresa),
+    current_user=Depends(require_login)
+):
+    cliente = db.query(Cliente).filter(
+        Cliente.id == cliente_id, Cliente.empresa_id == empresa_id
+    ).first()
     if not cliente:
         raise HTTPException(status_code=404)
     cliente.activo = False
