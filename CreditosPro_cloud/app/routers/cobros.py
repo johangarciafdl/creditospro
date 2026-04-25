@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Cobros router v2 - BUG FIX: crear cobro retornaba página en blanco"""
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse

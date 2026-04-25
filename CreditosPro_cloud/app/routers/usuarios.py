@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Usuarios router — El admin gestiona cuentas de cobradores
 """

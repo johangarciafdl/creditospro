@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Prestamos router v2 - BUGS CORREGIDOS"""
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import JSONResponse

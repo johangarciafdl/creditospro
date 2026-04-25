@@ -87,9 +87,9 @@ def reporte_cobros_diarios(db: Session, zona_id: int = None, fecha: datetime.dat
     ws.sheet_view.showGridLines = False
 
     # Config
-    from app.database import ConfiguracionApp
-    config = db.query(ConfiguracionApp).first()
-    empresa = config.empresa_nombre if config else "CreditosPro"
+    from app.database import Empresa
+    emp = db.query(Empresa).filter(Empresa.setup_completo == True).first()
+    empresa = emp.nombre if emp else "CreditosPro"
 
     encabezado_reporte(ws, "REGISTRO DE COBROS DIARIOS", f"Fecha: {fecha.strftime('%d/%m/%Y')}", empresa)
 
@@ -159,9 +159,9 @@ def reporte_cartera(db: Session) -> bytes:
     ws.title = "Cartera Activa"
     ws.sheet_view.showGridLines = False
 
-    from app.database import ConfiguracionApp
-    config = db.query(ConfiguracionApp).first()
-    empresa = config.empresa_nombre if config else "CreditosPro"
+    from app.database import Empresa
+    emp = db.query(Empresa).filter(Empresa.setup_completo == True).first()
+    empresa = emp.nombre if emp else "CreditosPro"
 
     encabezado_reporte(ws, "ESTADO DE CARTERA", "Saldos vigentes por cliente", empresa)
     ws.merge_cells("A1:L1")
@@ -245,9 +245,9 @@ def reporte_resumen_zonas(db: Session, fecha_desde: datetime.date, fecha_hasta: 
     ws.title = "Resumen por Zona"
     ws.sheet_view.showGridLines = False
 
-    from app.database import ConfiguracionApp
-    config = db.query(ConfiguracionApp).first()
-    empresa = config.empresa_nombre if config else "CreditosPro"
+    from app.database import Empresa
+    emp = db.query(Empresa).filter(Empresa.setup_completo == True).first()
+    empresa = emp.nombre if emp else "CreditosPro"
 
     encabezado_reporte(
         ws, "RESUMEN POR ZONA",

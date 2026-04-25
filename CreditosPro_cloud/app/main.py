@@ -88,14 +88,12 @@ app.include_router(app_cobrador.router,  prefix="/app",      tags=["App Cobrador
 
 @app.get("/")
 async def root(request: Request, db=Depends(get_db)):
-    # Si no hay empresas configuradas → pantalla de setup
     empresa = db.query(Empresa).filter(Empresa.setup_completo == True).first()
     if not empresa:
         return RedirectResponse(url="/setup", status_code=303)
     return RedirectResponse(url="/dashboard", status_code=303)
 
 
-# ── EXCEPTION HANDLERS ───────────────────────────────────────────────────────
 @app.exception_handler(FastAPIHTTPException)
 async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
     if exc.status_code in (303, 307) and exc.headers.get("Location"):

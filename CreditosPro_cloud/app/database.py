@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 CreditosPro Cloud - Database
 PostgreSQL (Supabase) + Multi-tenant por empresa

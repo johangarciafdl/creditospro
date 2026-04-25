@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Zonas router"""
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import JSONResponse
@@ -5,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from pathlib import Path
 
-from app.auth import require_login
+from app.auth import require_login, get_current_empresa
 from app.database import get_db, Zona, Cliente, Prestamo, Cobro
 
 BASE_DIR = Path(__file__).parent.parent.parent
@@ -14,8 +15,8 @@ templates = Jinja2Templates(directory="templates")
 
 
 @router.get("/")
-async def listar_zonas(request: Request, db: Session = Depends(get_db), current_user=Depends(require_login)):
-    zonas = db.query(Zona).all()
+async def listar_zonas(request: Request, db: Session = Depends(get_db), current_user=Depends(require_login), empresa_id: int = Depends(get_current_empresa)):
+    zonas = db.query(Zona).filter(Zona.empresa_id == empresa_id).all()
     data = []
     for z in zonas:
         clientes = db.query(Cliente).filter(Cliente.zona_id == z.id, Cliente.activo == True).count()
@@ -37,14 +38,24 @@ async def crear_zona(
     codigo: str = Form(...), nombre: str = Form(...), ciudad: str = Form("Medellín"),
     departamento: str = Form("Antioquia"), pais: str = Form("Colombia"),
     cobrador_nombre: str = Form(""), cobrador_tel: str = Form(""), cobrador_moto: str = Form(""),
-    lat: float = Form(None), lng: float = Form(None),
-    db: Session = Depends(get_db)
+    lat: str = Form(""), lng: str = Form(""),
+    db: Session = Depends(get_db),
+    empresa_id: int = Depends(get_current_empresa)
 ):
+    # Convertir strings a float de forma segura
+    try:
+        lat_val = float(lat) if lat and lat.strip() else None
+        lng_val = float(lng) if lng and lng.strip() else None
+    except (ValueError, AttributeError):
+        lat_val = None
+        lng_val = None
+    
     zona = Zona(
+        empresa_id=empresa_id,
         codigo=codigo.upper(), nombre=nombre, ciudad=ciudad,
         departamento=departamento, pais=pais,
         cobrador_nombre=cobrador_nombre or None, cobrador_tel=cobrador_tel or None,
-        cobrador_moto=cobrador_moto or None, lat=lat, lng=lng,
+        cobrador_moto=cobrador_moto or None, lat=lat_val, lng=lng_val,
     )
     db.add(zona)
     db.commit()

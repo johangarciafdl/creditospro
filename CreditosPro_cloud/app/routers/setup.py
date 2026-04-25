@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Setup router — Registro inicial de empresa
 Al primer acceso, la empresa configura su cuenta

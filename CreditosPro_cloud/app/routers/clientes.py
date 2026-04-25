@@ -108,18 +108,44 @@ async def detalle_cliente(request: Request, cliente_id: int, db: Session = Depen
 async def crear_cliente(
     cedula: str = Form(...), nombre: str = Form(...), telefono: str = Form(...),
     whatsapp: str = Form(""), direccion: str = Form(""), barrio: str = Form(""),
-    zona_id: int = Form(...), tipo_cliente: str = Form("Regular"),
+    zona_id: str = Form(""), tipo_cliente: str = Form("Regular"),
     codeudor_nombre: str = Form(""), codeudor_cedula: str = Form(""), codeudor_tel: str = Form(""),
-    lat: float = Form(None), lng: float = Form(None),
+    lat: str = Form(""), lng: str = Form(""),
     foto: UploadFile = File(None),
     db: Session = Depends(get_db), empresa_id: int = Depends(get_current_empresa)
 ):
-    # Validaciones
+    # Validaciones básicas
     cedula = cedula.strip()
     if not cedula or not nombre.strip():
         return JSONResponse({"error": "Cédula y nombre son obligatorios"}, status_code=400)
+    
+    # Validar zona_id
+    if not zona_id or not zona_id.strip():
+        return JSONResponse(
+            {"error": "Debes seleccionar una zona. Si no hay zonas disponibles, créalas primero en la sección Zonas."}, 
+            status_code=400
+        )
+    try:
+        zona_id_int = int(zona_id)
+    except ValueError:
+        return JSONResponse({"error": "ID de zona inválido"}, status_code=400)
+    
+    # Verificar que la zona existe y pertenece a la empresa
+    zona = db.query(Zona).filter(Zona.id == zona_id_int, Zona.empresa_id == empresa_id).first()
+    if not zona:
+        return JSONResponse({"error": "La zona seleccionada no existe o no pertenece a tu empresa"}, status_code=400)
+    
+    # Verificar cliente duplicado
     if db.query(Cliente).filter(Cliente.cedula == cedula, Cliente.empresa_id == empresa_id).first():
         return JSONResponse({"error": f"Ya existe un cliente con la cédula {cedula}"}, status_code=400)
+
+    # Convertir lat/lng de forma segura
+    try:
+        lat_val = float(lat) if lat and lat.strip() else None
+        lng_val = float(lng) if lng and lng.strip() else None
+    except (ValueError, AttributeError):
+        lat_val = None
+        lng_val = None
 
     foto_path = None
     if foto and foto.filename:
@@ -135,11 +161,11 @@ async def crear_cliente(
         empresa_id=empresa_id,
         cedula=cedula, nombre=nombre.strip(), telefono=telefono,
         whatsapp=whatsapp or telefono, direccion=direccion, barrio=barrio,
-        zona_id=zona_id, tipo_cliente=tipo_cliente,
+        zona_id=zona_id_int, tipo_cliente=tipo_cliente,
         codeudor_nombre=codeudor_nombre or None,
         codeudor_cedula=codeudor_cedula or None,
         codeudor_tel=codeudor_tel or None,
-        lat=lat, lng=lng, foto_path=foto_path,
+        lat=lat_val, lng=lng_val, foto_path=foto_path,
     )
     db.add(cliente)
     db.commit()
@@ -151,8 +177,8 @@ async def crear_cliente(
 async def editar_cliente(
     cliente_id: int,
     nombre: str = Form(...), telefono: str = Form(...), whatsapp: str = Form(""),
-    direccion: str = Form(""), zona_id: int = Form(...), tipo_cliente: str = Form("Regular"),
-    lat: float = Form(None), lng: float = Form(None),
+    direccion: str = Form(""), zona_id: str = Form(""), tipo_cliente: str = Form("Regular"),
+    lat: str = Form(""), lng: str = Form(""),
     foto: UploadFile = File(None),
     db: Session = Depends(get_db), current_user=Depends(require_login)
 ):
@@ -164,12 +190,28 @@ async def editar_cliente(
     cliente.telefono = telefono
     cliente.whatsapp = whatsapp or telefono
     cliente.direccion = direccion
-    cliente.zona_id = zona_id
+    
+    # Validar zona_id si se proporciona
+    if zona_id and zona_id.strip():
+        try:
+            zona_id_int = int(zona_id)
+            cliente.zona_id = zona_id_int
+        except ValueError:
+            return JSONResponse({"error": "ID de zona inválido"}, status_code=400)
+    
     cliente.tipo_cliente = tipo_cliente
-    if lat is not None:
-        cliente.lat = lat
-    if lng is not None:
-        cliente.lng = lng
+    
+    # Convertir lat/lng de forma segura
+    if lat and lat.strip():
+        try:
+            cliente.lat = float(lat)
+        except ValueError:
+            pass
+    if lng and lng.strip():
+        try:
+            cliente.lng = float(lng)
+        except ValueError:
+            pass
 
     if foto and foto.filename:
         ext = Path(foto.filename).suffix.lower()

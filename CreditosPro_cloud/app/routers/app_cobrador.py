@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 App Cobrador — Router para la PWA móvil
 Solo accesible para usuarios con rol cobrador
