@@ -77,7 +77,6 @@ async def crear_usuario(
     if db.query(Usuario).filter(Usuario.username == username.strip().lower()).first():
         return JSONResponse({"error": f"El usuario '{username}' ya existe"}, status_code=400)
 
-    initials = "".join(w[0].upper() for w in nombre_completo.split()[:2])
     user = Usuario(
         username=username.strip().lower(),
         nombre_completo=nombre_completo,
@@ -85,7 +84,6 @@ async def crear_usuario(
         password_hash=hash_password(password),
         rol=rol,
         zona_id=zona_id or None,
-        avatar_initials=initials,
     )
     db.add(user)
     db.commit()
@@ -111,7 +109,6 @@ async def editar_usuario(
     user.rol = rol
     user.zona_id = zona_id or None
     user.activo = (activo == "on")
-    user.avatar_initials = "".join(w[0].upper() for w in nombre_completo.split()[:2])
     if nueva_password and len(nueva_password) >= 6:
         user.password_hash = hash_password(nueva_password)
     db.commit()
@@ -150,3 +147,17 @@ async def cambiar_password(
     current_user.password_hash = hash_password(password_nuevo)
     db.commit()
     return JSONResponse({"ok": True, "mensaje": "Contraseña cambiada exitosamente"})
+
+
+@router.get("/debug-hash")
+async def debug_hash(password: str = "admin123"):
+    """Endpoint temporal para generar hash en el servidor"""
+    import bcrypt
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+    verificado = bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+    return {
+        "password": password,
+        "hash": hashed,
+        "verificacion_ok": verificado
+    }
