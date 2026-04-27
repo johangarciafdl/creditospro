@@ -111,7 +111,6 @@ async def editar_usuario(
     user.rol = rol
     user.zona_id = zona_id or None
     user.activo = (activo == "on")
-    user.avatar_initials = "".join(w[0].upper() for w in nombre_completo.split()[:2])
     if nueva_password and len(nueva_password) >= 6:
         user.password_hash = hash_password(nueva_password)
     db.commit()
