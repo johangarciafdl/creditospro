@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Clientes{% endblock %}
 {% block topbar_title %}Clientes{% endblock %}
-{% block topbar_sub %}{{ clientes|length }} registrados{% endblock %}
+{% block topbar_sub %}Busca por nombre o zona{% endblock %}
 {% block topbar_actions %}
   <button class="btn btn-primary" onclick="abrirModalNuevoCliente()">+ Nuevo Cliente</button>
 {% endblock %}
@@ -10,100 +10,42 @@
 <!-- FILTROS -->
 <div class="card mb-3">
   <div class="card-body" style="padding:12px 18px;">
-    <form method="get" action="/clientes" class="flex gap-2">
+    <div class="flex gap-2">
       <div class="input-icon-wrap" style="flex:1;">
-        <span class="input-icon">ðŸ”</span>
-        <input type="text" name="q" value="{{ q }}" placeholder="Buscar por nombre o cédula...">
+        <span class="input-icon">🔍</span>
+        <input type="text" id="inp-buscar" placeholder="Buscar por nombre o cédula..." oninput="buscarDebounce()" autocomplete="off">
       </div>
-      <select name="zona_id" style="width:180px;">
+      <select id="sel-zona" onchange="buscar()" style="width:180px;">
         <option value="">Todas las zonas</option>
         {% for z in zonas %}
-        <option value="{{ z.id }}" {% if zona_id_sel==z.id %}selected{% endif %}>{{ z.nombre }}</option>
+        <option value="{{ z.id }}">{{ z.nombre }}</option>
         {% endfor %}
       </select>
-      <button type="submit" class="btn btn-primary">Buscar</button>
-      {% if q or zona_id_sel %}<a href="/clientes" class="btn btn-ghost">âœ• Limpiar</a>{% endif %}
-    </form>
-  </div>
-</div>
-
-<!-- GRID CLIENTES -->
-<div class="grid-auto">
-  {% for c in clientes %}
-  <div class="card" style="cursor:pointer;" onclick="window.location='/clientes/{{ c.id }}'">
-    <div class="card-body">
-      <div class="flex-between mb-2">
-        <div class="flex-center gap-2">
-          {% if c.foto_path %}
-            <img src="/uploads/{{ c.foto_path }}" alt="foto" style="width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0;">
-          {% else %}
-            <div class="avatar {% if c.tipo_cliente=='Bueno' %}avatar-green{% elif c.tipo_cliente=='Riesgo' %}avatar-red{% else %}avatar-blue{% endif %}" style="width:40px;height:40px;font-size:14px;">
-              {{ c.nombre[:2].upper() }}
-            </div>
-          {% endif %}
-          <div>
-            <div class="fw-600 fs-13">{{ c.nombre }}</div>
-            <div class="fs-11 text-2">CC {{ c.cedula }}</div>
-          </div>
-        </div>
-        {% if c.tipo_cliente=='Bueno' %}<span class="badge badge-green">Bueno</span>
-        {% elif c.tipo_cliente=='Riesgo' %}<span class="badge badge-red">Riesgo</span>
-        {% else %}<span class="badge badge-gray">Regular</span>{% endif %}
-      </div>
-
-      <div class="fs-12 text-2 mb-2">
-        ðŸ“ {{ c.zona }} &nbsp;·&nbsp; ðŸ“ž {{ c.telefono }}
-      </div>
-
-      {% if c.prestamo %}
-      <div style="background:var(--bg);border-radius:6px;padding:8px 10px;margin-bottom:8px;">
-        <div class="flex-between fs-11 text-2 mb-1">
-          <span>Préstamo activo</span>
-          <span class="num fw-600" style="color:var(--text-1);">Cuota {{ c.prestamo.cuotas }}</span>
-        </div>
-        <div class="progress">
-          <div class="progress-fill {% if c.prestamo.estado in ['Atrasado','Mora'] %}red{% elif c.prestamo.estado=='Vencida' %}yellow{% endif %}" style="width:{{ c.prestamo.progreso }}%"></div>
-        </div>
-        <div class="flex-between fs-11 mt-1">
-          <span class="text-2">Saldo:</span>
-          <span class="num text-red fw-600">${{ "{:,.0f}".format(c.prestamo.saldo) }}</span>
-        </div>
-      </div>
-      {% else %}
-      <div class="fs-12 text-3" style="padding:6px 0;">Sin préstamo activo</div>
-      {% endif %}
-
-      <div class="flex gap-1" onclick="event.stopPropagation()">
-        <a href="/clientes/{{ c.id }}" class="btn btn-ghost btn-xs" style="flex:1;justify-content:center;">Ver perfil</a>
-        {% if c.prestamo %}
-        <a href="/cobros?cliente_id={{ c.id }}" class="btn btn-primary btn-xs" style="flex:1;justify-content:center;">Cobrar</a>
-        {% else %}
-        <button class="btn btn-xs btn-primary" style="flex:1;" onclick="abrirModalPrestamo({{ c.id }}, '{{ c.nombre }}')">+ Préstamo</button>
-        {% endif %}
-      </div>
     </div>
   </div>
-  {% else %}
-  <div style="grid-column:1/-1;text-align:center;padding:60px 0;color:var(--text-3);">
-    <div style="font-size:48px;margin-bottom:12px;">ðŸ‘¤</div>
-    <div style="font-size:15px;font-weight:500;">Sin clientes registrados</div>
-    <div style="font-size:13px;margin-top:6px;">Agrega tu primer cliente con el botón de arriba</div>
-  </div>
-  {% endfor %}
 </div>
+
+<!-- ESTADO / RESULTADOS -->
+<div id="estado-busqueda" style="text-align:center;padding:60px 0;color:var(--text-3);">
+  <div style="font-size:48px;margin-bottom:12px;">🔍</div>
+  <div style="font-size:15px;font-weight:500;">Busca un cliente por nombre, cedula o filtra por zona</div>
+</div>
+
+<!-- GRID CLIENTES (se llena via JS) -->
+<div class="grid-auto" id="grid-clientes" style="display:none;"></div>
 
 <!-- MODAL NUEVO CLIENTE -->
 <div class="modal-overlay" id="modal-cliente" onclick="if(event.target===this)this.classList.remove('open')">
 <div class="modal modal-lg" onclick="event.stopPropagation()">
   <div class="modal-header">
     <div class="modal-title">Nuevo Cliente</div>
-    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cliente').classList.remove('open')">âœ•</button>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cliente').classList.remove('open')">✕</button>
   </div>
   <div class="modal-body">
-    <form id="form-cliente" onsubmit="guardarCliente(event)">
+    <form id="form-cliente">
       <div class="grid-2 mb-2">
         <div class="form-group">
-          <label>Cédula / CC *</label>
+          <label>Cedula / CC *</label>
           <input type="text" name="cedula" required placeholder="71525706">
         </div>
         <div class="form-group">
@@ -111,7 +53,7 @@
           <input type="text" name="nombre" required placeholder="Luis Osorio">
         </div>
         <div class="form-group">
-          <label>Teléfono *</label>
+          <label>Telefono *</label>
           <input type="tel" name="telefono" required placeholder="3508845057">
         </div>
         <div class="form-group">
@@ -135,41 +77,13 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Dirección</label>
+          <label>Direccion</label>
           <input type="text" name="direccion" placeholder="CB65A*32F-45.P2">
         </div>
         <div class="form-group">
           <label>Barrio</label>
           <input type="text" name="barrio" placeholder="Castilla">
         </div>
-      </div>
-
-      <details style="margin-bottom:14px;">
-        <summary style="cursor:pointer;font-size:13px;font-weight:500;color:var(--text-2);padding:6px 0;">â–¶ Codeudor (opcional)</summary>
-        <div class="form-grid mt-1">
-          <div class="form-group"><label>Nombre codeudor</label><input type="text" name="codeudor_nombre" placeholder="Nombre..."></div>
-          <div class="form-group"><label>Cédula codeudor</label><input type="text" name="codeudor_cedula" placeholder="CC..."></div>
-          <div class="form-group"><label>Tel. codeudor</label><input type="tel" name="codeudor_tel" placeholder="Celular..."></div>
-        </div>
-      </details>
-
-      <details style="margin-bottom:14px;">
-        <summary style="cursor:pointer;font-size:13px;font-weight:500;color:var(--text-2);padding:6px 0;">â–¶ Ubicación GPS (opcional)</summary>
-        <div class="form-grid mt-1">
-          <div class="form-group"><label>Latitud</label><input type="number" name="lat" step="0.000001" placeholder="6.2918"></div>
-          <div class="form-group"><label>Longitud</label><input type="number" name="lng" step="0.000001" placeholder="-75.5832"></div>
-        </div>
-        <button type="button" class="btn btn-ghost btn-sm mt-1" onclick="obtenerUbicacion()">ðŸ“ Obtener mi ubicación</button>
-      </details>
-
-      <div class="form-group">
-        <label>Foto del cliente</label>
-        <div class="photo-drop" id="photo-drop" onclick="document.getElementById('inp-foto').click()">
-          <div style="font-size:28px;margin-bottom:6px;">ðŸ“·</div>
-          <div>Clic para subir foto</div>
-          <div class="fs-11">JPG, PNG · Máx 5MB</div>
-        </div>
-        <input type="file" name="foto" id="inp-foto" accept="image/*" style="display:none" onchange="previewFoto(this)">
       </div>
     </form>
   </div>
@@ -183,28 +97,100 @@
 
 {% block extra_scripts %}
 <script>
+let debounceTimer = null;
+
+function buscarDebounce() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(buscar, 400);
+}
+
+async function buscar() {
+  const q = document.getElementById('inp-buscar').value.trim();
+  const zona_id = document.getElementById('sel-zona').value;
+
+  if (!q && !zona_id) {
+    document.getElementById('grid-clientes').style.display = 'none';
+    document.getElementById('estado-busqueda').innerHTML = `
+      <div style="font-size:48px;margin-bottom:12px;">🔍</div>
+      <div style="font-size:15px;font-weight:500;">Busca un cliente por nombre, cedula o filtra por zona</div>`;
+    document.getElementById('estado-busqueda').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('estado-busqueda').innerHTML = `
+    <div style="font-size:32px;margin-bottom:8px;">⏳</div>
+    <div style="font-size:14px;">Buscando...</div>`;
+  document.getElementById('estado-busqueda').style.display = 'block';
+  document.getElementById('grid-clientes').style.display = 'none';
+
+  try {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (zona_id) params.set('zona_id', zona_id);
+    const r = await fetch('/clientes/buscar-ajax?' + params.toString());
+    const data = await r.json();
+
+    if (!data.clientes || data.clientes.length === 0) {
+      document.getElementById('estado-busqueda').innerHTML = `
+        <div style="font-size:48px;margin-bottom:12px;">😕</div>
+        <div style="font-size:15px;font-weight:500;">Sin resultados para "${q}"</div>`;
+      return;
+    }
+
+    const grid = document.getElementById('grid-clientes');
+    grid.innerHTML = data.clientes.map(c => {
+      const avatarColor = c.tipo_cliente === 'Bueno' ? 'avatar-green' : c.tipo_cliente === 'Riesgo' ? 'avatar-red' : 'avatar-blue';
+      const badgeColor = c.tipo_cliente === 'Bueno' ? 'badge-green' : c.tipo_cliente === 'Riesgo' ? 'badge-red' : 'badge-gray';
+      const prestamoHtml = c.prestamo ? `
+        <div style="background:var(--bg);border-radius:6px;padding:8px 10px;margin-bottom:8px;">
+          <div class="flex-between fs-11 text-2 mb-1">
+            <span>Prestamo activo</span>
+            <span class="num fw-600">${c.prestamo.num_cuotas} cuotas</span>
+          </div>
+          <div class="flex-between fs-11 mt-1">
+            <span class="text-2">Saldo:</span>
+            <span class="num text-red fw-600">$${Number(c.prestamo.saldo).toLocaleString('es-CO')}</span>
+          </div>
+        </div>
+        <div class="flex gap-1">
+          <a href="/clientes/${c.id}" class="btn btn-ghost btn-xs" style="flex:1;justify-content:center;">Ver perfil</a>
+          <a href="/cobros?cliente_id=${c.id}" class="btn btn-primary btn-xs" style="flex:1;justify-content:center;">Cobrar</a>
+        </div>` : `
+        <div class="fs-12 text-3" style="padding:6px 0;">Sin prestamo activo</div>
+        <div class="flex gap-1">
+          <a href="/clientes/${c.id}" class="btn btn-ghost btn-xs" style="flex:1;justify-content:center;">Ver perfil</a>
+        </div>`;
+
+      return `
+      <div class="card" style="cursor:pointer;" onclick="window.location='/clientes/${c.id}'">
+        <div class="card-body">
+          <div class="flex-between mb-2">
+            <div class="flex-center gap-2">
+              <div class="avatar ${avatarColor}" style="width:40px;height:40px;font-size:14px;">${c.nombre.substring(0,2).toUpperCase()}</div>
+              <div>
+                <div class="fw-600 fs-13">${c.nombre}</div>
+                <div class="fs-11 text-2">CC ${c.cedula}</div>
+              </div>
+            </div>
+            <span class="badge ${badgeColor}">${c.tipo_cliente || 'Regular'}</span>
+          </div>
+          <div class="fs-12 text-2 mb-2">📍 ${c.zona} &nbsp;·&nbsp; 📞 ${c.telefono}</div>
+          ${prestamoHtml}
+        </div>
+      </div>`;
+    }).join('');
+
+    document.getElementById('estado-busqueda').style.display = 'none';
+    grid.style.display = 'grid';
+  } catch(e) {
+    document.getElementById('estado-busqueda').innerHTML = `
+      <div style="font-size:48px;margin-bottom:12px;">❌</div>
+      <div style="font-size:15px;">Error de conexion. Intenta de nuevo.</div>`;
+  }
+}
+
 function abrirModalNuevoCliente() {
   document.getElementById('modal-cliente').classList.add('open');
-}
-
-function previewFoto(inp) {
-  if (inp.files && inp.files[0]) {
-    const reader = new FileReader();
-    reader.onload = e => {
-      document.getElementById('photo-drop').innerHTML = `<img src="${e.target.result}" style="width:80px;height:80px;border-radius:8px;object-fit:cover;">`;
-    };
-    reader.readAsDataURL(inp.files[0]);
-  }
-}
-
-function obtenerUbicacion() {
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(pos => {
-      document.querySelector('[name=lat]').value = pos.coords.latitude.toFixed(6);
-      document.querySelector('[name=lng]').value = pos.coords.longitude.toFixed(6);
-      toast('Ubicación obtenida âœ“');
-    }, () => toast('No se pudo obtener ubicación', 'error'));
-  }
 }
 
 async function guardarCliente() {
@@ -215,14 +201,14 @@ async function guardarCliente() {
     const data = await r.json();
     if (data.ok) {
       toast('Cliente creado exitosamente');
-      setTimeout(() => location.reload(), 1000);
+      document.getElementById('modal-cliente').classList.remove('open');
+      form.reset();
     } else {
       toast(data.error || 'Error al guardar', 'error');
     }
   } catch(e) {
-    toast('Error de conexión', 'error');
+    toast('Error de conexion', 'error');
   }
 }
 </script>
 {% endblock %}
-

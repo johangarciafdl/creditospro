@@ -19,30 +19,44 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 @router.get("/")
 async def listar_clientes(
     request: Request,
-    q: str = "",
-    zona_id: int = None,
-    page: int = 1,
     db: Session = Depends(get_db),
     empresa_id: int = Depends(get_current_empresa),
     current_user=Depends(require_login)
 ):
-    POR_PAGINA = 50
+    # Solo carga las zonas (13 registros) — instantáneo
     zonas = db.query(Zona).filter(Zona.empresa_id == empresa_id).all()
-    zonas_dict = {z.id: z.nombre for z in zonas}
+    return templates.TemplateResponse("clientes.html", {
+        "request": request, "page": "clientes",
+        "clientes": [], "zonas": zonas,
+        "q": "", "zona_id_sel": None,
+        "current_user": current_user,
+        "total": 0, "total_clientes": 0,
+        "buscando": False,
+    })
 
-    # Query base
+
+@router.get("/buscar-ajax")
+async def buscar_clientes_ajax(
+    request: Request,
+    q: str = "",
+    zona_id: int = None,
+    db: Session = Depends(get_db),
+    empresa_id: int = Depends(get_current_empresa),
+    current_user=Depends(require_login)
+):
+    """Búsqueda AJAX — retorna JSON con resultados"""
+    if not q and not zona_id:
+        return JSONResponse({"clientes": [], "total": 0})
+
     query = db.query(Cliente).filter(Cliente.activo == True, Cliente.empresa_id == empresa_id)
     if q:
         query = query.filter((Cliente.nombre.ilike(f"%{q}%")) | (Cliente.cedula.ilike(f"%{q}%")))
     if zona_id:
         query = query.filter(Cliente.zona_id == zona_id)
 
-    total = query.count()
-    total_paginas = max(1, (total + POR_PAGINA - 1) // POR_PAGINA)
-    page = max(1, min(page, total_paginas))
-    clientes = query.order_by(Cliente.nombre).offset((page - 1) * POR_PAGINA).limit(POR_PAGINA).all()
+    clientes = query.order_by(Cliente.nombre).limit(50).all()
+    zonas_dict = {z.id: z.nombre for z in db.query(Zona).filter(Zona.empresa_id == empresa_id).all()}
 
-    # Un solo query para préstamos activos de estos clientes
     ids = [c.id for c in clientes]
     prestamos_activos = {}
     if ids:
@@ -54,32 +68,25 @@ async def listar_clientes(
             if p.cliente_id not in prestamos_activos:
                 prestamos_activos[p.cliente_id] = p
 
-    clientes_data = []
+    result = []
     for c in clientes:
         p = prestamos_activos.get(c.id)
-        clientes_data.append({
+        result.append({
             "id": c.id, "cedula": c.cedula, "nombre": c.nombre,
-            "telefono": c.telefono, "whatsapp": c.whatsapp,
-            "direccion": c.direccion,
+            "telefono": c.telefono or "",
             "zona": zonas_dict.get(c.zona_id, "—"),
-            "zona_id": c.zona_id, "tipo_cliente": c.tipo_cliente,
-            "foto_path": c.foto_path, "activo": c.activo,
+            "zona_id": c.zona_id,
+            "tipo_cliente": c.tipo_cliente or "Regular",
+            "foto_path": c.foto_path or "",
             "prestamo": {
-                "id": p.id,
-                "capital": p.capital,
-                "total": p.total_pagar or p.capital,
-                "cuotas": f"0/{p.num_cuotas}",
+                "id": p.id, "capital": p.capital,
                 "saldo": p.saldo_pendiente or p.capital,
                 "estado": p.estado,
+                "num_cuotas": p.num_cuotas,
             } if p else None,
         })
 
-    return templates.TemplateResponse("clientes.html", {
-        "request": request, "page_name": "clientes",
-        "clientes": clientes_data, "zonas": zonas,
-        "q": q, "zona_id_sel": zona_id,
-        "current_user": current_user,
-        "page": page, "total_paginas": total_paginas, "total": total,
+    return JSONResponse({"clientes": result, "total": len(result)})
     })
 
 
