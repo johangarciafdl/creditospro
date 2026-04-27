@@ -87,8 +87,6 @@ async def buscar_clientes_ajax(
         })
 
     return JSONResponse({"clientes": result, "total": len(result)})
-    })
-
 
 @router.get("/buscar")
 async def buscar_clientes_json(
