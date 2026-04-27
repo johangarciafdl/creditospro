@@ -69,7 +69,7 @@ async def listar_usuarios(request: Request, db: Session = Depends(get_db), curre
 async def crear_usuario(
     username: str = Form(...), nombre_completo: str = Form(...),
     email: str = Form(""), password: str = Form(...),
-    rol: str = Form("cobrador"), zona_id: int = Form(None),
+    rol: str = Form("cobrador"), zona_id: str = Form(""),
     db: Session = Depends(get_db), current_user: Usuario = Depends(require_admin)
 ):
     if len(password) < 6:
@@ -83,7 +83,7 @@ async def crear_usuario(
         email=email or None,
         password_hash=hash_password(password),
         rol=rol,
-        zona_id=zona_id or None,
+        zona_id=int(zona_id) if zona_id and zona_id.strip().isdigit() else None,
     )
     db.add(user)
     db.commit()
@@ -94,7 +94,7 @@ async def crear_usuario(
 async def editar_usuario(
     user_id: int,
     nombre_completo: str = Form(...), email: str = Form(""),
-    rol: str = Form("cobrador"), zona_id: int = Form(None),
+    rol: str = Form("cobrador"), zona_id: str = Form(""),
     nueva_password: str = Form(""), activo: str = Form("on"),
     db: Session = Depends(get_db), current_user: Usuario = Depends(require_admin)
 ):
@@ -107,7 +107,7 @@ async def editar_usuario(
     user.nombre_completo = nombre_completo
     user.email = email or None
     user.rol = rol
-    user.zona_id = zona_id or None
+    user.zona_id = int(zona_id) if zona_id and zona_id.strip().isdigit() else None
     user.activo = (activo == "on")
     if nueva_password and len(nueva_password) >= 6:
         user.password_hash = hash_password(nueva_password)
