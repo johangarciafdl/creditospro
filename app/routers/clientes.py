@@ -21,54 +21,65 @@ async def listar_clientes(
     request: Request,
     q: str = "",
     zona_id: int = None,
+    page: int = 1,
     db: Session = Depends(get_db),
     empresa_id: int = Depends(get_current_empresa),
     current_user=Depends(require_login)
 ):
+    POR_PAGINA = 50
+    zonas = db.query(Zona).filter(Zona.empresa_id == empresa_id).all()
+    zonas_dict = {z.id: z.nombre for z in zonas}
+
+    # Query base
     query = db.query(Cliente).filter(Cliente.activo == True, Cliente.empresa_id == empresa_id)
     if q:
-        query = query.filter((Cliente.nombre.contains(q)) | (Cliente.cedula.contains(q)))
+        query = query.filter((Cliente.nombre.ilike(f"%{q}%")) | (Cliente.cedula.ilike(f"%{q}%")))
     if zona_id:
         query = query.filter(Cliente.zona_id == zona_id)
-    clientes = query.order_by(Cliente.nombre).all()
-    zonas = db.query(Zona).filter(Zona.empresa_id == empresa_id).all()
+
+    total = query.count()
+    total_paginas = max(1, (total + POR_PAGINA - 1) // POR_PAGINA)
+    page = max(1, min(page, total_paginas))
+    clientes = query.order_by(Cliente.nombre).offset((page - 1) * POR_PAGINA).limit(POR_PAGINA).all()
+
+    # Un solo query para préstamos activos de estos clientes
+    ids = [c.id for c in clientes]
+    prestamos_activos = {}
+    if ids:
+        for p in db.query(Prestamo).filter(
+            Prestamo.cliente_id.in_(ids),
+            Prestamo.empresa_id == empresa_id,
+            Prestamo.estado.in_(["activo", "Activo", "atrasado", "Atrasado"])
+        ).all():
+            if p.cliente_id not in prestamos_activos:
+                prestamos_activos[p.cliente_id] = p
 
     clientes_data = []
     for c in clientes:
-        prestamo_activo = db.query(Prestamo).filter(
-            Prestamo.cliente_id == c.id,
-            Prestamo.estado.in_(["Activo", "Atrasado"])
-        ).first()
-        zona = db.query(Zona).filter(Zona.id == c.zona_id).first()
-        saldo = 0
-        cuota_actual = None
-        if prestamo_activo:
-            pagado = sum(cu.valor_pagado or 0 for cu in prestamo_activo.cuotas)
-            saldo = max(0, prestamo_activo.total_pagar - pagado)
-            cuota_actual = next((
-                cu for cu in sorted(prestamo_activo.cuotas, key=lambda x: x.numero)
-                if cu.estado in ["Pendiente", "Vencida"]
-            ), None)
+        p = prestamos_activos.get(c.id)
         clientes_data.append({
             "id": c.id, "cedula": c.cedula, "nombre": c.nombre,
             "telefono": c.telefono, "whatsapp": c.whatsapp,
-            "direccion": c.direccion, "zona": zona.nombre if zona else "—",
+            "direccion": c.direccion,
+            "zona": zonas_dict.get(c.zona_id, "—"),
             "zona_id": c.zona_id, "tipo_cliente": c.tipo_cliente,
             "foto_path": c.foto_path, "activo": c.activo,
             "prestamo": {
-                "id": prestamo_activo.id,
-                "capital": prestamo_activo.capital,
-                "total": prestamo_activo.total_pagar,
-                "cuotas": f"{(cuota_actual.numero if cuota_actual else 0)}/{prestamo_activo.num_cuotas}",
-                "saldo": saldo, "estado": prestamo_activo.estado,
-            } if prestamo_activo else None,
+                "id": p.id,
+                "capital": p.capital,
+                "total": p.total_pagar or p.capital,
+                "cuotas": f"0/{p.num_cuotas}",
+                "saldo": p.saldo_pendiente or p.capital,
+                "estado": p.estado,
+            } if p else None,
         })
 
     return templates.TemplateResponse("clientes.html", {
-        "request": request, "page": "clientes",
+        "request": request, "page_name": "clientes",
         "clientes": clientes_data, "zonas": zonas,
         "q": q, "zona_id_sel": zona_id,
         "current_user": current_user,
+        "page": page, "total_paginas": total_paginas, "total": total,
     })
 
 

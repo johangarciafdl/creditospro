@@ -22,36 +22,37 @@ async def dashboard(request: Request, db: Session = Depends(get_db), current_use
     cobros_hoy = db.query(func.sum(Cobro.valor_cobrado)).filter(Cobro.fecha == hoy).scalar() or 0
     prestamos_activos = db.query(Prestamo).filter(Prestamo.estado == "Activo").count()
 
-    zonas = db.query(Zona).all()
-    resumen_zonas = []
-    for z in zonas:
-        cobrado_zona = db.query(func.sum(Cobro.valor_cobrado)).filter(
-            Cobro.zona_id == z.id, Cobro.fecha == hoy
-        ).scalar() or 0
-        resumen_zonas.append({
-            "nombre": z.nombre, "cobrador": z.cobrador_nombre or "—",
-            "cobrado": cobrado_zona, "activa": z.activa,
-        })
+    zonas = db.query(Zona).filter(Zona.empresa_id == current_user.empresa_id).all()
+    zonas_dict = {z.id: z for z in zonas}
 
+    # Cobros de hoy por zona en un solo query
+    cobros_por_zona = dict(
+        db.query(Cobro.zona_id, func.sum(Cobro.valor_cobrado))
+        .filter(Cobro.fecha == hoy, Cobro.empresa_id == current_user.empresa_id)
+        .group_by(Cobro.zona_id).all()
+    )
+    resumen_zonas = [{
+        "nombre": z.nombre, "cobrador": z.cobrador_nombre or "—",
+        "cobrado": cobros_por_zona.get(z.id, 0), "activa": z.activa,
+    } for z in zonas]
+
+    # Últimos préstamos activos (sin cargar cuotas)
     atrasados = (db.query(Prestamo, Cliente).join(Cliente)
-        .filter(Prestamo.estado.in_(["Atrasado", "Mora", "Activo"])).limit(10).all())
+        .filter(Prestamo.empresa_id == current_user.empresa_id,
+                Prestamo.estado.in_(["atrasado", "activo", "Atrasado", "Activo", "Mora"]))
+        .limit(10).all())
 
     atrasados_list = []
     for p, c in atrasados:
-        pagado = sum(cu.valor_pagado or 0 for cu in p.cuotas)
-        saldo = max(0, p.total_pagar - pagado)
-        cuota_actual = next(
-            (cu for cu in sorted(p.cuotas, key=lambda x: x.numero) if cu.estado in ["Pendiente", "Vencida"]), None)
-        zona = db.query(Zona).filter(Zona.id == p.zona_id).first()
+        zona_obj = zonas_dict.get(p.zona_id)
         atrasados_list.append({
             "cliente": c.nombre, "cedula": c.cedula,
-            "capital": p.capital, "interes": p.interes_total,
-            "cuota_valor": p.valor_cuota,
-            "zona": zona.nombre if zona else "—",
-            "cuota_num": cuota_actual.numero if cuota_actual else "—",
-            "total_cuotas": p.num_cuotas,
-            "estado": cuota_actual.estado if cuota_actual else "OK",
-            "saldo": saldo, "tipo_cliente": c.tipo_cliente,
+            "capital": p.capital, "interes": p.interes_total or 0,
+            "cuota_valor": p.valor_cuota or 0,
+            "zona": zona_obj.nombre if zona_obj else "—",
+            "cuota_num": "—", "total_cuotas": p.num_cuotas,
+            "estado": p.estado, "saldo": p.saldo_pendiente or p.capital,
+            "tipo_cliente": c.tipo_cliente,
         })
 
     return templates.TemplateResponse("dashboard.html", {
