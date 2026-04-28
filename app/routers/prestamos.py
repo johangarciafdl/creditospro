@@ -32,9 +32,9 @@ async def listar_prestamos(
     data = []
     for p in prestamos:
         cliente = p.cliente
-        zona = db.query(Zona).filter(Zona.id == p.zona_id).first()
+        zona = db.query(Zona).filter(Zona.id == p.zona_id).first() if p.zona_id else None
         pagado = sum(c.valor_pagado or 0 for c in p.cuotas)
-        saldo = max(0, p.total_pagar - pagado)
+        saldo = max(0, (p.total_pagar or p.capital or 0) - pagado)
         vencidas = sum(1 for c in p.cuotas if c.estado == "Vencida")
         prox_cuota = next((
             c for c in sorted(p.cuotas, key=lambda x: x.numero)
@@ -42,7 +42,7 @@ async def listar_prestamos(
         ), None)
         data.append({
             "id": p.id, "cliente": cliente.nombre, "cedula": cliente.cedula,
-            "capital": p.capital, "total": p.total_pagar, "saldo": saldo, "pagado": pagado,
+            "capital": p.capital, "total": p.total_pagar or p.capital or 0, "saldo": saldo, "pagado": pagado,
             "num_cuotas": p.num_cuotas, "valor_cuota": p.valor_cuota,
             "cuota_actual": prox_cuota.numero if prox_cuota else "—",
             "vencidas": vencidas, "estado": p.estado,
