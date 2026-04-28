@@ -80,13 +80,15 @@ async def buscar_clientes_ajax(
             "foto_path": c.foto_path or "",
             "prestamo": {
                 "id": p.id, "capital": p.capital,
-                "saldo": p.saldo_pendiente or p.capital,
+                "saldo": p.total_pagar or p.capital,
                 "estado": p.estado,
                 "num_cuotas": p.num_cuotas,
             } if p else None,
         })
 
     return JSONResponse({"clientes": result, "total": len(result)})
+    
+
 
 @router.get("/buscar")
 async def buscar_clientes_json(

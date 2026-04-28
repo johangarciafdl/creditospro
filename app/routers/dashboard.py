@@ -51,7 +51,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db), current_use
             "cuota_valor": p.valor_cuota or 0,
             "zona": zona_obj.nombre if zona_obj else "—",
             "cuota_num": "—", "total_cuotas": p.num_cuotas,
-            "estado": p.estado, "saldo": p.saldo_pendiente or p.capital,
+            "estado": p.estado, "saldo": p.total_pagar or p.capital,
             "tipo_cliente": c.tipo_cliente,
         })
 
