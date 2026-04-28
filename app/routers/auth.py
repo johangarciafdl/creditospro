@@ -77,13 +77,15 @@ async def crear_usuario(
     if db.query(Usuario).filter(Usuario.username == username.strip().lower()).first():
         return JSONResponse({"error": f"El usuario '{username}' ya existe"}, status_code=400)
 
+    zona_id_int = int(zona_id) if zona_id and zona_id.strip().isdigit() else None
     user = Usuario(
+        empresa_id=current_user.empresa_id,
         username=username.strip().lower(),
         nombre_completo=nombre_completo,
         email=email or None,
         password_hash=hash_password(password),
         rol=rol,
-        zona_id=int(zona_id) if zona_id and zona_id.strip().isdigit() else None,
+        zona_id=zona_id_int,
     )
     db.add(user)
     db.commit()
