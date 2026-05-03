@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Bot WhatsApp{% endblock %}
+{% block topbar_title %}Bot WhatsApp{% endblock %}
+{% block topbar_sub %}Notificaciones automáticas de cobro{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-primary" onclick="enviarAhora()" id="btn-enviar">▶ Enviar recordatorios ahora</button>
+{% endblock %}
+
+{% block content %}
+<!-- STATS -->
+<div class="stats-grid mb-3" style="grid-template-columns:repeat(3,1fr);">
+  <div class="stat-card green">
+    <div class="stat-label">Mensajes enviados</div>
+    <div class="stat-val green">{{ total_enviados }}</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-label">Errores de envío</div>
+    <div class="stat-val red">{{ total_errores }}</div>
+  </div>
+  <div class="stat-card gray">
+    <div class="stat-label">Cuotas próx. a vencer</div>
+    <div class="stat-val">{{ total_pendientes }}</div>
+    <div class="stat-sub">Con recordatorio pendiente</div>
+  </div>
+</div>
+
+{% if not config.wp_activo %}
+<div class="alert alert-warn">
+  ⚠ El bot WhatsApp está <strong>desactivado</strong>. Configura las credenciales y actívalo más abajo. Los mensajes se registran pero no se envían.
+</div>
+{% else %}
+<div class="alert alert-success">
+  ✓ Bot WhatsApp <strong>activo</strong>. Los recordatorios se envían automáticamente cada día a las 8:00 AM.
+</div>
+{% endif %}
+
+<div class="grid-2 mb-3">
+  <!-- CUOTAS PRÓXIMAS -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📅 Próximas a Vencer</div>
+      <span class="badge badge-yellow">{{ proximas|length }} cuotas</span>
+    </div>
+    <div class="card-body-flush table-wrap">
+      <table>
+        <thead><tr><th>Cliente</th><th>Teléfono</th><th>Cuota</th><th>Valor</th><th>Vence</th><th>Días</th></tr></thead>
+        <tbody>
+          {% for p in proximas %}
+          <tr>
+            <td class="fw-600 fs-13">{{ p.cliente }}</td>
+            <td class="fs-12 text-2">{{ p.tel }}</td>
+            <td class="num fs-12">{{ p.num_cuota }}</td>
+            <td class="num">${{ "{:,.0f}".format(p.valor) }}</td>
+            <td class="fs-12">{{ p.vencimiento }}</td>
+            <td>
+              {% if p.dias == 0 %}<span class="badge badge-red">Hoy</span>
+              {% elif p.dias == 1 %}<span class="badge badge-yellow">Mañana</span>
+              {% else %}<span class="badge badge-blue">{{ p.dias }} días</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:20px;">✓ Sin cuotas próximas a vencer</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- HISTORIAL -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">📋 Historial de Envíos</div></div>
+    <div class="card-body-flush" style="max-height:320px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>Cliente</th><th>Tipo</th><th>Estado</th><th>Hora</th></tr></thead>
+        <tbody>
+          {% for n in notifs %}
+          <tr>
+            <td class="fs-12 fw-600">{{ n.cliente }}</td>
+            <td>
+              {% if n.tipo=='Recordatorio' %}<span class="badge badge-blue">{{ n.tipo }}</span>
+              {% elif n.tipo=='Vencimiento' %}<span class="badge badge-red">{{ n.tipo }}</span>
+              {% else %}<span class="badge badge-gray">{{ n.tipo }}</span>{% endif %}
+            </td>
+            <td>
+              {% if n.estado=='Enviado' %}<span class="badge badge-green">✓ Enviado</span>
+              {% elif n.estado=='Error' %}<span class="badge badge-red">✕ Error</span>
+              {% else %}<span class="badge badge-gray">Pendiente</span>{% endif %}
+            </td>
+            <td class="fs-11 text-2">{{ n.enviado }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIGURACIÓN -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">⚙ Configuración del Bot</div>
+    <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank" class="btn btn-ghost btn-sm">📖 Guía Meta API</a>
+  </div>
+  <div class="card-body">
+    <div class="alert alert-info" style="margin-bottom:16px;">
+      💡 Usa la <strong>Meta WhatsApp Cloud API</strong> (gratuita hasta 1,000 mensajes/mes). Crea una app en <strong>developers.facebook.com</strong>, activa WhatsApp Business y obtén tu Token + Phone ID.
+      <br>Alternativa fácil: <strong>CallMeBot</strong> — envía un mensaje de WhatsApp a +34 644 38 91 07 con "I allow callmebot to send me messages" para obtener tu API key gratuita.
+    </div>
+    <form id="form-wp" onsubmit="guardarConfigWP(event)">
+      <div class="form-grid-3 mb-2">
+        <div class="form-group">
+          <label>Token de acceso (Meta)</label>
+          <input type="password" name="wp_token" value="{{ config.wp_token or '' }}" placeholder="EAAxxxx...">
+        </div>
+        <div class="form-group">
+          <label>Phone Number ID (Meta)</label>
+          <input type="text" name="wp_phone_id" value="{{ config.wp_phone_id or '' }}" placeholder="123456789">
+        </div>
+        <div class="form-group">
+          <label>API Key (CallMeBot alternativa)</label>
+          <input type="text" name="wp_api_key" value="{{ config.wp_api_key or '' }}" placeholder="123456">
+        </div>
+        <div class="form-group">
+          <label>Días de aviso antes de vencimiento</label>
+          <input type="number" name="dias_aviso" value="{{ config.dias_aviso_vencimiento }}" min="1" max="7">
+        </div>
+        <div class="form-group" style="justify-content:flex-end;padding-top:20px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" name="wp_activo" {% if config.wp_activo %}checked{% endif %}> Activar bot WhatsApp
+          </label>
+        </div>
+      </div>
+
+      <div class="form-grid mb-2">
+        <div class="form-group">
+          <label>Mensaje recordatorio (usa {nombre}, {num_cuota}, {valor}, {fecha}, {empresa})</label>
+          <textarea name="wp_mensaje_recordatorio" rows="3">{{ config.wp_mensaje_recordatorio }}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Mensaje cuota vencida</label>
+          <textarea name="wp_mensaje_vencida" rows="3">{{ config.wp_mensaje_vencida }}</textarea>
+        </div>
+      </div>
+
+      <div class="flex gap-2">
+        <button type="submit" class="btn btn-primary">Guardar configuración</button>
+        <button type="button" class="btn btn-ghost" onclick="probarMensaje()">📱 Enviar mensaje de prueba</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function enviarAhora() {
+  const btn = document.getElementById('btn-enviar');
+  btn.textContent = '⏳ Enviando...'; btn.disabled = true;
+  try {
+    const r = await fetch('/whatsapp/enviar-ahora', { method:'POST' });
+    const d = await r.json();
+    toast(`Enviados: ${d.enviados} · Errores: ${d.errores}`);
+    setTimeout(() => location.reload(), 1500);
+  } catch(e) { toast('Error', 'error'); }
+  btn.textContent = '▶ Enviar recordatorios ahora'; btn.disabled = false;
+}
+
+async function guardarConfigWP(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const r = await fetch('/whatsapp/configurar', { method:'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) toast(d.mensaje);
+  else toast('Error al guardar', 'error');
+}
+
+function probarMensaje() {
+  abrirModal('Mensaje de prueba',
+    `<div class="form-group"><label>ID del cliente</label><input type="number" id="test-cliente-id" placeholder="1"></div>
+     <div class="form-group mt-1"><label>Mensaje</label><textarea id="test-msg" rows="3">Hola, este es un mensaje de prueba desde CreditosPro. Ignore este mensaje.</textarea></div>`,
+    `<button class="btn" onclick="cerrarModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="enviarPrueba()">Enviar</button>`
+  );
+}
+
+async function enviarPrueba() {
+  const fd = new FormData();
+  fd.append('cliente_id', document.getElementById('test-cliente-id').value);
+  fd.append('mensaje', document.getElementById('test-msg').value);
+  const r = await fetch('/whatsapp/enviar-manual', { method:'POST', body: fd });
+  const d = await r.json();
+  toast(d.ok ? 'Enviado ✓' : 'Error: ' + d.mensaje, d.ok ? 'success' : 'error');
+  cerrarModal();
+}
+</script>
+{% endblock %}

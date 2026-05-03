@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Reportes{% endblock %}
+{% block topbar_title %}Reportes Excel{% endblock %}
+{% block topbar_sub %}Exporta datos a Microsoft 365{% endblock %}
+
+{% block content %}
+<div class="alert alert-success">
+  ✓ Los reportes se generan en formato <strong>.xlsx</strong> compatible con Microsoft Excel, Google Sheets y Office 365.
+</div>
+
+<div class="grid-2 mb-3">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Filtros</div></div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Fecha desde</label>
+          <input type="date" id="f-desde" value="{{ desde }}">
+        </div>
+        <div class="form-group">
+          <label>Fecha hasta</label>
+          <input type="date" id="f-hasta" value="{{ hasta }}">
+        </div>
+        <div class="form-group">
+          <label>Zona</label>
+          <select id="f-zona">
+            <option value="">Todas las zonas</option>
+            {% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Fecha cobro diario</label>
+          <input type="date" id="f-fecha-cobro" value="{{ hoy }}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">Exportaciones Rápidas</div></div>
+    <div class="card-body">
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="btn btn-excel" onclick="descargar('cobros-diarios')">
+          ⬇ Cobros del día (hoy)
+        </button>
+        <button class="btn btn-excel" onclick="descargar('cartera')">
+          ⬇ Cartera activa (saldos)
+        </button>
+        <button class="btn btn-excel" onclick="descargar('resumen-zonas')">
+          ⬇ Resumen por zona (período)
+        </button>
+        <button class="btn btn-excel" onclick="descargar('cobros-diarios', true)">
+          ⬇ Cobros filtrados por zona/fecha
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><div class="card-title">Reportes Disponibles</div></div>
+  <div class="card-body-flush">
+    <table>
+      <thead><tr><th>Reporte</th><th>Descripción</th><th>Filtros</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="fw-600">Cobros diarios</td>
+          <td class="text-2 fs-12">Todos los cobros registrados en una fecha</td>
+          <td class="fs-12 text-2">Fecha, Zona</td>
+          <td><button class="btn btn-excel btn-sm" onclick="descargar('cobros-diarios', true)">⬇ Descargar</button></td>
+        </tr>
+        <tr>
+          <td class="fw-600">Cartera activa</td>
+          <td class="text-2 fs-12">Saldos vigentes de todos los préstamos</td>
+          <td class="fs-12 text-2">—</td>
+          <td><button class="btn btn-excel btn-sm" onclick="descargar('cartera')">⬇ Descargar</button></td>
+        </tr>
+        <tr>
+          <td class="fw-600">Resumen por zona</td>
+          <td class="text-2 fs-12">Capital, recaudos, saldo y clientes por zona</td>
+          <td class="fs-12 text-2">Período</td>
+          <td><button class="btn btn-excel btn-sm" onclick="descargar('resumen-zonas', true)">⬇ Descargar</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function descargar(tipo, usarFiltros=false) {
+  let url = `/reportes/${tipo}`;
+  if (usarFiltros) {
+    const params = new URLSearchParams();
+    const zona = document.getElementById('f-zona').value;
+    const desde = document.getElementById('f-desde').value;
+    const hasta = document.getElementById('f-hasta').value;
+    const fechaCobro = document.getElementById('f-fecha-cobro').value;
+    if (zona) params.append('zona_id', zona);
+    if (tipo === 'cobros-diarios' && fechaCobro) params.append('fecha', fechaCobro);
+    if (tipo === 'resumen-zonas') { if (desde) params.append('fecha_desde', desde); if (hasta) params.append('fecha_hasta', hasta); }
+    if ([...params].length) url += '?' + params.toString();
+  }
+  toast('Generando Excel... ⬇');
+  window.location.href = url;
+}
+</script>
+{% endblock %}

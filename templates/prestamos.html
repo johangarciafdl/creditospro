@@ -1,0 +1,154 @@
+﻿{% extends "base.html" %}
+{% block title %}PrÃ©stamos{% endblock %}
+{% block topbar_title %}PrÃ©stamos{% endblock %}
+{% block topbar_sub %}{{ prestamos|length }} registros{% endblock %}
+{% block topbar_actions %}
+  <a href="/reportes/cartera" class="btn btn-excel">â¬‡ Excel Cartera</a>
+  <button class="btn btn-primary" onclick="document.getElementById('modal-prestamo').classList.add('open')">+ Nuevo PrÃ©stamo</button>
+{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body" style="padding:10px 16px;">
+    <form method="get" class="flex gap-2 flex-wrap">
+      <select name="estado" style="width:160px;">
+        <option value="">Todos los estados</option>
+        <option {% if estado_sel=='Activo' %}selected{% endif %} value="Activo">Activo</option>
+        <option {% if estado_sel=='Atrasado' %}selected{% endif %} value="Atrasado">Atrasado</option>
+        <option {% if estado_sel=='Cancelado' %}selected{% endif %} value="Cancelado">Cancelado</option>
+      </select>
+      <select name="zona_id" style="width:160px;">
+        <option value="">Todas las zonas</option>
+        {% for z in zonas %}<option value="{{ z.id }}" {% if zona_id_sel==z.id %}selected{% endif %}>{{ z.nombre }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn btn-primary btn-sm">Filtrar</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><div class="card-title">Lista de PrÃ©stamos</div></div>
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead>
+        <tr><th>Cliente</th><th>Capital</th><th>Total</th><th>Saldo</th><th>Cuota</th><th>Vencidas</th><th>Zona</th><th>Inicio</th><th>Estado</th></tr>
+      </thead>
+      <tbody>
+        {% for p in prestamos %}
+        <tr onclick="window.location='/clientes/{{ loop.index }}'" style="cursor:pointer;">
+          <td>
+            <div class="fw-600 fs-13">{{ p.cliente }}</div>
+            <div class="fs-11 text-2">{{ p.cedula }}</div>
+          </td>
+          <td class="num">${{ "{:,.0f}".format(p.capital) }}</td>
+          <td class="num">${{ "{:,.0f}".format(p.total) }}</td>
+          <td class="num {% if p.saldo > 0 %}text-red fw-600{% else %}text-green{% endif %}">${{ "{:,.0f}".format(p.saldo) }}</td>
+          <td class="num fs-12">{{ p.cuota_actual }}/{{ p.num_cuotas }}</td>
+          <td>{% if p.vencidas > 0 %}<span class="badge badge-red">{{ p.vencidas }}</span>{% else %}<span class="text-3">â€”</span>{% endif %}</td>
+          <td class="fs-12">{{ p.zona }}</td>
+          <td class="fs-12 text-2">{{ p.fecha_inicio }}</td>
+          <td>
+            {% if p.estado=='Cancelado' %}<span class="badge badge-green">Cancelado</span>
+            {% elif p.vencidas > 0 %}<span class="badge badge-red">Atrasado</span>
+            {% else %}<span class="badge badge-blue">Activo</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL NUEVO PRÃ‰STAMO -->
+<div class="modal-overlay" id="modal-prestamo" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal modal-lg" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Nuevo PrÃ©stamo</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-prestamo').classList.remove('open')">âœ•</button>
+  </div>
+  <div class="modal-body">
+    <form id="form-prest">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Cliente (buscar por nombre o cÃ©dula)</label>
+          <input type="text" id="buscar-cliente" placeholder="Escribe para buscar..." oninput="buscarCliente(this.value)">
+          <input type="hidden" name="cliente_id" id="cliente-id-sel">
+          <div id="lista-clientes" style="display:none;border:1px solid var(--border);border-radius:6px;max-height:150px;overflow-y:auto;margin-top:4px;background:var(--bg-card);"></div>
+        </div>
+        <div class="form-group">
+          <label>Zona</label>
+          <select name="zona_id">{% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}</select>
+        </div>
+        <div class="form-group">
+          <label>Capital ($)</label>
+          <input type="number" name="capital" min="1000" step="1000" oninput="calcPrev()">
+        </div>
+        <div class="form-group">
+          <label>Tasa interÃ©s (%)</label>
+          <input type="number" name="tasa_interes" value="20" step="0.5" oninput="calcPrev()">
+        </div>
+        <div class="form-group">
+          <label>NÃºmero de cuotas</label>
+          <input type="number" name="num_cuotas" value="30" oninput="calcPrev()">
+        </div>
+        <div class="form-group">
+          <label>Plazo dÃ­as/cuota</label>
+          <input type="number" name="plazo_dias" value="30">
+        </div>
+        <div class="form-group">
+          <label>Fecha inicio</label>
+          <input type="date" name="fecha_inicio" id="fp-fecha">
+        </div>
+        <div class="form-group">
+          <label>Cobrador</label>
+          <input type="text" name="cobrador" value="William Badillo">
+        </div>
+      </div>
+      <div id="prest-prev" style="display:none;background:var(--verde-50);border:1px solid var(--verde-100);padding:12px;border-radius:8px;font-size:12px;margin-top:12px;">
+        Capital Â· InterÃ©s <strong id="pp-int"></strong> Â· Total <strong id="pp-tot"></strong> Â· Cuota <strong id="pp-cuo" class="text-green"></strong>
+      </div>
+    </form>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-prestamo').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-primary" onclick="guardarPrestamoNuevo()">Guardar PrÃ©stamo</button>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('fp-fecha').value = new Date().toISOString().split('T')[0];
+let clientes_cache = [];
+
+async function buscarCliente(q) {
+  if (q.length < 2) { document.getElementById('lista-clientes').style.display='none'; return; }
+  const r = await fetch(`/clientes?q=${encodeURIComponent(q)}`);
+  // Simple approach: fetch and parse
+  document.getElementById('lista-clientes').style.display='none';
+}
+
+async function calcPrev() {
+  const cap = document.querySelector('[name=capital]').value;
+  const tasa = document.querySelector('[name=tasa_interes]').value;
+  const cuotas = document.querySelector('[name=num_cuotas]').value;
+  if (!cap || !tasa || !cuotas) return;
+  const r = await fetch(`/prestamos/calcular?capital=${cap}&tasa=${tasa}&cuotas=${cuotas}`);
+  const d = await r.json();
+  document.getElementById('prest-prev').style.display='block';
+  document.getElementById('pp-int').textContent = fmtCOP(d.interes_total);
+  document.getElementById('pp-tot').textContent = fmtCOP(d.total_pagar);
+  document.getElementById('pp-cuo').textContent = fmtCOP(d.valor_cuota);
+}
+
+async function guardarPrestamoNuevo() {
+  const fd = new FormData(document.getElementById('form-prest'));
+  const r = await fetch('/prestamos/nuevo', { method:'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) { toast('PrÃ©stamo creado âœ“'); setTimeout(() => location.reload(), 800); }
+  else toast(d.detail || 'Error', 'error');
+}
+</script>
+{% endblock %}
+

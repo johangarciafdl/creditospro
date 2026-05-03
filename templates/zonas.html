@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Zonas{% endblock %}
+{% block topbar_title %}Zonas de Trabajo{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-primary" onclick="document.getElementById('modal-zona').classList.add('open')">+ Nueva Zona</button>
+{% endblock %}
+
+{% block content %}
+<div class="grid-auto">
+  {% for z in zonas %}
+  <div class="card">
+    <div class="card-body">
+      <div class="flex-between mb-2">
+        <div>
+          <div class="fw-600" style="font-size:15px;">{{ z.nombre }}</div>
+          <div class="fs-11 text-2">{{ z.ciudad }} · Código: {{ z.codigo }}</div>
+        </div>
+        {% if z.activa %}<span class="badge badge-green">Activa</span>
+        {% else %}<span class="badge badge-gray">Inactiva</span>{% endif %}
+      </div>
+
+      <div class="map-box mb-2">
+        <div style="font-size:28px;">📍</div>
+        <div class="fs-12">{{ z.nombre }}, {{ z.ciudad }}</div>
+        {% if z.lat %}<div class="fs-11 text-2">{{ "%.4f"|format(z.lat) }}, {{ "%.4f"|format(z.lng) }}</div>{% endif %}
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        <div style="background:var(--verde-50);border-radius:6px;padding:8px;text-align:center;">
+          <div class="fs-20 fw-600 text-green">{{ z.clientes }}</div>
+          <div class="fs-11 text-2">Clientes</div>
+        </div>
+        <div style="background:var(--bg);border-radius:6px;padding:8px;text-align:center;">
+          <div class="fs-20 fw-600">{{ z.prestamos }}</div>
+          <div class="fs-11 text-2">Préstamos</div>
+        </div>
+      </div>
+
+      <div class="fs-12 mb-2">
+        <div class="text-2 fs-11 mb-1">Cobrador asignado</div>
+        <div class="fw-600">{{ z.cobrador }}</div>
+        {% if z.cobrador_tel != '—' %}<div class="fs-11 text-2">📞 {{ z.cobrador_tel }}</div>{% endif %}
+        {% if z.cobrador_moto and z.cobrador_moto != '—' %}<div class="fs-11 text-2">🏍 {{ z.cobrador_moto }}</div>{% endif %}
+      </div>
+
+      <div class="flex gap-1">
+        <button class="btn btn-ghost btn-xs" style="flex:1;" onclick="editarZona({{ z.id }}, '{{ z.nombre }}', '{{ z.cobrador }}', '{{ z.cobrador_tel }}', '{{ z.cobrador_moto }}')">✏ Editar</button>
+        <a href="/reportes/resumen-zonas" class="btn btn-excel btn-xs" style="flex:1;justify-content:center;">⬇ Excel</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- MODAL NUEVA ZONA -->
+<div class="modal-overlay" id="modal-zona" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Nueva Zona</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-zona').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <form id="form-zona">
+      <div class="form-grid">
+        <div class="form-group"><label>Código *</label><input type="text" name="codigo" placeholder="GRANIZAL" required></div>
+        <div class="form-group"><label>Nombre *</label><input type="text" name="nombre" placeholder="Granizal" required></div>
+        <div class="form-group"><label>Ciudad</label><input type="text" name="ciudad" value="Medellín"></div>
+        <div class="form-group"><label>País</label><input type="text" name="pais" value="Colombia"></div>
+        <div class="form-group"><label>Cobrador</label><input type="text" name="cobrador_nombre"></div>
+        <div class="form-group"><label>Tel. cobrador</label><input type="tel" name="cobrador_tel"></div>
+        <div class="form-group"><label>Moto/Placa</label><input type="text" name="cobrador_moto"></div>
+      </div>
+    </form>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-zona').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-primary" onclick="guardarZona()">Guardar Zona</button>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function guardarZona() {
+  const fd = new FormData(document.getElementById('form-zona'));
+  const r = await fetch('/zonas/nueva', { method:'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) { toast('Zona creada ✓'); setTimeout(() => location.reload(), 800); }
+  else toast('Error', 'error');
+}
+
+function editarZona(id, nombre, cobrador, tel, moto) {
+  abrirModal('Editar Zona — ' + nombre,
+    `<form id="fe-zona">
+      <div class="form-grid">
+        <div class="form-group full"><label>Nombre</label><input name="nombre" value="${nombre}"></div>
+        <div class="form-group"><label>Cobrador</label><input name="cobrador_nombre" value="${cobrador}"></div>
+        <div class="form-group"><label>Teléfono</label><input name="cobrador_tel" value="${tel}"></div>
+        <div class="form-group full"><label>Moto/Placa</label><input name="cobrador_moto" value="${moto}"></div>
+      </div>
+    </form>`,
+    `<button class="btn" onclick="cerrarModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="actualizarZona(${id})">Guardar</button>`
+  );
+}
+
+async function actualizarZona(id) {
+  const fd = new FormData(document.getElementById('fe-zona'));
+  fd.append('activa', 'true');
+  const r = await fetch(`/zonas/${id}/editar`, { method:'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) { toast('Zona actualizada ✓'); cerrarModal(); setTimeout(() => location.reload(), 800); }
+}
+</script>
+{% endblock %}

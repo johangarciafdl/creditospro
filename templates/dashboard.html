@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block topbar_title %}Dashboard{% endblock %}
+{% block topbar_sub %}Resumen general · {{ fecha_hoy }}{% endblock %}
+{% block topbar_actions %}
+  <a href="/reportes/cobros-diarios" class="btn btn-excel">⬇ Excel Hoy</a>
+  <a href="/prestamos/nuevo" class="btn btn-primary">+ Nuevo Préstamo</a>
+{% endblock %}
+
+{% block content %}
+<!-- STATS -->
+<div class="stats-grid">
+  <div class="stat-card green">
+    <div class="stat-icon">💵</div>
+    <div class="stat-label">Capital Total en Cartera</div>
+    <div class="stat-val green num">${{ "{:,.0f}".format(total_prestamos) }}</div>
+    <div class="stat-sub">{{ prestamos_activos }} préstamos activos</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-icon">📈</div>
+    <div class="stat-label">Intereses Generados</div>
+    <div class="stat-val blue num">${{ "{:,.0f}".format(total_intereses) }}</div>
+    <div class="stat-sub">Total acumulado</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-icon">⚠</div>
+    <div class="stat-label">Cuotas Vencidas</div>
+    <div class="stat-val red">{{ cuotas_vencidas }}</div>
+    <div class="stat-sub">Requieren atención</div>
+  </div>
+  <div class="stat-card gray">
+    <div class="stat-icon">👥</div>
+    <div class="stat-label">Clientes Activos</div>
+    <div class="stat-val">{{ clientes_activos }}</div>
+    <div class="stat-sub">Cobrado hoy: ${{ "{:,.0f}".format(cobros_hoy) }}</div>
+  </div>
+</div>
+
+<div class="grid-2 mb-3">
+  <!-- Zonas -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Zonas de Trabajo</div>
+        <div class="card-subtitle">Estado del día por zona</div>
+      </div>
+      <a href="/zonas" class="btn btn-ghost btn-sm">Ver todas →</a>
+    </div>
+    <div class="card-body-flush table-wrap">
+      <table>
+        <thead><tr><th>Zona</th><th>Cobrador</th><th>Recaudado hoy</th><th>Estado</th></tr></thead>
+        <tbody>
+          {% for z in resumen_zonas %}
+          <tr>
+            <td><strong>{{ z.nombre }}</strong></td>
+            <td class="text-2">{{ z.cobrador }}</td>
+            <td class="num text-green fw-600">${{ "{:,.0f}".format(z.cobrado) }}</td>
+            <td>
+              {% if z.activa %}
+                <span class="badge badge-green">Activa</span>
+              {% else %}
+                <span class="badge badge-gray">Inactiva</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Actividad reciente -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Actividad Reciente</div>
+    </div>
+    <div class="card-body">
+      <ul class="timeline">
+        {% for a in atrasados[:5] %}
+        <li class="timeline-item">
+          <div class="timeline-dot {% if a.estado=='Vencida' %}red{% elif a.estado=='Parcial' %}yellow{% endif %}"></div>
+          <div class="timeline-content">
+            <div class="timeline-title">{{ a.cliente }} — Cuota {{ a.cuota_num }}/{{ a.total_cuotas }}</div>
+            <div class="timeline-sub">
+              Zona: {{ a.zona }} · Saldo: ${{ "{:,.0f}".format(a.saldo) }}
+              {% if a.estado=='Vencida' %} · <span class="text-red">VENCIDA</span>{% endif %}
+            </div>
+          </div>
+        </li>
+        {% else %}
+        <li class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-content">
+            <div class="timeline-title">Sin actividad pendiente hoy</div>
+            <div class="timeline-sub">Todos los cobros al día ✓</div>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Cartera con alertas -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Cartera con Alertas</div>
+      <div class="card-subtitle">Préstamos atrasados o vencidos</div>
+    </div>
+    <div class="flex gap-1">
+      <a href="/reportes/cartera" class="btn btn-excel btn-sm">⬇ Excel</a>
+      <a href="/cobros" class="btn btn-primary btn-sm">Ir a Cobros</a>
+    </div>
+  </div>
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Cliente</th><th>Cédula</th><th>Capital</th>
+          <th>Saldo</th><th>Cuota</th><th>Zona</th>
+          <th>Tipo</th><th>Estado</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in atrasados %}
+        <tr>
+          <td>
+            <div class="flex-center gap-2">
+              <div class="avatar {% if p.tipo_cliente=='Bueno' %}avatar-green{% elif p.tipo_cliente=='Riesgo' %}avatar-red{% else %}avatar-blue{% endif %}">
+                {{ p.cliente[:2].upper() }}
+              </div>
+              <strong>{{ p.cliente }}</strong>
+            </div>
+          </td>
+          <td class="text-2 num">{{ p.cedula }}</td>
+          <td class="num">${{ "{:,.0f}".format(p.capital) }}</td>
+          <td class="num text-red fw-600">${{ "{:,.0f}".format(p.saldo) }}</td>
+          <td class="num text-2">{{ p.cuota_num }}/{{ p.total_cuotas }}</td>
+          <td>{{ p.zona }}</td>
+          <td>
+            {% if p.tipo_cliente=='Bueno' %}
+              <span class="badge badge-green">Bueno</span>
+            {% elif p.tipo_cliente=='Riesgo' %}
+              <span class="badge badge-red">Riesgo</span>
+            {% else %}
+              <span class="badge badge-gray">Regular</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if p.estado in ['Vencida','Mora'] %}
+              <span class="badge badge-red">Vencido</span>
+            {% else %}
+              <span class="badge badge-yellow">Pendiente</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="/cobros" class="btn btn-primary btn-xs">Cobrar</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" style="text-align:center;color:var(--text-3);padding:30px;">✓ Sin préstamos atrasados</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
