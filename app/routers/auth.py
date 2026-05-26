@@ -5,11 +5,17 @@ Auth v2.1 - BUG FIX:
 - Crear usuario redirigía al login porque require_admin lanzaba 303
   sin cookie en la respuesta del POST → corregido con verificación directa.
 - TemplateResponse usa nueva firma (request, name, context).
+<<<<<<< HEAD
 - Cookies ahora usan secure=True en producción y samesite=strict
 """
 import os
 import datetime
 from typing import Optional, List
+=======
+"""
+import datetime
+from typing import Optional
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -17,19 +23,26 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db, Usuario, Zona, Empresa, ConfiguracionApp, SessionLocal
+<<<<<<< HEAD
 from app.repositories.usuario_repository import UsuarioRepository
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
 from app.utils.security import verify_password, get_password_hash, create_access_token, decode_token
 from app.utils.roles import normalize_role
 from app.utils.zone_permissions import validate_user_zones
+=======
+from app.utils.security import verify_password, get_password_hash, create_access_token, decode_token
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 SESSION_COOKIE = "cp_session"
 
+<<<<<<< HEAD
 # Determinar si estamos en producción
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "production") == "production"
 
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 # ── CORE AUTH ─────────────────────────────────────────────────────────────────
 
@@ -69,6 +82,7 @@ def _redirect_if_no_session(request: Request, db: Session, next_url: str):
 # ── LOGIN / LOGOUT ────────────────────────────────────────────────────────────
 
 @router.get("/login")
+<<<<<<< HEAD
 async def login_page(request: Request, next: str = "/dashboard",
                      empresa_id: int = None, db: Session = Depends(get_db)):
     token = request.cookies.get(SESSION_COOKIE)
@@ -83,6 +97,13 @@ async def login_page(request: Request, next: str = "/dashboard",
         "next": next, "error": None,
         "empresa_id": empresa_id, "empresa_nombre": empresa_nombre
     })
+=======
+async def login_page(request: Request, next: str = "/dashboard"):
+    token = request.cookies.get(SESSION_COOKIE)
+    if token and decode_token(token):
+        return RedirectResponse(url=next, status_code=302)
+    return templates.TemplateResponse(request, "auth/login.html", {"next": next, "error": None})
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 @router.post("/login")
@@ -91,6 +112,7 @@ async def login_submit(
     username: str = Form(...),
     password: str = Form(...),
     next: str = Form("/dashboard"),
+<<<<<<< HEAD
     empresa_id: str = Form(""),
     db: Session = Depends(get_db)
 ):
@@ -103,6 +125,16 @@ async def login_submit(
     user = q.first()
 
     if not user or not verify_password(password, user.password_hash):
+=======
+    db: Session = Depends(get_db)
+):
+    user = db.query(Usuario).filter(
+        Usuario.username == username.strip().lower(),
+        Usuario.activo == True
+    ).first()
+
+    if not user or not verify_password(password, user.hashed_password):
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         return templates.TemplateResponse(
             request, "auth/login.html",
             {"next": next, "error": "Usuario o contraseña incorrectos"},
@@ -125,9 +157,15 @@ async def login_submit(
         key=SESSION_COOKIE,
         value=token,
         httponly=True,
+<<<<<<< HEAD
         samesite="strict",
         max_age=60 * 60 * 12,
         secure=IS_PRODUCTION,
+=======
+        samesite="lax",
+        max_age=60 * 60 * 12,
+        secure=False,
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     )
     return response
 
@@ -149,7 +187,13 @@ async def listar_usuarios(request: Request, db: Session = Depends(get_db)):
     if current_user.rol not in ("admin", "superadmin"):
         raise HTTPException(status_code=403)
 
+<<<<<<< HEAD
     usuarios = UsuarioRepository(db).list_by_empresa(current_user.empresa_id)
+=======
+    usuarios = db.query(Usuario).filter(
+        Usuario.empresa_id == current_user.empresa_id
+    ).order_by(Usuario.creado.desc()).all()
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
     zonas = db.query(Zona).filter(Zona.empresa_id == current_user.empresa_id).all()
 
@@ -169,7 +213,10 @@ async def crear_usuario(
     password: str = Form(...),
     rol: str = Form("cobrador"),
     zona_id: str = Form(""),
+<<<<<<< HEAD
     zona_ids: List[str] = Form([]),
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     db: Session = Depends(get_db)
 ):
     # BUG FIX: verificación directa, no via Depends anidado
@@ -179,6 +226,7 @@ async def crear_usuario(
     if current_user.rol not in ("admin", "superadmin"):
         return JSONResponse({"error": "Sin permisos"}, status_code=403)
 
+<<<<<<< HEAD
     try:
         rol = normalize_role(rol)
     except ValueError as exc:
@@ -190,6 +238,9 @@ async def crear_usuario(
     nombre_clean = nombre.strip()
     if not nombre_clean or len(nombre_clean) > 200:
         return JSONResponse({"error": "Nombre invalido"}, status_code=400)
+=======
+    username_clean = username.strip().lower()
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     existente = db.query(Usuario).filter(
         Usuario.empresa_id == current_user.empresa_id,
         Usuario.username == username_clean
@@ -200,6 +251,7 @@ async def crear_usuario(
     if len(password) < 6:
         return JSONResponse({"error": "La contraseña debe tener al menos 6 caracteres"}, status_code=400)
 
+<<<<<<< HEAD
     selected_zone_ids = [int(z) for z in zona_ids if str(z).strip().isdigit()]
     if not selected_zone_ids and zona_id.strip().isdigit():
         selected_zone_ids = [int(zona_id)]
@@ -222,6 +274,19 @@ async def crear_usuario(
     db.add(user)
     db.commit()
     return JSONResponse({"ok": True, "mensaje": f"Usuario {nombre_clean} creado correctamente"})
+=======
+    user = Usuario(
+        empresa_id=current_user.empresa_id,
+        username=username_clean,
+        nombre=nombre.strip(),
+        hashed_password=get_password_hash(password),
+        rol=rol,
+        zona_id=int(zona_id) if zona_id.strip() else None,
+    )
+    db.add(user)
+    db.commit()
+    return JSONResponse({"ok": True, "mensaje": f"Usuario {nombre} creado correctamente"})
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 @router.post("/usuarios/{user_id}/editar")
@@ -233,7 +298,10 @@ async def editar_usuario(
     zona_id: str = Form(""),
     password: str = Form(""),
     activo: str = Form("true"),
+<<<<<<< HEAD
     zona_ids: List[str] = Form([]),
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     db: Session = Depends(get_db)
 ):
     current_user = get_current_user(request, db)
@@ -247,6 +315,7 @@ async def editar_usuario(
     if not user:
         return JSONResponse({"error": "Usuario no encontrado"}, status_code=404)
 
+<<<<<<< HEAD
     try:
         rol = normalize_role(rol)
     except ValueError as exc:
@@ -270,11 +339,20 @@ async def editar_usuario(
     user.rol = rol
     user.zona_id = zonas_asignadas[0].id if zonas_asignadas else None
     user.zonas_asignadas = zonas_asignadas
+=======
+    user.nombre = nombre.strip()
+    user.rol = rol
+    user.zona_id = int(zona_id) if zona_id.strip() else None
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     user.activo = activo.lower() in ("true", "1", "on")
     if password.strip():
         if len(password) < 6:
             return JSONResponse({"error": "Contraseña muy corta (min 6)"}, status_code=400)
+<<<<<<< HEAD
         user.password_hash = get_password_hash(password)
+=======
+        user.hashed_password = get_password_hash(password)
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
     db.commit()
     return JSONResponse({"ok": True, "mensaje": "Usuario actualizado"})
@@ -300,6 +378,7 @@ async def eliminar_usuario(
         user.activo = False
         db.commit()
     return JSONResponse({"ok": True})
+<<<<<<< HEAD
 @router.get("/stats")
 async def stats_publicos(request: Request, db: Session = Depends(get_db)):
     """Stats públicos para la pantalla de login — filtrados por empresa si hay sesión."""
@@ -329,3 +408,5 @@ async def stats_publicos(request: Request, db: Session = Depends(get_db)):
         return {"clientes": clientes, "prestamos": prestamos, "zonas": zonas}
     except Exception:
         return {"clientes": 0, "prestamos": 0, "zonas": 0}
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5

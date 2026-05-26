@@ -1,10 +1,14 @@
 """Prestamo service v2.1 - multi-tenant"""
 import datetime
+<<<<<<< HEAD
 from decimal import Decimal, ROUND_HALF_UP
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 from typing import List
 from app.database import Prestamo, Cuota
 
 
+<<<<<<< HEAD
 def _money(value) -> Decimal:
     return Decimal(str(value or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -34,6 +38,18 @@ def calcular_cuotas(capital: float, tasa: float, num_cuotas: int,
             "fecha_vencimiento": fecha_inicio + datetime.timedelta(days=i * plazo_dias),
         })
         acumulado += valor
+=======
+def calcular_cuotas(capital: float, tasa: float, num_cuotas: int,
+                    fecha_inicio: datetime.date, plazo_dias: int = 30) -> dict:
+    interes = capital * (tasa / 100)
+    total = capital + interes
+    valor_cuota = round(total / num_cuotas, 0)
+    cuotas = [
+        {"numero": i, "valor": valor_cuota,
+         "fecha_vencimiento": fecha_inicio + datetime.timedelta(days=i * plazo_dias)}
+        for i in range(1, num_cuotas + 1)
+    ]
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     return {
         "capital": capital, "tasa_interes": tasa,
         "interes_total": interes, "total_pagar": total,
@@ -55,8 +71,12 @@ def get_estado_prestamo(prestamo: Prestamo) -> str:
 
 
 def get_saldo_prestamo(prestamo: Prestamo) -> float:
+<<<<<<< HEAD
     saldo = _money(prestamo.total_pagar) - sum(_money(c.valor_pagado) for c in prestamo.cuotas)
     return max(Decimal("0.00"), saldo)
+=======
+    return max(0, prestamo.total_pagar - sum(c.valor_pagado for c in prestamo.cuotas))
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 def get_cuotas_proximas_vencer(db, empresa_id: int, dias: int = 2) -> List[dict]:

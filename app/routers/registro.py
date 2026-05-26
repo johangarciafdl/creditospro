@@ -9,8 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db, Empresa, Usuario, ConfiguracionApp, Zona
 from app.utils.security import get_password_hash, create_access_token
+<<<<<<< HEAD
 from app.routers.auth import SESSION_COOKIE, IS_PRODUCTION
 from app.utils.settings import settings
+=======
+from app.routers.auth import SESSION_COOKIE
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -19,8 +23,11 @@ templates = Jinja2Templates(directory="templates")
 @router.get("")
 @router.get("/")
 async def registro_page(request: Request):
+<<<<<<< HEAD
     if not settings.ALLOW_PUBLIC_REGISTRATION:
         return RedirectResponse(url="/seleccionar-empresa", status_code=302)
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     # Si ya tiene sesión activa, ir al dashboard
     from app.routers.auth import get_current_user
     from app.database import SessionLocal
@@ -47,8 +54,11 @@ async def registro_submit(
     admin_password2: str = Form(...),
     db: Session = Depends(get_db)
 ):
+<<<<<<< HEAD
     if not settings.ALLOW_PUBLIC_REGISTRATION:
         return JSONResponse({"error": "Registro publico deshabilitado"}, status_code=403)
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     # Validaciones
     if len(admin_password) < 6:
         return templates.TemplateResponse(request, "registro.html", {
@@ -107,7 +117,11 @@ async def registro_submit(
             empresa_id=empresa.id,
             username=username_clean,
             nombre=admin_nombre.strip(),
+<<<<<<< HEAD
             password_hash=get_password_hash(admin_password),
+=======
+            hashed_password=get_password_hash(admin_password),
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
             rol="admin",
             activo=True,
         )
@@ -126,7 +140,11 @@ async def registro_submit(
         response = RedirectResponse(url="/dashboard", status_code=302)
         response.set_cookie(
             key=SESSION_COOKIE, value=token,
+<<<<<<< HEAD
             httponly=True, samesite="strict", max_age=60 * 60 * 12, secure=IS_PRODUCTION,
+=======
+            httponly=True, samesite="lax", max_age=60 * 60 * 12, secure=False,
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         )
         return response
 

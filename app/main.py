@@ -1,13 +1,20 @@
 """
+<<<<<<< HEAD
 CreditosPro v2.1 — Sistema de Gestión de Créditos y Cobros
 FastAPI + PostgreSQL/SQLite + Autenticación JWT + WhatsApp Bot
 """
 import sys
 import os
+=======
+CreditosPro v2.0 — Sistema de Gestión de Créditos y Cobros
+FastAPI + SQLite + Autenticación JWT + WhatsApp Bot
+"""
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 import uvicorn
 import threading
 import webbrowser
 import time
+<<<<<<< HEAD
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -47,12 +54,30 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+=======
+from pathlib import Path
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from starlette.middleware.sessions import SessionMiddleware
+
+from app.database import init_db
+from app.routers import clientes, prestamos, cobros, zonas, reportes, whatsapp, dashboard, registro
+from app.routers import auth
+from app.services.scheduler import iniciar_scheduler
+from app.utils.seed import seed_data_demo
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 BASE_DIR = Path(__file__).parent.parent
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+<<<<<<< HEAD
     # Check license
     try:
         import license_manager as lm
@@ -103,18 +128,31 @@ async def lifespan(app: FastAPI):
 
     yield
     logger.info("CreditosPro finalizado")
+=======
+    init_db()
+    seed_data_demo()
+    iniciar_scheduler()
+    yield
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 app = FastAPI(
     redirect_slashes=False,
+<<<<<<< HEAD
     title="CreditosPro v2.1",
     description="Sistema de gestión de créditos y cobros",
     version="2.1.0",
+=======
+    title="CreditosPro v2.0",
+    description="Sistema de gestión de créditos y cobros",
+    version="2.0.0",
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     lifespan=lifespan,
     docs_url="/api/docs",
 )
 
 # Middleware de sesiones (necesario para Starlette sessions)
+<<<<<<< HEAD
 session_secret = os.getenv("SESSION_SECRET_KEY") or os.getenv("SECRET_KEY")
 if not session_secret:
     raise RuntimeError("SESSION_SECRET_KEY o SECRET_KEY es obligatoria")
@@ -131,11 +169,24 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+=======
+app.add_middleware(
+    SessionMiddleware,
+    secret_key="creditospro-session-secret-2025"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     allow_headers=["*"],
 )
 
 # Static files
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+<<<<<<< HEAD
 
 templates = Jinja2Templates(directory="templates")
 
@@ -153,6 +204,15 @@ app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(registro.router, prefix="/registro", tags=["Registro"])
 app.include_router(selector.router, tags=["Selector"])
 app.include_router(license_router.router, prefix="/license", tags=["License"])
+=======
+app.mount("/uploads", StaticFiles(directory=str(BASE_DIR / "uploads")), name="uploads")
+
+templates = Jinja2Templates(directory="templates")
+
+# Routers
+app.include_router(auth.router, prefix="/auth", tags=["Auth"])
+app.include_router(registro.router, prefix="/registro", tags=["Registro"])
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 app.include_router(dashboard.router, tags=["Dashboard"])
 app.include_router(clientes.router, prefix="/clientes", tags=["Clientes"])
 app.include_router(prestamos.router, prefix="/prestamos", tags=["Préstamos"])
@@ -160,22 +220,32 @@ app.include_router(cobros.router, prefix="/cobros", tags=["Cobros"])
 app.include_router(zonas.router, prefix="/zonas", tags=["Zonas"])
 app.include_router(reportes.router, prefix="/reportes", tags=["Reportes"])
 app.include_router(whatsapp.router, prefix="/whatsapp", tags=["WhatsApp Bot"])
+<<<<<<< HEAD
 app.include_router(pwa.router, tags=["PWA"])
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 @app.get("/")
 async def root(request: Request):
+<<<<<<< HEAD
     from app.routers.auth import get_current_user
     from app.database import SessionLocal
     license_info = getattr(request.app.state, "license_info", None) or get_license_info()
     request.app.state.license_valid = license_info.get("valid", False)
     request.app.state.license_info = license_info
 
+=======
+    # Verificar si hay sesión
+    from app.routers.auth import get_current_user
+    from app.database import SessionLocal
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     db = SessionLocal()
     try:
         user = get_current_user(request, db)
     finally:
         db.close()
+<<<<<<< HEAD
     if user and license_info.get("valid"):
         return RedirectResponse(url="/dashboard", status_code=302)
 
@@ -218,6 +288,11 @@ async def foto_cliente(filename: str, request: Request, db=Depends(get_db)):
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "version": "2.1.0"}
+=======
+    if not user:
+        return RedirectResponse(url="/auth/login", status_code=302)
+    return RedirectResponse(url="/dashboard", status_code=302)
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 def abrir_navegador():
@@ -228,6 +303,7 @@ def abrir_navegador():
 def run():
     t = threading.Thread(target=abrir_navegador, daemon=True)
     t.start()
+<<<<<<< HEAD
 
     port = int(os.getenv("PORT", "8000"))
     no_browser = os.getenv("CREDITOSPRO_NO_BROWSER", "0") == "1"
@@ -238,6 +314,12 @@ def run():
         "app.main:app",
         host="127.0.0.1",
         port=port,
+=======
+    uvicorn.run(
+        "app.main:app",
+        host="127.0.0.1",
+        port=8000,
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         log_level="warning",
         reload=False,
     )

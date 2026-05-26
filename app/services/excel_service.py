@@ -6,14 +6,20 @@ import datetime
 import io
 from pathlib import Path
 from openpyxl import Workbook
+<<<<<<< HEAD
 from openpyxl.cell import WriteOnlyCell
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 from openpyxl.styles import (
     PatternFill, Font, Alignment, Border, Side, GradientFill
 )
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import BarChart, Reference
 from sqlalchemy.orm import Session
+<<<<<<< HEAD
 from sqlalchemy import case, func
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 from app.database import Cobro, Prestamo, Cliente, Cuota, Zona
 
 
@@ -89,6 +95,7 @@ def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = N
     ws.sheet_view.showGridLines = False
 
     # Config
+<<<<<<< HEAD
     empresa = "CreditosPro"
     try:
         from app.database import ConfiguracionApp
@@ -96,6 +103,11 @@ def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = N
         if _cfg2 and _cfg2.empresa_nombre: empresa = _cfg2.empresa_nombre
     except Exception:
         empresa = "CreditosPro"
+=======
+    from app.database import ConfiguracionApp
+    config = db.query(ConfiguracionApp).first()
+    empresa = config.empresa_nombre if config else "CreditosPro"
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
     encabezado_reporte(ws, "REGISTRO DE COBROS DIARIOS", f"Fecha: {fecha.strftime('%d/%m/%Y')}", empresa)
 
@@ -104,7 +116,11 @@ def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = N
     ws.merge_cells("A2:J2")
     ws.merge_cells("A3:J3")
 
+<<<<<<< HEAD
     # Query - siempre filtrar por empresa_id cuando se proporciona
+=======
+    # Query
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     query = db.query(Cobro).filter(Cobro.fecha == fecha)
     if empresa_id:
         query = query.filter(Cobro.empresa_id == empresa_id)
@@ -112,6 +128,7 @@ def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = N
         query = query.filter(Cobro.zona_id == zona_id)
     cobros = query.all()
 
+<<<<<<< HEAD
     # Precargar datos relacionados en pocos queries (anti-N+1)
     cobro_ids = [c.id for c in cobros]
     clientes_ids = list({c.cliente_id for c in cobros})
@@ -133,6 +150,8 @@ def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = N
         for cu in db.query(Cuota).filter(Cuota.id.in_(cuota_ids)).all():
             cuotas_map[cu.id] = cu
 
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     fila_header = 5
     labels = ["#", "Cliente", "Cédula", "Zona", "Cuota N°", "Valor Cobrado", "Método Pago", "Cobrador", "Hora", "Observaciones"]
     estilo_header(ws, fila_header, list(range(1, 11)), labels)
@@ -140,9 +159,15 @@ def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = N
 
     total_cobrado = 0
     for idx, c in enumerate(cobros, start=1):
+<<<<<<< HEAD
         cliente = clientes_map.get(c.cliente_id)
         zona = zonas_map.get(c.zona_id)
         cuota = cuotas_map.get(c.cuota_id)
+=======
+        cliente = db.query(Cliente).filter(Cliente.id == c.cliente_id).first()
+        zona = db.query(Zona).filter(Zona.id == c.zona_id).first()
+        cuota = db.query(Cuota).filter(Cuota.id == c.cuota_id).first()
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
         fila = fila_header + idx
         vals = [
@@ -183,6 +208,7 @@ def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = N
 
 
 def reporte_cartera(db: Session, empresa_id: int = None) -> bytes:
+<<<<<<< HEAD
     wb = Workbook(write_only=True)
     ws = wb.create_sheet("Cartera Activa")
 
@@ -266,11 +292,58 @@ def reporte_cartera(db: Session, empresa_id: int = None) -> bytes:
             p.zona_nombre or "—",
             capital,
             total_pagar,
+=======
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Cartera Activa"
+    ws.sheet_view.showGridLines = False
+
+    from app.database import ConfiguracionApp
+    config = db.query(ConfiguracionApp).first()
+    empresa = config.empresa_nombre if config else "CreditosPro"
+
+    encabezado_reporte(ws, "ESTADO DE CARTERA", "Saldos vigentes por cliente", empresa)
+    ws.merge_cells("A1:L1")
+    ws.merge_cells("A2:L2")
+    ws.merge_cells("A3:L3")
+
+    q = db.query(Prestamo).filter(Prestamo.estado.in_(["Activo", "Atrasado", "Mora"]))
+    if empresa_id:
+        q = q.filter(Prestamo.empresa_id == empresa_id)
+    prestamos = q.all()
+
+    labels = ["Cliente", "Cédula", "Zona", "Capital", "Total", "Pagado", "Saldo", "Cuotas", "Al día", "Vencidas", "Próx. vencimiento", "Estado"]
+    estilo_header(ws, 5, list(range(1, 13)), labels)
+
+    hoy = datetime.date.today()
+    total_capital = total_saldo = 0
+
+    for idx, p in enumerate(prestamos, start=1):
+        cliente = p.cliente
+        zona = db.query(Zona).filter(Zona.id == p.zona_id).first()
+        pagado = sum(c.valor_pagado for c in p.cuotas)
+        saldo = max(0, p.total_pagar - pagado)
+        al_dia = sum(1 for c in p.cuotas if c.estado == "Pagada")
+        vencidas = sum(1 for c in p.cuotas if c.estado == "Vencida")
+        prox = min(
+            (c.fecha_vencimiento for c in p.cuotas if c.estado == "Pendiente"),
+            default=None
+        )
+
+        fila = 5 + idx
+        vals = [
+            cliente.nombre,
+            cliente.cedula,
+            zona.nombre if zona else "—",
+            p.capital,
+            p.total_pagar,
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
             pagado,
             saldo,
             f"{al_dia + vencidas}/{p.num_cuotas}",
             al_dia,
             vencidas,
+<<<<<<< HEAD
             p.prox.strftime("%d/%m/%Y") if p.prox else "—",
             p.estado,
         ]
@@ -281,6 +354,36 @@ def reporte_cartera(db: Session, empresa_id: int = None) -> bytes:
 
     ws.append([])
     ws.append(["", "", "TOTALES:", total_capital, "", "", total_saldo])
+=======
+            prox.strftime("%d/%m/%Y") if prox else "—",
+            p.estado,
+        ]
+        estilo_fila(ws, fila, vals, par=(idx % 2 == 0))
+
+        for col in [4, 5, 6, 7]:
+            ws.cell(row=fila, column=col).number_format = '#,##0'
+
+        # Colorear estado
+        cell_estado = ws.cell(row=fila, column=12)
+        if p.estado == "Mora":
+            cell_estado.font = Font(color=COLOR_ROJO, bold=True, size=9, name="Calibri")
+        elif p.estado == "Atrasado":
+            cell_estado.font = Font(color="D68910", bold=True, size=9, name="Calibri")
+
+        if vencidas > 0:
+            ws.cell(row=fila, column=10).font = Font(color=COLOR_ROJO, bold=True, size=9, name="Calibri")
+
+        total_capital += p.capital
+        total_saldo += saldo
+
+    # Totales
+    fila_tot = 5 + len(prestamos) + 1
+    ws.cell(row=fila_tot, column=3, value="TOTALES:").font = Font(bold=True, size=10)
+    ws.cell(row=fila_tot, column=4, value=total_capital).number_format = '#,##0'
+    ws.cell(row=fila_tot, column=7, value=total_saldo).number_format = '#,##0'
+    ws.cell(row=fila_tot, column=4).font = Font(bold=True, color=COLOR_VERDE, size=10)
+    ws.cell(row=fila_tot, column=7).font = Font(bold=True, color=COLOR_ROJO, size=10)
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
     anchos = [28, 14, 14, 14, 14, 14, 14, 10, 8, 10, 16, 12]
     for i, a in enumerate(anchos, start=1):
@@ -298,6 +401,7 @@ def reporte_resumen_zonas(db: Session, empresa_id: int = None, fecha_desde: date
     ws.title = "Resumen por Zona"
     ws.sheet_view.showGridLines = False
 
+<<<<<<< HEAD
     empresa = "CreditosPro"
     try:
         from app.database import ConfiguracionApp
@@ -305,6 +409,11 @@ def reporte_resumen_zonas(db: Session, empresa_id: int = None, fecha_desde: date
         if _cfg2 and _cfg2.empresa_nombre: empresa = _cfg2.empresa_nombre
     except Exception:
         empresa = "CreditosPro"
+=======
+    from app.database import ConfiguracionApp
+    config = db.query(ConfiguracionApp).first()
+    empresa = config.empresa_nombre if config else "CreditosPro"
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
     encabezado_reporte(
         ws, "RESUMEN POR ZONA",
@@ -319,6 +428,7 @@ def reporte_resumen_zonas(db: Session, empresa_id: int = None, fecha_desde: date
     if empresa_id:
         zq = zq.filter(Zona.empresa_id == empresa_id)
     zonas = zq.all()
+<<<<<<< HEAD
     zona_ids = [z.id for z in zonas]
 
     labels = ["Zona", "Cobrador", "Clientes", "Préstamos", "Capital Total", "Total Cobrado", "Saldo Pendiente", "Cuotas Vencidas", "Estado"]
@@ -383,6 +493,41 @@ def reporte_resumen_zonas(db: Session, empresa_id: int = None, fecha_desde: date
             cobrado,
             saldo,
             vencidas_por_zona.get(zona.id, 0),
+=======
+    labels = ["Zona", "Cobrador", "Clientes", "Préstamos", "Capital Total", "Total Cobrado", "Saldo Pendiente", "Cuotas Vencidas", "Estado"]
+    estilo_header(ws, 5, list(range(1, 10)), labels)
+
+    for idx, zona in enumerate(zonas, start=1):
+        clientes_cnt = db.query(Cliente).filter(Cliente.zona_id == zona.id, Cliente.activo == True).count()
+        prestamos_cnt = db.query(Prestamo).filter(Prestamo.zona_id == zona.id, Prestamo.estado == "Activo").count()
+        capital = db.query(Prestamo).filter(Prestamo.zona_id == zona.id).all()
+        capital_total = sum(p.capital for p in capital)
+
+        cobros = db.query(Cobro).filter(
+            Cobro.zona_id == zona.id,
+            Cobro.fecha >= fecha_desde,
+            Cobro.fecha <= fecha_hasta,
+        ).all()
+        cobrado = sum(c.valor_cobrado for c in cobros)
+
+        cuotas_venc = db.query(Cuota).join(Prestamo).filter(
+            Prestamo.zona_id == zona.id,
+            Cuota.estado == "Vencida"
+        ).count()
+
+        saldo = capital_total - cobrado
+
+        fila = 5 + idx
+        vals = [
+            zona.nombre,
+            zona.cobrador_nombre or "—",
+            clientes_cnt,
+            prestamos_cnt,
+            capital_total,
+            cobrado,
+            saldo,
+            cuotas_venc,
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
             "Activa" if zona.activa else "Inactiva",
         ]
         estilo_fila(ws, fila, vals, par=(idx % 2 == 0))

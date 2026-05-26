@@ -1,6 +1,11 @@
 """
+<<<<<<< HEAD
 CreditosPro v2.1 — Módulo Administrador (.exe)
 ===============================================
+=======
+CreditosPro v2.0 — Módulo Administrador (.exe)
+================================================
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 Wrapper PyWebView que abre el panel de admin en una ventana nativa de Windows.
 
 Modo de uso:
@@ -21,9 +26,15 @@ Arquitectura:
   │  │  PyWebView (ventana) │◄────────────►│FastAPI │  │
   │  └──────────────────────┘              │ Server │  │
   └─────────────────────────────────────────┤        ├──┘
+<<<<<<< HEAD
                                              │ SQLite │
   Cobradores (celular/navegador) ──────────►│  DB    │
                                              └────────┘
+=======
+                                            │ SQLite │
+  Cobradores (celular/navegador) ──────────►│  DB    │
+                                            └────────┘
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 """
 import sys
 import os
@@ -34,6 +45,7 @@ import subprocess
 import signal
 from pathlib import Path
 
+<<<<<<< HEAD
 # ─── Cargar variables de entorno desde .env si existe ────────────────────────
 _base = Path(__file__).parent
 _dotenv = _base / ".env"
@@ -60,6 +72,12 @@ if not os.getenv("SECRET_KEY"):
 parser = argparse.ArgumentParser(description="CreditosPro Admin")
 parser.add_argument("--url", default="", help="URL del servidor remoto (ej: https://mi-servidor.railway.app)")
 parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8000")), help="Puerto local (default 8000)")
+=======
+# ─── Argumento: URL del servidor remoto (opcional) ───────────────────────────
+parser = argparse.ArgumentParser(description="CreditosPro Admin")
+parser.add_argument("--url", default="", help="URL del servidor remoto")
+parser.add_argument("--port", type=int, default=8000, help="Puerto local (default 8000)")
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 parser.add_argument("--debug", action="store_true", help="Modo debug")
 args, _ = parser.parse_known_args()
 
@@ -67,6 +85,7 @@ SERVER_URL = args.url.rstrip("/") if args.url else f"http://127.0.0.1:{args.port
 USE_REMOTE = bool(args.url)
 PORT = args.port
 
+<<<<<<< HEAD
 # Verificar si estamos usando PostgreSQL o SQLite
 DB_URL = os.getenv("DATABASE_URL", "")
 USING_POSTGRES = DB_URL.startswith("postgresql://") or DB_URL.startswith("postgres://")
@@ -75,6 +94,8 @@ if USING_POSTGRES:
 else:
     print("[CreditosPro] Base de datos: SQLite (Local)")
 
+=======
+>>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 # ─── Ventana principal ────────────────────────────────────────────────────────
 class AdminApp:
