@@ -1,0 +1,366 @@
+{% extends "base.html" %}
+{% block title %}Cobros{% endblock %}
+{% block topbar_title %}Cobros{% endblock %}
+{% block topbar_sub %}Gestion de pagos{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+  <div class="stat-card gold card-anim">
+    <div class="stat-label">Cobrado hoy</div>
+    <div class="stat-val gold num">${{ "{:,.0f}".format(total_hoy) }}</div>
+    <div class="stat-sub">{{ num_hoy }} cobros realizados</div>
+  </div>
+  <div class="stat-card red card-anim">
+    <div class="stat-label">Cuotas vencidas</div>
+    <div class="stat-val red">{{ vencidas }}</div>
+    <div class="stat-sub">Requieren atencion inmediata</div>
+  </div>
+  <div class="stat-card card-anim">
+    <div class="stat-label">Fecha de cobro</div>
+    <div class="stat-val" style="font-size:15px;letter-spacing:0;" id="fecha-display">—</div>
+    <div class="stat-sub">Sesion activa</div>
+  </div>
+</div>
+
+<div style="display:flex;gap:2px;background:var(--bg-2);border-radius:var(--r-sm);padding:3px;width:fit-content;margin-bottom:16px;">
+  <button onclick="setTab('pendientes')" id="tab-pendientes" class="tab-btn active">Pendientes por cobrar</button>
+  <button onclick="setTab('historial')" id="tab-historial" class="tab-btn">Historial del dia</button>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body" style="padding:10px 16px;">
+    <div class="flex gap-2">
+      <div class="input-icon-wrap" style="flex:1;">
+        <label for="inp-buscar" style="position:absolute;clip:rect(1px,1px,1px,1px);overflow:hidden;">Buscar cliente para cobro</label>
+        <span class="input-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+        <input type="text" id="inp-buscar" placeholder="Buscar cliente..." oninput="buscarDebounce()" autocomplete="off">
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <label for="sel-zona" style="font-size:11px;color:var(--t3);margin-bottom:3px;">Zona</label>
+        <select id="sel-zona" onchange="buscar()" style="width:170px;">
+          <option value="">Todas las zonas</option>
+          {% for z in zonas %}
+          <option value="{{ z.id }}">{{ z.nombre }}</option>
+        {% endfor %}
+      </select>
+      <input type="date" id="sel-fecha" style="width:150px;" onchange="buscar()">
+      <button class="btn btn-primary" onclick="buscar()">Buscar</button>
+    </div>
+  </div>
+</div>
+
+<div id="estado" style="text-align:center;padding:50px 0;color:var(--t3);">
+  <div style="font-size:36px;margin-bottom:10px;opacity:.4;">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  </div>
+  <div style="font-size:14px;font-weight:500;">Selecciona una zona o busca un cliente</div>
+</div>
+
+<div id="lista-pendientes" style="display:none;"></div>
+
+<div id="tabla-historial" style="display:none;">
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Cliente</th><th>Cuota</th>
+          <th style="text-align:right;">Valor (COP)</th>
+          <th>Metodo</th><th>Cobrador</th><th>Hora</th>
+        </tr></thead>
+        <tbody id="tbody-historial"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL COBRO CON FOTO Y GPS -->
+<div class="modal-overlay" id="modal-cobro" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div>
+      <div class="modal-title" id="mc-titulo">Registrar Cobro</div>
+      <div style="font-size:12px;color:var(--t3);margin-top:2px;" id="mc-subtitulo">—</div>
+    </div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cobro').classList.remove('open')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="modal-body">
+    <input type="hidden" id="mc-cuota-id">
+
+    <!-- Valor -->
+    <div class="form-group">
+      <label>Valor cobrado (COP)</label>
+      <input type="number" id="mc-valor" placeholder="0" min="0" step="1000"
+             style="font-size:20px;font-weight:700;text-align:right;font-family:var(--mono);">
+    </div>
+
+    <!-- Metodo pago -->
+    <div class="form-group">
+      <label>Metodo de pago</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;" id="metodo-grid">
+        <button type="button" onclick="setMetodo('Efectivo')" class="metodo-btn active" data-m="Efectivo">Efectivo</button>
+        <button type="button" onclick="setMetodo('Nequi')" class="metodo-btn" data-m="Nequi">Nequi</button>
+        <button type="button" onclick="setMetodo('Daviplata')" class="metodo-btn" data-m="Daviplata">Daviplata</button>
+        <button type="button" onclick="setMetodo('Transferencia')" class="metodo-btn" data-m="Transferencia">Transferencia</button>
+      </div>
+      <input type="hidden" id="mc-metodo" value="Efectivo">
+    </div>
+
+    <!-- GPS -->
+    <div style="background:var(--bg);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:12px;">
+      <div class="flex-between">
+        <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+          Ubicacion GPS
+        </div>
+        <button type="button" onclick="captureGPS()" class="btn btn-xs btn-ghost" id="btn-gps">Capturar</button>
+      </div>
+      <div style="font-size:11px;color:var(--t3);margin-top:4px;" id="gps-status">Sin ubicacion</div>
+      <input type="hidden" id="mc-lat">
+      <input type="hidden" id="mc-lng">
+    </div>
+
+    <!-- FOTO -->
+    <div style="background:var(--bg);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:12px;">
+      <div class="flex-between mb-2">
+        <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Foto del cobro
+        </div>
+        <div style="display:flex;gap:4px;">
+          <button type="button" onclick="tomarFoto('camara')" class="btn btn-xs btn-ghost">Camara</button>
+          <button type="button" onclick="tomarFoto('galeria')" class="btn btn-xs btn-ghost">Galeria</button>
+        </div>
+      </div>
+      <input type="file" id="mc-foto-input" accept="image/*" style="display:none;" onchange="previewFoto(this)">
+      <input type="file" id="mc-foto-camara" accept="image/*" capture="environment" style="display:none;" onchange="previewFoto(this)">
+      <div id="foto-preview" style="display:none;margin-top:6px;">
+        <img id="foto-img" style="width:100%;border-radius:var(--r-sm);max-height:160px;object-fit:cover;">
+        <button type="button" onclick="quitarFoto()" class="btn btn-xs btn-ghost" style="margin-top:4px;">Quitar foto</button>
+      </div>
+      <div id="foto-placeholder" style="font-size:11px;color:var(--t3);">Opcional — evidencia del pago</div>
+    </div>
+
+    <!-- Observaciones -->
+    <div class="form-group">
+      <label>Observaciones</label>
+      <input type="text" id="mc-obs" placeholder="Opcional...">
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-cobro').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-gold" id="btn-confirmar" onclick="confirmarCobro()">Registrar Cobro</button>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('sel-fecha').value = new Date().toISOString().split('T')[0];
+document.getElementById('fecha-display').textContent = new Date().toLocaleDateString('es-CO',{day:'2-digit',month:'long',year:'numeric'});
+
+let _tab='pendientes', _deb=null;
+
+function setTab(tab){
+  _tab=tab;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.getElementById('lista-pendientes').style.display='none';
+  document.getElementById('tabla-historial').style.display='none';
+  buscar();
+}
+
+function buscarDebounce(){clearTimeout(_deb);_deb=setTimeout(buscar,400)}
+
+async function buscar(){
+  const q=document.getElementById('inp-buscar').value.trim();
+  const zona_id=document.getElementById('sel-zona').value;
+  const fecha=document.getElementById('sel-fecha').value;
+  const estado=document.getElementById('estado');
+  if(!q&&!zona_id){
+    estado.style.display='block';
+    document.getElementById('lista-pendientes').style.display='none';
+    document.getElementById('tabla-historial').style.display='none';
+    return;
+  }
+  estado.innerHTML='<div style="font-size:13px;color:var(--t3);">Cargando...</div>';
+  estado.style.display='block';
+  const params=new URLSearchParams();
+  if(q)params.set('q',q);if(zona_id)params.set('zona_id',zona_id);if(fecha)params.set('fecha',fecha);
+  try{
+    if(_tab==='pendientes'){
+      const r=await window.fetch('/cobros/pendientes-ajax?'+params);
+      const d=await r.json();
+      renderPendientes(d.pendientes||[]);
+    }else{
+      const r=await window.fetch('/cobros/buscar-ajax?'+params);
+      const d=await r.json();
+      renderHistorial(d.cobros||[]);
+    }
+    estado.style.display='none';
+  }catch(e){estado.innerHTML='<div style="color:var(--red);">Error de conexion</div>';}
+}
+
+function renderPendientes(items){
+  const el=document.getElementById('lista-pendientes');
+  if(!items.length){
+    el.innerHTML='<div class="empty"><div class="empty-title">Sin pendientes</div><div class="empty-sub">Todo al dia en este filtro</div></div>';
+    el.style.display='block';return;
+  }
+  el.innerHTML='<div style="display:flex;flex-direction:column;gap:8px;">'+items.map(p=>{
+    const venc=p.dias>0;
+    const color=venc?'var(--red)':p.dias===0?'var(--amber)':'var(--green)';
+    const label=venc?`${p.dias}d vencida`:p.dias===0?'Vence hoy':'Proxima';
+    return `<div class="card card-hover">
+      <div style="display:flex;align-items:center;gap:12px;padding:13px 16px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:13px;">${p.cliente}</div>
+          <div style="font-size:11px;color:var(--t3);">CC ${p.cedula} &nbsp;&middot;&nbsp; Cuota ${p.cuota_num}/${p.total_cuotas} &nbsp;&middot;&nbsp; Vence ${p.vencimiento}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-family:var(--mono);font-weight:700;font-size:15px;">${cop(p.valor)}</div>
+          <div style="font-size:10px;font-weight:600;color:${color};">${label}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0;">
+          <button onclick="abrirCobro(${p.cuota_id},'${p.cliente}',${p.valor},${p.cuota_num})" class="btn btn-gold btn-sm">Cobrar</button>
+          ${p.whatsapp?`<a href="https://wa.me/57${p.whatsapp.replace(/\D/g,'')}" target="_blank" class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;">WA</a>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('')+'</div>';
+  el.style.display='block';
+}
+
+function renderHistorial(items){
+  const tbody=document.getElementById('tbody-historial');
+  tbody.innerHTML=!items.length
+    ?`<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--t3);">Sin cobros en este periodo</td></tr>`
+    :items.map(c=>`<tr>
+      <td><div style="font-weight:500;">${c.cliente}</div><div style="font-size:11px;color:var(--t3);">CC ${c.cedula}</div></td>
+      <td style="color:var(--t2);">Cuota ${c.cuota_num}</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--green);">${cop(c.valor)}</td>
+      <td><span class="badge badge-gray">${c.metodo}</span></td>
+      <td style="font-size:12px;color:var(--t2);">${c.cobrador}</td>
+      <td style="font-size:12px;color:var(--t3);">${c.hora}</td>
+    </tr>`).join('');
+  document.getElementById('tabla-historial').style.display='block';
+}
+
+function abrirCobro(cuotaId,cliente,valor,numCuota){
+  document.getElementById('mc-cuota-id').value=cuotaId;
+  document.getElementById('mc-titulo').textContent=cliente;
+  document.getElementById('mc-subtitulo').textContent=`Cuota #${numCuota}  ·  ${cop(valor)}`;
+  document.getElementById('mc-valor').value=valor;
+  document.getElementById('mc-lat').value='';
+  document.getElementById('mc-lng').value='';
+  document.getElementById('gps-status').textContent='Sin ubicacion';
+  document.getElementById('gps-status').style.color='var(--t3)';
+  quitarFoto();
+  setMetodo('Efectivo');
+  document.getElementById('mc-obs').value='';
+  document.getElementById('modal-cobro').classList.add('open');
+  setTimeout(()=>document.getElementById('mc-valor').focus(),300);
+  // Auto-capturar GPS
+  captureGPS();
+}
+
+// GPS
+function captureGPS(){
+  const status=document.getElementById('gps-status');
+  const btn=document.getElementById('btn-gps');
+  status.textContent='Obteniendo ubicacion...';
+  btn.disabled=true;
+  if(!navigator.geolocation){status.textContent='GPS no disponible';btn.disabled=false;return;}
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      document.getElementById('mc-lat').value=pos.coords.latitude;
+      document.getElementById('mc-lng').value=pos.coords.longitude;
+      status.textContent=`Lat ${pos.coords.latitude.toFixed(5)}, Lng ${pos.coords.longitude.toFixed(5)}`;
+      status.style.color='var(--green)';btn.disabled=false;
+    },
+    err=>{status.textContent='No se pudo obtener ubicacion';status.style.color='var(--amber)';btn.disabled=false;},
+    {timeout:8000,enableHighAccuracy:true}
+  );
+}
+
+// FOTO
+function tomarFoto(tipo){
+  if(tipo==='camara')document.getElementById('mc-foto-camara').click();
+  else document.getElementById('mc-foto-input').click();
+}
+
+function previewFoto(input){
+  const file=input.files[0];
+  if(!file)return;
+  if(file.size>5*1024*1024){alert('La foto no puede superar 5MB');return;}
+  const reader=new FileReader();
+  reader.onload=e=>{
+    document.getElementById('foto-img').src=e.target.result;
+    document.getElementById('foto-preview').style.display='block';
+    document.getElementById('foto-placeholder').style.display='none';
+  };
+  reader.readAsDataURL(file);
+}
+
+function quitarFoto(){
+  document.getElementById('mc-foto-input').value='';
+  document.getElementById('mc-foto-camara').value='';
+  document.getElementById('foto-preview').style.display='none';
+  document.getElementById('foto-placeholder').style.display='block';
+}
+
+// METODO
+function setMetodo(m){
+  document.getElementById('mc-metodo').value=m;
+  document.querySelectorAll('.metodo-btn').forEach(b=>{
+    b.classList.toggle('active',b.dataset.m===m);
+  });
+}
+
+// CONFIRMAR COBRO
+async function confirmarCobro(){
+  const cuota_id=document.getElementById('mc-cuota-id').value;
+  const valor=document.getElementById('mc-valor').value;
+  if(!valor||parseFloat(valor)<=0){alert('Ingresa un valor valido');return;}
+
+  const btn=document.getElementById('btn-confirmar');
+  btn.disabled=true;btn.textContent='Registrando...';
+
+  const fd=new FormData();
+  fd.append('cuota_id',cuota_id);
+  fd.append('valor_cobrado',valor);
+  fd.append('metodo_pago',document.getElementById('mc-metodo').value);
+  fd.append('observaciones',document.getElementById('mc-obs').value);
+  fd.append('lat',document.getElementById('mc-lat').value);
+  fd.append('lng',document.getElementById('mc-lng').value);
+
+  // Adjuntar foto si hay
+  const fotoInput=document.getElementById('mc-foto-camara');
+  const fotoInput2=document.getElementById('mc-foto-input');
+  const fotoFile=(fotoInput.files[0]||fotoInput2.files[0]);
+  if(fotoFile)fd.append('foto',fotoFile);
+
+  try{
+    const r=await window.fetch('/cobros/registrar',{method:'POST',body:fd});
+    const d=await r.json();
+    if(d.ok){
+      document.getElementById('modal-cobro').classList.remove('open');
+      toast(d.mensaje,'success');
+      setTimeout(buscar,600);
+    }else{alert(d.error||'Error al registrar');}
+  }catch(e){alert('Error de conexion');}
+  btn.disabled=false;btn.textContent='Registrar Cobro';
+}
+
+function cop(n){return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0,maximumFractionDigits:0}).format(n||0)}
+</script>
+<style>
+.tab-btn{padding:6px 14px;border:none;background:none;border-radius:var(--r-sm);font-size:12px;font-weight:500;color:var(--t2);cursor:pointer;transition:all .15s}
+.tab-btn.active{background:var(--surface);color:var(--t1);box-shadow:var(--shadow-xs)}
+.metodo-btn{padding:8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);font-size:12px;font-weight:500;color:var(--t2);cursor:pointer;transition:all .15s}
+.metodo-btn.active{background:var(--black);color:#fff;border-color:var(--black)}
+.metodo-btn:hover:not(.active){background:var(--bg)}
+</style>
+{% endblock %}

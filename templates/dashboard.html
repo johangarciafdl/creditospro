@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block topbar_title %}Dashboard{% endblock %}
+{% block topbar_sub %}{{ current_user.nombre }}{% endblock %}
+{% block topbar_actions %}
+<span style="font-size:11px;color:var(--t3);font-family:var(--mono);" id="fecha-hora"></span>
+{% endblock %}
+
+{% block content %}
+<!-- STAT CARDS -->
+<div class="stats-grid mb-4">
+  <div class="stat-card gold card-anim">
+    <div class="stat-icon">💰</div>
+    <div class="stat-label">Cobrado hoy</div>
+    <div class="stat-val gold">${{ "{:,.0f}".format(stats.cobrado_hoy) }}</div>
+    <div class="stat-sub">Mes: ${{ "{:,.0f}".format(stats.cobrado_mes) }}</div>
+  </div>
+  <div class="stat-card green card-anim">
+    <div class="stat-icon">◉</div>
+    <div class="stat-label">Clientes activos</div>
+    <div class="stat-val">{{ stats.clientes }}</div>
+    <div class="stat-sub">{{ stats.prestamos }} préstamos activos</div>
+  </div>
+  <div class="stat-card red card-anim">
+    <div class="stat-icon">⚠</div>
+    <div class="stat-label">En mora</div>
+    <div class="stat-val red">{{ stats.atrasados }}</div>
+    <div class="stat-sub">{{ stats.vencidas }} cuotas vencidas</div>
+  </div>
+  <div class="stat-card blue card-anim">
+    <div class="stat-icon">◈</div>
+    <div class="stat-label">Capital en cartera</div>
+    <div class="stat-val" style="font-size:18px;">${{ "{:,.0f}".format(stats.capital_activo) }}</div>
+    <div class="stat-sub">Total préstamos activos</div>
+  </div>
+</div>
+
+<div class="grid-2 mb-4" style="grid-template-columns:1fr 380px;">
+  <!-- CHART -->
+  <div class="card card-anim">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Cobros últimos 7 días</div>
+        <div class="card-sub">Tendencia de recaudo diario</div>
+      </div>
+    </div>
+    <div class="card-body" style="padding:20px;">
+      <canvas id="chart-cobros" height="180"></canvas>
+    </div>
+  </div>
+
+  <!-- RECENT COBROS -->
+  <div class="card card-anim">
+    <div class="card-header">
+      <div class="card-title">Cobros recientes</div>
+      <a href="/cobros" class="btn btn-ghost btn-xs">Ver todos →</a>
+    </div>
+    <div style="overflow:hidden;">
+      {% for c in cobros_recientes %}
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);transition:background 0.15s;" onmouseover="this.style.background='var(--surface-2,#FAFAF8)'" onmouseout="this.style.background=''">
+        <div style="width:34px;height:34px;border-radius:8px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">💵</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ c.cliente }}</div>
+          <div style="font-size:11px;color:var(--t3);">{{ c.metodo }} · {{ c.fecha }}</div>
+        </div>
+        <div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--green);white-space:nowrap;">+${{ "{:,.0f}".format(c.valor) }}</div>
+      </div>
+      {% else %}
+      <div class="empty" style="padding:30px;">
+        <div style="font-size:32px;margin-bottom:8px;opacity:0.4;">💰</div>
+        <div class="empty-title" style="font-size:13px;">Sin cobros hoy</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- ZONAS -->
+<div class="card card-anim">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Rendimiento por zona</div>
+      <div class="card-sub">Cobros del mes en curso</div>
+    </div>
+    <a href="/zonas" class="btn btn-ghost btn-xs">Gestionar →</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Zona</th>
+          <th style="text-align:center;">Clientes</th>
+          <th style="text-align:center;">Préstamos</th>
+          <th style="text-align:right;">Cobrado mes</th>
+          <th style="text-align:left;">Progreso</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set max_cobro = max_cobro if max_cobro is defined else 1 %}
+        {% for z in zonas_stats %}
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:8px;height:8px;border-radius:50%;background:var(--gold);"></div>
+              <span style="font-weight:500;">{{ z.nombre }}</span>
+            </div>
+          </td>
+          <td style="text-align:center;color:var(--t2);">{{ z.clientes }}</td>
+          <td style="text-align:center;color:var(--t2);">{{ z.prestamos }}</td>
+          <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--green);">${{ "{:,.0f}".format(z.cobrado) }}</td>
+          <td style="width:160px;">
+            <div class="progress" style="height:4px;">
+              <div class="progress-fill gold" style="width:{{ [[(z.cobrado/max_cobro*100)|int, 100]|min, 0]|max }}%;"></div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Chart
+const chartData = typeof chart_data === 'string' ? JSON.parse('{{ chart_data | safe }}') : {{ chart_data | tojson }};
+const canvas = document.getElementById('chart-cobros');
+const ctx = canvas.getContext('2d');
+canvas.width = canvas.offsetWidth;
+
+const vals = chartData.map(d => d.valor);
+const max = Math.max(...vals, 1);
+const W = canvas.width, H = 180;
+const pad = {t:10,r:10,b:30,l:60};
+const cW = W - pad.l - pad.r;
+const cH = H - pad.t - pad.b;
+const barW = cW / chartData.length;
+
+function drawChart() {
+  canvas.width = canvas.offsetWidth;
+  const W = canvas.width;
+  const cW2 = W - pad.l - pad.r;
+  const bW = cW2 / chartData.length;
+
+  ctx.clearRect(0,0,W,H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+  ctx.lineWidth = 1;
+  [0.25,0.5,0.75,1].forEach(p => {
+    const y = pad.t + cH*(1-p);
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'right';
+    ctx.fillText('$'+fmt(max*p), pad.l-6, y+3);
+  });
+
+  // Bars
+  chartData.forEach((d,i) => {
+    const barH = d.valor > 0 ? Math.max((d.valor/max)*cH, 4) : 0;
+    const x = pad.l + i*bW + bW*0.15;
+    const y = pad.t + cH - barH;
+    const w = bW*0.7;
+
+    // Gradient
+    const gr = ctx.createLinearGradient(0,y,0,y+barH);
+    gr.addColorStop(0,'rgba(200,169,90,0.9)');
+    gr.addColorStop(1,'rgba(200,169,90,0.3)');
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, barH, [4,4,0,0]);
+    ctx.fill();
+
+    // Day label
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.dia, x+w/2, H-8);
+  });
+}
+
+function fmt(n) { return new Intl.NumberFormat('es-CO',{notation:'compact',maximumFractionDigits:0}).format(n); }
+drawChart();
+window.addEventListener('resize', drawChart);
+</script>
+{% endblock %}

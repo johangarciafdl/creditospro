@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Mi Ruta{% endblock %}
+{% block topbar_title %}Mi Ruta{% endblock %}
+{% block topbar_sub %}{{ current_user.nombre }}{% endblock %}
+
+{% block content %}
+<div style="max-width:420px;margin:0 auto;">
+
+<!-- RESUMEN COBRADOR -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+  <div class="stat-card gold card-anim">
+    <div class="stat-label">Cobrado hoy</div>
+    <div class="stat-val gold" style="font-size:20px;" id="cobrado-hoy">$0</div>
+  </div>
+  <div class="stat-card red card-anim">
+    <div class="stat-label">Pendientes</div>
+    <div class="stat-val red" style="font-size:20px;" id="num-pendientes">—</div>
+  </div>
+</div>
+
+<!-- BÚSQUEDA -->
+<div class="card mb-3">
+  <div class="card-body" style="padding:10px;">
+    <div class="input-icon-wrap">
+      <label for="inp-buscar" style="position:absolute;clip:rect(1px,1px,1px,1px);overflow:hidden;">Buscar cliente en ruta</label>
+      <span class="input-icon">🔍</span>
+      <input type="text" id="inp-buscar" placeholder="Buscar cliente..." oninput="buscarDebounce()">
+    </div>
+  </div>
+</div>
+
+<!-- LISTA -->
+<div id="estado" style="text-align:center;padding:40px 0;color:var(--t3);">
+  <div style="font-size:36px;margin-bottom:10px;">⏳</div>
+  <div>Cargando ruta...</div>
+</div>
+<div id="lista-ruta" style="display:flex;flex-direction:column;gap:8px;"></div>
+
+<!-- MODAL COBRO RÁPIDO -->
+<div class="modal-overlay" id="modal-cobro" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" style="max-width:360px;" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div>
+      <div class="modal-title" id="mc-nombre">—</div>
+      <div style="font-size:12px;color:var(--t3);" id="mc-detalle">—</div>
+    </div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cobro').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <input type="hidden" id="mc-cuota-id">
+    <div class="form-group">
+      <label>Valor</label>
+      <input type="number" id="mc-valor" inputmode="numeric" style="font-size:22px;font-weight:700;text-align:center;" placeholder="0">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">
+      <button onclick="setMetodo('Efectivo')" id="btn-efectivo" class="btn btn-primary btn-sm">💵 Efectivo</button>
+      <button onclick="setMetodo('Nequi')" id="btn-nequi" class="btn btn-sm" style="border-color:transparent;">🟣 Nequi</button>
+      <button onclick="setMetodo('Daviplata')" id="btn-daviplata" class="btn btn-sm" style="border-color:transparent;">🔴 Daviplata</button>
+      <button onclick="setMetodo('Transferencia')" id="btn-transf" class="btn btn-sm" style="border-color:transparent;">📲 Transferencia</button>
+    </div>
+    <input type="hidden" id="mc-metodo" value="Efectivo">
+    <input type="text" id="mc-obs" placeholder="Observación (opcional)">
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-cobro').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-gold" style="flex:1;justify-content:center;" onclick="confirmarCobro()">✓ Registrar</button>
+  </div>
+</div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let _deb = null, _zona = {{ current_user.zona_id or 'null' }};
+
+async function cargarRuta() {
+  const params = new URLSearchParams();
+  if (_zona) params.set('zona_id', _zona);
+  params.set('q', document.getElementById('inp-buscar').value.trim());
+
+  const [rRes, cRes] = await Promise.all([
+    fetch('/cobros/pendientes-ajax?'+params),
+    fetch('/cobros/buscar-ajax?fecha='+new Date().toISOString().split('T')[0]+((_zona?'&zona_id='+_zona:''))),
+  ]);
+  const rData = await rRes.json();
+  const cData = await cRes.json();
+
+  // Update stats
+  const cobradoHoy = (cData.cobros||[]).reduce((s,c)=>s+c.valor,0);
+  document.getElementById('cobrado-hoy').textContent = '$'+Number(cobradoHoy).toLocaleString('es-CO');
+  document.getElementById('num-pendientes').textContent = (rData.pendientes||[]).length;
+
+  // Render list
+  const lista = document.getElementById('lista-ruta');
+  const items = rData.pendientes || [];
+  document.getElementById('estado').style.display = 'none';
+
+  if (!items.length) {
+    lista.innerHTML = `<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">¡Todo cobrado!</div><div class="empty-sub">No tienes pendientes hoy</div></div>`;
+    return;
+  }
+
+  lista.innerHTML = items.map(p => {
+    const venc = p.dias > 0;
+    return `
+    <div class="card card-hover">
+      <div style="padding:14px 14px 10px;">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+          <div>
+            <div style="font-weight:600;font-size:14px;">${p.cliente}</div>
+            <div style="font-size:11px;color:var(--t3);">Cuota ${p.cuota_num}/${p.total_cuotas} · ${p.vencimiento}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-family:var(--mono);font-weight:700;font-size:16px;">$${Number(p.valor).toLocaleString('es-CO')}</div>
+            <div style="font-size:10px;font-weight:600;color:${venc?'var(--red)':'var(--amber)'};">${venc?p.dias+'d vencida':'Vence hoy'}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="abrirCobro(${p.cuota_id},'${p.cliente}',${p.valor},${p.cuota_num})" class="btn btn-gold btn-sm" style="flex:1;justify-content:center;">💰 Cobrar</button>
+          ${p.whatsapp?`<a href="https://wa.me/57${p.whatsapp.replace(/\D/g,'')}" target="_blank" class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;padding:5px 10px;">💬</a>`:''}
+          ${p.telefono?`<a href="tel:${p.telefono}" class="btn btn-sm" style="padding:5px 10px;">📞</a>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function buscarDebounce() { clearTimeout(_deb); _deb=setTimeout(cargarRuta,400); }
+
+function setMetodo(m) {
+  document.getElementById('mc-metodo').value = m;
+  ['efectivo','nequi','daviplata','transf'].forEach(k => {
+    const b = document.getElementById('btn-'+k);
+    if(b) { b.className='btn btn-sm'; b.style.borderColor='transparent'; }
+  });
+  const map = {Efectivo:'efectivo',Nequi:'nequi',Daviplata:'daviplata',Transferencia:'transf'};
+  const btn = document.getElementById('btn-'+map[m]);
+  if(btn) { btn.className='btn btn-primary btn-sm'; btn.style.borderColor=''; }
+}
+
+function abrirCobro(cuotaId, cliente, valor, numCuota) {
+  document.getElementById('mc-cuota-id').value = cuotaId;
+  document.getElementById('mc-nombre').textContent = cliente;
+  document.getElementById('mc-detalle').textContent = `Cuota #${numCuota} · $${Number(valor).toLocaleString('es-CO')}`;
+  document.getElementById('mc-valor').value = valor;
+  setMetodo('Efectivo');
+  document.getElementById('mc-obs').value = '';
+  document.getElementById('modal-cobro').classList.add('open');
+  setTimeout(()=>document.getElementById('mc-valor').focus(),300);
+}
+
+async function confirmarCobro() {
+  const cuota_id = document.getElementById('mc-cuota-id').value;
+  const valor    = document.getElementById('mc-valor').value;
+  const metodo   = document.getElementById('mc-metodo').value;
+  const obs      = document.getElementById('mc-obs').value;
+  if (!valor || parseFloat(valor)<=0) { alert('Ingresa el valor'); return; }
+
+  const fd = new FormData();
+  fd.append('cuota_id', cuota_id);
+  fd.append('valor_cobrado', valor);
+  fd.append('metodo_pago', metodo);
+  fd.append('observaciones', obs);
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      fd.append('lat', pos.coords.latitude);
+      fd.append('lng', pos.coords.longitude);
+    }, ()=>{}, {timeout:2000});
+  }
+
+  const r = await window.fetch('/cobros/registrar', {method:'POST', body:fd});
+  const d = await r.json();
+  if (d.ok) {
+    document.getElementById('modal-cobro').classList.remove('open');
+    toast(d.mensaje, 'success');
+    setTimeout(cargarRuta, 600);
+  } else {
+    alert(d.error || 'Error');
+  }
+}
+
+cargarRuta();
+</script>
+{% endblock %}

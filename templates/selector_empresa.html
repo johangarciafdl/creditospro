@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>CreditosPro — Seleccionar Empresa</title>
+<link rel="manifest" href="/static/manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#0A0A0A;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;-webkit-font-smoothing:antialiased}
+canvas{position:fixed;inset:0;z-index:0}
+.wrap{position:relative;z-index:10;width:100%;max-width:480px}
+.header{text-align:center;margin-bottom:36px}
+.logo{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#C8A95A,#7A5A18);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;box-shadow:0 0 40px rgba(200,169,90,.3)}
+.logo svg{width:28px;height:28px;color:#0A0A0A}
+h1{color:#fff;font-size:24px;font-weight:700;letter-spacing:-.5px;margin-bottom:4px}
+.sub{color:rgba(255,255,255,.35);font-size:13px}
+.search-wrap{position:relative;margin-bottom:20px}
+.search-wrap input{width:100%;padding:12px 16px 12px 42px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:#fff;font-size:14px;font-family:'Inter',sans-serif;outline:none;transition:border-color .2s,background .2s}
+.search-wrap input:focus{border-color:rgba(200,169,90,.5);background:rgba(255,255,255,.09)}
+.search-wrap input::placeholder{color:rgba(255,255,255,.25)}
+.search-ico{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.3)}
+.grid{display:flex;flex-direction:column;gap:10px}
+.empresa-card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:16px 18px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:14px;text-decoration:none}
+.empresa-card:hover{background:rgba(200,169,90,.1);border-color:rgba(200,169,90,.3);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.empresa-av{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#C8A95A,#7A5A18);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#0A0A0A;flex-shrink:0}
+.empresa-name{color:#fff;font-size:14px;font-weight:600;letter-spacing:-.2px}
+.empresa-meta{color:rgba(255,255,255,.3);font-size:11px;margin-top:2px}
+.empresa-arr{margin-left:auto;color:rgba(255,255,255,.2);flex-shrink:0;transition:transform .2s,color .2s}
+.empresa-card:hover .empresa-arr{transform:translateX(4px);color:rgba(200,169,90,.7)}
+.empty{text-align:center;padding:40px 20px;color:rgba(255,255,255,.25);font-size:13px;display:none}
+.footer{text-align:center;margin-top:28px}
+.footer a{color:rgba(200,169,90,.7);font-size:12px;text-decoration:none;font-weight:500}
+.footer a:hover{color:#C8A95A}
+</style>
+<script>document.documentElement.classList.add('js-ready');</script>
+<style>
+.js-ready .header{opacity:0;transform:translateY(-20px)}
+.js-ready .search-wrap{opacity:0}
+.js-ready .empresa-card{opacity:0;transform:translateY(12px)}
+.js-ready .footer{opacity:0}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+
+<div class="wrap">
+  <div class="header" id="header">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 6v12M9 9h4.5a1.5 1.5 0 0 1 0 3H10a1.5 1.5 0 0 0 0 3H15"/></svg>
+    </div>
+    <h1>CreditosPro</h1>
+    <div class="sub">Selecciona tu empresa para continuar</div>
+  </div>
+
+  {% if empresas|length > 3 %}
+  <div class="search-wrap" id="search-w">
+    <span class="search-ico">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </span>
+    <input type="text" id="inp-buscar" placeholder="Buscar empresa..." oninput="filtrar()">
+  </div>
+  {% endif %}
+
+  <div class="grid" id="grid">
+    {% for e in empresas %}
+    <a href="/auth/login?empresa_id={{ e.id }}" class="empresa-card" data-nombre="{{ e.nombre|lower }}">
+      <div class="empresa-av">{{ e.nombre[:2].upper() }}</div>
+      <div>
+        <div class="empresa-name">{{ e.nombre }}</div>
+        <div class="empresa-meta">{{ e.ciudad or 'Colombia' }} &nbsp;&middot;&nbsp; {{ e.usuarios_count or 0 }} usuarios</div>
+      </div>
+      <svg class="empresa-arr" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+    </a>
+    {% endfor %}
+    <div class="empty" id="empty">No se encontro ninguna empresa</div>
+  </div>
+
+  {% if allow_public_registration %}
+  <div class="footer" id="footer">
+    <a href="/registro">Registrar nueva empresa &rarr;</a>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+if(!window.anime){window.anime=(opts)=>{const targets=typeof opts.targets==='string'?document.querySelectorAll(opts.targets):[opts.targets].flat().filter(Boolean);targets.forEach(el=>{if(el&&el.style){el.style.opacity='1';el.style.transform='none';}});return {add(){return this}}};anime.timeline=()=>({add(opts){anime(opts);return this}});anime.stagger=()=>0;}
+// Canvas bg
+const cv=document.getElementById('bg'), ctx=cv.getContext('2d');
+function rz(){cv.width=window.innerWidth;cv.height=window.innerHeight}rz();window.addEventListener('resize',rz);
+const orbs=[...Array(4)].map(()=>({x:Math.random()*window.innerWidth,y:Math.random()*window.innerHeight,r:120+Math.random()*180,vx:(Math.random()-.5)*.2,vy:(Math.random()-.5)*.2,a:.04+Math.random()*.04}));
+(function draw(){ctx.clearRect(0,0,cv.width,cv.height);const g=ctx.createRadialGradient(cv.width/2,cv.height/2,0,cv.width/2,cv.height/2,cv.width);g.addColorStop(0,'#121210');g.addColorStop(1,'#0A0A0A');ctx.fillStyle=g;ctx.fillRect(0,0,cv.width,cv.height);orbs.forEach(o=>{o.x+=o.vx;o.y+=o.vy;if(o.x<-o.r)o.x=cv.width+o.r;if(o.x>cv.width+o.r)o.x=-o.r;if(o.y<-o.r)o.y=cv.height+o.r;if(o.y>cv.height+o.r)o.y=-o.r;const gr=ctx.createRadialGradient(o.x,o.y,0,o.x,o.y,o.r);gr.addColorStop(0,`rgba(200,169,90,${o.a})`);gr.addColorStop(1,'transparent');ctx.fillStyle=gr;ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill()});requestAnimationFrame(draw)})();
+
+// Entrance
+anime.timeline({easing:'easeOutQuart'})
+  .add({targets:'#header',translateY:[-20,0],opacity:[0,1],duration:600},200)
+  .add({targets:'#search-w',opacity:[0,1],duration:400},600)
+  .add({targets:'.empresa-card',translateY:[12,0],opacity:[0,1],delay:anime.stagger(70),duration:450},500)
+  .add({targets:'#footer',opacity:[0,1],duration:400},800);
+
+// Filter
+function filtrar(){
+  const q=document.getElementById('inp-buscar').value.toLowerCase();
+  const cards=document.querySelectorAll('.empresa-card');
+  let vis=0;
+  cards.forEach(c=>{const show=!q||c.dataset.nombre.includes(q);c.style.display=show?'flex':'none';if(show)vis++;});
+  document.getElementById('empty').style.display=vis===0?'block':'none';
+}
+
+// Click animation
+document.querySelectorAll('.empresa-card').forEach(c=>{
+  c.addEventListener('click',e=>{
+    e.preventDefault();
+    const href=c.getAttribute('href');
+    anime({targets:c,scale:[1,.96],opacity:[1,.7],duration:150,easing:'easeInQuad',complete:()=>{window.location.href=href}});
+  });
+});
+</script>
+</body>
+</html>

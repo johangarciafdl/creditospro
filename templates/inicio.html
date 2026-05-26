@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>{{ software_name }} - Inicio</title>
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#0A0A0A">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--gold:#C8A95A;--gold2:#8A6A25;--black:#0A0A0A;--panel:rgba(255,255,255,.055);--line:rgba(255,255,255,.09);--font:'Inter',system-ui,sans-serif}
+html,body{min-height:100%;font-family:var(--font);background:var(--black);color:#fff;-webkit-font-smoothing:antialiased}
+body{overflow-x:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%;z-index:0}
+.grid{position:fixed;inset:0;z-index:1;background-image:linear-gradient(rgba(200,169,90,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(200,169,90,.035) 1px,transparent 1px);background-size:58px 58px;mask-image:radial-gradient(ellipse at center,black 18%,transparent 72%);-webkit-mask-image:radial-gradient(ellipse at center,black 18%,transparent 72%)}
+.wrap{position:relative;z-index:5;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px}
+.main{width:100%;max-width:760px;text-align:center}
+.mark{width:88px;height:88px;border-radius:24px;background:linear-gradient(135deg,var(--gold),var(--gold2));display:flex;align-items:center;justify-content:center;margin:0 auto 24px;box-shadow:0 0 70px rgba(200,169,90,.34),0 18px 50px rgba(0,0,0,.35)}
+.mark svg{width:44px;height:44px;color:#090909}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border:1px solid rgba(200,169,90,.22);background:rgba(200,169,90,.08);border-radius:999px;color:rgba(255,255,255,.72);font-size:12px;font-weight:600;margin-bottom:18px}
+.eyebrow span{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 16px rgba(200,169,90,.8)}
+h1{font-size:clamp(42px,8vw,76px);font-weight:800;letter-spacing:-2px;line-height:.95;margin-bottom:16px}
+h1 strong{color:var(--gold);font-weight:800}
+.sub{max-width:590px;margin:0 auto;color:rgba(255,255,255,.44);font-size:16px;line-height:1.7}
+.owner{margin-top:18px;color:rgba(255,255,255,.58);font-size:14px}
+.owner strong{color:#fff;font-weight:700}
+.actions{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:34px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-width:170px;padding:13px 20px;border-radius:12px;border:1px solid transparent;text-decoration:none;font-weight:700;font-size:14px;transition:transform .18s,box-shadow .18s,background .18s}
+.btn-main{background:linear-gradient(135deg,var(--gold),#9A7428);color:#0A0A0A;box-shadow:0 10px 32px rgba(200,169,90,.24)}
+.btn-main:hover{transform:translateY(-2px);box-shadow:0 14px 42px rgba(200,169,90,.34)}
+.btn-ghost{background:var(--panel);border-color:var(--line);color:rgba(255,255,255,.78)}
+.btn-ghost:hover{background:rgba(255,255,255,.085);transform:translateY(-2px)}
+.status{margin:30px auto 0;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:620px}
+.item{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 12px}
+.item b{display:block;font-size:12px;color:#fff;margin-bottom:4px}
+.item span{font-size:11px;color:rgba(255,255,255,.34)}
+.license{margin-top:18px;font-size:12px;color:rgba(255,255,255,.32)}
+.license.ok{color:rgba(134,239,172,.76)}.license.warn{color:rgba(252,211,77,.82)}
+@media(max-width:640px){.wrap{padding:22px}.status{grid-template-columns:1fr}.btn{width:100%}h1{letter-spacing:-1px}}
+</style>
+<script>document.documentElement.classList.add('js-ready');</script>
+<style>
+.js-ready .mark,.js-ready .eyebrow,.js-ready h1,.js-ready .sub,.js-ready .owner,.js-ready .actions,.js-ready .status,.js-ready .license{opacity:0;transform:translateY(16px)}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="grid"></div>
+<div class="wrap">
+  <main class="main">
+    <div class="mark" id="mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 6v12M9 9h4.5a1.5 1.5 0 0 1 0 3H10a1.5 1.5 0 0 0 0 3H15"/></svg>
+    </div>
+    <div class="eyebrow"><span></span>Sistema multiempresa de creditos y cobros</div>
+    <h1>{{ software_name }}<br><strong>Profesional</strong></h1>
+    <p class="sub">Gestiona empresas independientes, clientes, prestamos, cuotas, cobros, reportes y recordatorios desde una plataforma segura con datos aislados por empresa.</p>
+    <div class="owner">Software de <strong>{{ software_owner }}</strong></div>
+
+    <div class="actions">
+      <a class="btn btn-main" href="{{ start_url }}">
+        {{ start_label }}
+        <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </a>
+      {% if license_valid %}
+      <a class="btn btn-ghost" href="/seleccionar-empresa">Empresas</a>
+      {% else %}
+      <a class="btn btn-ghost" href="/license/machine-id">Ver ID equipo</a>
+      {% endif %}
+    </div>
+
+    <div class="status">
+      <div class="item"><b>Multiempresa</b><span>Separacion por empresa_id</span></div>
+      <div class="item"><b>Supabase/Postgres</b><span>Preparado para produccion</span></div>
+      <div class="item"><b>Licencia</b><span>Activacion por equipo</span></div>
+    </div>
+    <div class="license {{ 'ok' if license_valid else 'warn' }}">
+      {{ 'Software activado. Puedes iniciar sesion.' if license_valid else 'Activacion pendiente. Presiona Iniciar para activar este equipo.' }}
+    </div>
+  </main>
+</div>
+
+<script>
+if(!window.anime){window.anime=(opts)=>{const raw=opts.targets;const targets=typeof raw==='string'?document.querySelectorAll(raw):raw&&raw.length!==undefined?raw:[raw];Array.from(targets||[]).forEach(el=>{if(el&&el.style){el.style.opacity='1';el.style.transform='none';}});return {add(){return this}}};anime.stagger=()=>0;}
+const cv=document.getElementById('bg'),ctx=cv.getContext('2d');
+function resize(){cv.width=innerWidth;cv.height=innerHeight}resize();addEventListener('resize',resize);
+const dots=[...Array(5)].map(()=>({x:Math.random()*innerWidth,y:Math.random()*innerHeight,r:170+Math.random()*240,vx:(Math.random()-.5)*.22,vy:(Math.random()-.5)*.22,a:.045+Math.random()*.04}));
+(function draw(){ctx.clearRect(0,0,cv.width,cv.height);const g=ctx.createRadialGradient(cv.width/2,cv.height/2,0,cv.width/2,cv.height/2,cv.width*.9);g.addColorStop(0,'#141410');g.addColorStop(1,'#0A0A0A');ctx.fillStyle=g;ctx.fillRect(0,0,cv.width,cv.height);dots.forEach(o=>{o.x+=o.vx;o.y+=o.vy;if(o.x<-o.r)o.x=cv.width+o.r;if(o.x>cv.width+o.r)o.x=-o.r;if(o.y<-o.r)o.y=cv.height+o.r;if(o.y>cv.height+o.r)o.y=-o.r;const gr=ctx.createRadialGradient(o.x,o.y,0,o.x,o.y,o.r);gr.addColorStop(0,`rgba(200,169,90,${o.a})`);gr.addColorStop(1,'transparent');ctx.fillStyle=gr;ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill()});requestAnimationFrame(draw)})();
+document.addEventListener('DOMContentLoaded',()=>{
+  anime({targets:['.mark','.eyebrow','h1','.sub','.owner','.actions','.status','.license'],translateY:[16,0],opacity:[0,1],delay:anime.stagger(90,{start:100}),duration:620,easing:'easeOutQuart'});
+  anime({targets:'#mark',translateY:[0,-9],duration:2800,easing:'easeInOutSine',direction:'alternate',loop:true,delay:900});
+});
+</script>
+</body>
+</html>

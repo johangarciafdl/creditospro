@@ -1,0 +1,467 @@
+{% extends "base.html" %}
+{% block title %}Préstamos{% endblock %}
+{% block topbar_title %}Préstamos{% endblock %}
+{% block topbar_sub %}{{ total_prestamos }} registrados{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-primary" onclick="abrirModalNuevoPrestamo()">+ Nuevo Préstamo</button>
+{% endblock %}
+
+{% block content %}
+<!-- FILTROS AJAX -->
+<div class="card mb-3">
+  <div class="card-body" style="padding:12px 18px;">
+    <div class="flex gap-2 flex-wrap">
+      <div class="input-icon-wrap" style="flex:1;min-width:180px;">
+        <label for="inp-buscar" style="position:absolute;clip:rect(1px,1px,1px,1px);overflow:hidden;">Buscar préstamo</label>
+        <span class="input-icon">🔍</span>
+        <input type="text" id="inp-buscar" placeholder="Buscar por nombre o cédula..."
+               oninput="buscarDebounce()" autocomplete="off">
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <label for="sel-estado" style="font-size:11px;color:var(--t3);margin-bottom:3px;">Estado</label>
+        <select id="sel-estado" onchange="buscar()" style="width:160px;">
+          <option value="">Todos los estados</option>
+          <option value="Activo">Activo</option>
+          <option value="Atrasado">Atrasado</option>
+          <option value="Pagado">Pagado</option>
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <label for="sel-zona" style="font-size:11px;color:var(--t3);margin-bottom:3px;">Zona</label>
+        <select id="sel-zona" onchange="buscar()" style="width:180px;">
+          <option value="">Todas las zonas</option>
+          {% for z in zonas %}
+          <option value="{{ z.id }}">{{ z.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="buscar()">Buscar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ESTADO -->
+<div id="estado-busqueda" style="text-align:center;padding:60px 0;color:var(--t3);">
+  <div style="font-size:48px;margin-bottom:12px;">🔍</div>
+  <div style="font-size:15px;font-weight:500;">Busca por nombre, estado o zona</div>
+  <div style="font-size:13px;margin-top:6px;">{{ total_prestamos }} préstamos registrados</div>
+</div>
+
+<!-- TABLA -->
+<div id="wrap-tabla" style="display:none;">
+  <div class="card">
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);">
+            <th style="padding:10px 14px;text-align:left;color:var(--t2);font-weight:500;">Cliente</th>
+            <th style="padding:10px 14px;text-align:left;color:var(--t2);font-weight:500;">Zona</th>
+            <th style="padding:10px 14px;text-align:right;color:var(--t2);font-weight:500;">Capital</th>
+            <th style="padding:10px 14px;text-align:right;color:var(--t2);font-weight:500;">Cuota</th>
+            <th style="padding:10px 14px;text-align:center;color:var(--t2);font-weight:500;"># Cuotas</th>
+            <th style="padding:10px 14px;text-align:left;color:var(--t2);font-weight:500;">Inicio</th>
+            <th style="padding:10px 14px;text-align:center;color:var(--t2);font-weight:500;">Estado</th>
+            <th style="padding:10px 14px;text-align:center;color:var(--t2);font-weight:500;">Ver</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-prestamos"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL NUEVO PRÉSTAMO -->
+<div class="modal-overlay" id="modal-prestamo" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal modal-lg" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Nuevo Préstamo</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-prestamo').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="form-group mb-3">
+      <label>Cliente *</label>
+      <input type="text" id="np-cliente-q" placeholder="Escribe nombre o cédula..."
+             oninput="buscarClienteDebounce()" autocomplete="off">
+      <div id="np-lista-clientes" style="display:none;border:1px solid var(--border);border-radius:8px;
+           max-height:200px;overflow-y:auto;background:var(--surface);margin-top:4px;"></div>
+      <input type="hidden" id="np-cliente-id">
+      <div id="np-cliente-info" style="font-size:12px;color:var(--gold);margin-top:4px;"></div>
+    </div>
+    <div class="grid-2 mb-2">
+      <div class="form-group">
+        <label>Zona *</label>
+        <select id="np-zona">
+          {% for z in zonas %}
+          <option value="{{ z.id }}">{{ z.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Capital ($) *</label>
+        <input type="number" id="np-capital" placeholder="500000" min="1" oninput="calcPreview()">
+      </div>
+      <div class="form-group">
+        <label>Tasa de interés (%)</label>
+        <input type="number" id="np-tasa" value="20" step="0.5" oninput="calcPreview()">
+      </div>
+      <div class="form-group">
+        <label>Número de cuotas *</label>
+        <input type="number" id="np-cuotas" placeholder="30" min="1" max="365" oninput="calcPreview()">
+      </div>
+      <div class="form-group">
+        <label>Plazo entre cuotas (días)</label>
+        <input type="number" id="np-plazo" value="1" min="1" oninput="calcPreview()">
+      </div>
+      <div class="form-group">
+        <label>Fecha inicio *</label>
+        <input type="date" id="np-fecha">
+      </div>
+    </div>
+    <div id="np-preview" style="display:none;background:rgba(212, 175, 55, 0.05);border:1px solid rgba(212, 175, 55, 0.2);border-radius:8px;padding:12px 16px;margin-top:4px;">
+      <div class="flex-between fs-13 mb-1">
+        <span class="text-2">Interés total:</span>
+        <span class="num fw-600" id="np-prev-int">—</span>
+      </div>
+      <div class="flex-between fs-13 mb-1">
+        <span class="text-2">Total a pagar:</span>
+        <span class="num fw-600" style="color:var(--accent)" id="np-prev-total">—</span>
+      </div>
+      <div class="flex-between fs-13">
+        <span class="text-2">Valor por cuota:</span>
+        <span class="num fw-600 text-green" id="np-prev-cuota">—</span>
+      </div>
+    </div>
+    <div class="form-group mt-2">
+      <label>Observaciones</label>
+      <input type="text" id="np-obs" placeholder="Opcional...">
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-prestamo').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-primary" onclick="guardarPrestamo()">Crear Préstamo</button>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Fecha hoy por defecto
+document.getElementById('np-fecha').value = new Date().toISOString().split('T')[0];
+
+let _deb = null, _clienteDeb = null, _calcDeb = null;
+
+function buscarDebounce() {
+  clearTimeout(_deb);
+  _deb = setTimeout(buscar, 420);
+}
+
+async function buscar() {
+  const q       = document.getElementById('inp-buscar').value.trim();
+  const estado  = document.getElementById('sel-estado').value;
+  const zona_id = document.getElementById('sel-zona').value;
+
+  if (!q && !estado && !zona_id) {
+    document.getElementById('wrap-tabla').style.display = 'none';
+    document.getElementById('estado-busqueda').innerHTML = `
+      <div style="font-size:48px;margin-bottom:12px;">🔍</div>
+      <div style="font-size:15px;font-weight:500;">Busca por nombre, estado o zona</div>`;
+    document.getElementById('estado-busqueda').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('estado-busqueda').innerHTML =
+    '<div style="font-size:32px;margin-bottom:8px;">⏳</div><div>Buscando...</div>';
+  document.getElementById('estado-busqueda').style.display = 'block';
+  document.getElementById('wrap-tabla').style.display = 'none';
+
+  const params = new URLSearchParams();
+  if (q)       params.set('q', q);
+  if (estado)  params.set('estado', estado);
+  if (zona_id) params.set('zona_id', zona_id);
+
+  try {
+    const r    = await window.fetch('/prestamos/buscar-ajax?' + params.toString());
+    const data = await r.json();
+
+    if (!data.prestamos || data.prestamos.length === 0) {
+      document.getElementById('estado-busqueda').innerHTML =
+        '<div style="font-size:48px;margin-bottom:12px;">😕</div>' +
+        '<div style="font-size:15px;">Sin resultados</div>';
+      return;
+    }
+
+    const badges = {Activo:'badge-gold',activo:'badge-gold',
+                    Atrasado:'badge-red',atrasado:'badge-red',
+                    Pagado:'badge-gray',pagado:'badge-gray'};
+    document.getElementById('tbody-prestamos').innerHTML = data.prestamos.map(p => `
+      <tr style="border-bottom:1px solid var(--border);cursor:pointer;"
+          onclick="window.location='/clientes/${p.cliente_id}'">
+        <td style="padding:10px 14px;">
+          <div class="fw-600">${p.cliente}</div>
+          <div class="fs-11 text-2">CC ${p.cedula}</div>
+        </td>
+        <td style="padding:10px 14px;color:var(--t2);">${p.zona}</td>
+        <td style="padding:10px 14px;text-align:right;" class="num">
+          $${Number(p.capital).toLocaleString('es-CO')}</td>
+        <td style="padding:10px 14px;text-align:right;" class="num">
+          $${Number(p.valor_cuota).toLocaleString('es-CO')}</td>
+        <td style="padding:10px 14px;text-align:center;">${p.num_cuotas}</td>
+        <td style="padding:10px 14px;color:var(--t2);">${p.fecha_inicio}</td>
+        <td style="padding:10px 14px;text-align:center;">
+          <span class="badge ${badges[p.estado]||'badge-gray'}">${p.estado}</span></td>
+        <td style="padding:10px 14px;text-align:center;" onclick="event.stopPropagation()">
+          <a href="/clientes/${p.cliente_id}" class="btn btn-ghost btn-xs">Ver</a></td>
+      </tr>`).join('');
+
+    document.getElementById('estado-busqueda').style.display = 'none';
+    document.getElementById('wrap-tabla').style.display = 'block';
+  } catch(e) {
+    document.getElementById('estado-busqueda').innerHTML =
+      '<div style="font-size:48px;">❌</div><div>Error de conexión</div>';
+  }
+}
+
+// Buscar cliente para modal
+function buscarClienteDebounce() {
+  clearTimeout(_clienteDeb);
+  _clienteDeb = setTimeout(buscarCliente, 350);
+}
+
+async function buscarCliente() {
+  const q = document.getElementById('np-cliente-q').value.trim();
+  if (q.length < 2) { 
+    document.getElementById('np-lista-clientes').style.display='none'; 
+    return; 
+  }
+  
+  const zona_id = document.getElementById('np-zona').value;
+  
+  try {
+    const url = '/clientes/buscar-ajax?q=' + encodeURIComponent(q) + '&zona_id=' + encodeURIComponent(zona_id);
+    const r = await window.fetch(url);
+    
+    if (!r.ok) {
+      console.error('Error en búsqueda:', r.status, r.statusText);
+      document.getElementById('np-lista-clientes').style.display='none';
+      return;
+    }
+    
+    const data = await r.json();
+    const lista = document.getElementById('np-lista-clientes');
+    
+    if (!data.clientes || !data.clientes.length) { 
+      lista.style.display='none'; 
+      return; 
+    }
+    
+    lista.innerHTML = data.clientes.map(c => `
+      <div onclick="selCliente(${c.id},'${c.nombre.replace(/'/g, "\\'")}',${c.zona_id||'null'})"
+           style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);"
+           onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+        <div class="fw-600 fs-13">${c.nombre}</div>
+        <div class="fs-11 text-2">CC ${c.cedula} · ${c.zona}</div>
+      </div>`).join('');
+    lista.style.display = 'block';
+  } catch(e) {
+    console.error('Error en buscarCliente:', e);
+    document.getElementById('np-lista-clientes').style.display='none';
+  }
+}
+
+function selCliente(id, nombre, zona_id) {
+  document.getElementById('np-cliente-id').value   = id;
+  document.getElementById('np-cliente-q').value    = nombre;
+  document.getElementById('np-lista-clientes').style.display = 'none';
+  document.getElementById('np-cliente-info').textContent = '✓ Seleccionado: ' + nombre;
+  if (zona_id) {
+    document.getElementById('np-zona').value = zona_id;
+  }
+}
+
+function calcPreview() {
+  clearTimeout(_calcDeb);
+  _calcDeb = setTimeout(async () => {
+    const cap   = parseFloat(document.getElementById('np-capital').value);
+    const tasa  = parseFloat(document.getElementById('np-tasa').value) || 20;
+    const cuotas= parseInt(document.getElementById('np-cuotas').value);
+    const plazo = parseInt(document.getElementById('np-plazo').value) || 1;
+    
+    // Validación quick antes de calcular
+    if (!cap || !cuotas || cap <= 0 || cuotas <= 0) return;
+    
+    try {
+      const r = await window.fetch(`/prestamos/calcular?capital=${cap}&tasa=${tasa}&cuotas=${cuotas}&plazo=${plazo}`);
+      const d = await r.json();
+      
+      if (d.error) {
+        document.getElementById('np-preview').innerHTML = 
+          '<div style="color:var(--text-red);font-size:12px;">⚠️ ' + d.error + '</div>';
+        document.getElementById('np-preview').style.display = 'block';
+        return;
+      }
+      
+      document.getElementById('np-prev-int').textContent   = '$'+Number(d.interes_total).toLocaleString('es-CO');
+      document.getElementById('np-prev-total').textContent = '$'+Number(d.total_pagar).toLocaleString('es-CO');
+      document.getElementById('np-prev-cuota').textContent = '$'+Number(d.valor_cuota).toLocaleString('es-CO');
+      document.getElementById('np-preview').style.display  = 'block';
+    } catch(e) {}
+  }, 500);
+}
+
+function abrirModalNuevoPrestamo() {
+  document.getElementById('modal-prestamo').classList.add('open');
+}
+
+function validarFormularioPrestamo() {
+  /**
+   * Validación robusta client-side ANTES de enviar al servidor
+   * Previene errores innecesarios en backend y mejora UX
+   */
+  const cliente_id = document.getElementById('np-cliente-id').value.trim();
+  const cliente_nombre = document.getElementById('np-cliente-q').value.trim();
+  const zona_id = document.getElementById('np-zona').value.trim();
+  const capital = parseFloat(document.getElementById('np-capital').value);
+  const tasa = parseFloat(document.getElementById('np-tasa').value) || 20;
+  const cuotas = parseInt(document.getElementById('np-cuotas').value);
+  const plazo = parseInt(document.getElementById('np-plazo').value) || 1;
+  const fecha = document.getElementById('np-fecha').value.trim();
+  
+  // Verificación 1: Cliente seleccionado
+  if (!cliente_id || !cliente_nombre) {
+    alert('⚠️ Debes seleccionar un cliente de la lista desplegable');
+    document.getElementById('np-cliente-q').focus();
+    return false;
+  }
+  
+  // Verificación 2: Zona válida
+  if (!zona_id || isNaN(parseInt(zona_id))) {
+    alert('⚠️ Selecciona una zona válida');
+    return false;
+  }
+  
+  // Verificación 3: Capital válido
+  if (!capital || isNaN(capital) || capital <= 0) {
+    alert('⚠️ El capital debe ser un número mayor a 0');
+    document.getElementById('np-capital').focus();
+    return false;
+  }
+  if (capital > 100000000) {
+    alert('⚠️ El capital no puede ser mayor a $100.000.000');
+    return false;
+  }
+  
+  // Verificación 4: Cuotas válidas
+  if (!cuotas || isNaN(cuotas) || cuotas < 1 || cuotas > 365) {
+    alert('⚠️ Las cuotas deben estar entre 1 y 365');
+    document.getElementById('np-cuotas').focus();
+    return false;
+  }
+  
+  // Verificación 5: Tasa válida
+  if (tasa < 0 || tasa > 200) {
+    alert('⚠️ La tasa de interés debe estar entre 0% y 200%');
+    return false;
+  }
+  
+  // Verificación 6: Plazo válido
+  if (plazo < 1 || plazo > 365) {
+    alert('⚠️ El plazo debe estar entre 1 y 365 días');
+    return false;
+  }
+  
+  // Verificación 7: Fecha válida
+  if (!fecha) {
+    alert('⚠️ Especifica una fecha de inicio válida');
+    document.getElementById('np-fecha').focus();
+    return false;
+  }
+  
+  // Validación exitosa
+  return true;
+}
+
+async function guardarPrestamo() {
+  /**
+   * Guardar préstamo con validación robusta y mejor UX
+   */
+  
+  // Primero validar client-side
+  if (!validarFormularioPrestamo()) {
+    return;
+  }
+  
+  const cid = document.getElementById('np-cliente-id').value.trim();
+  const cliente_nombre = document.getElementById('np-cliente-q').value.trim();
+  const zona_id = document.getElementById('np-zona').value;
+  const capital = parseFloat(document.getElementById('np-capital').value);
+  const tasa = parseFloat(document.getElementById('np-tasa').value) || 20;
+  const cuotas = parseInt(document.getElementById('np-cuotas').value);
+  const plazo = parseInt(document.getElementById('np-plazo').value) || 1;
+  const fecha = document.getElementById('np-fecha').value;
+  const obs = document.getElementById('np-obs').value.trim();
+
+  const fd = new FormData();
+  fd.append('cliente_id',   cid);
+  fd.append('zona_id',      zona_id);
+  fd.append('capital',      capital);
+  fd.append('tasa_interes', tasa);
+  fd.append('num_cuotas',   cuotas);
+  fd.append('plazo_dias',   plazo);
+  fd.append('fecha_inicio', fecha);
+  fd.append('observaciones', obs);
+
+  try {
+    // Mostrar spinner mientras se procesa
+    const btnGuardar = document.querySelector('[onclick="guardarPrestamo()"]');
+    if (!btnGuardar) {
+      alert('Error: No se encontró el botón de guardar. Recarga la página.');
+      return;
+    }
+    const textoOriginal = btnGuardar.textContent;
+    btnGuardar.disabled = true;
+    btnGuardar.textContent = '⏳ Creando...';
+    
+    const r = await window.fetch('/prestamos/nuevo', { method:'POST', body: fd });
+    const d = await r.json();
+    
+    // Restaurar botón
+    btnGuardar.disabled = false;
+    btnGuardar.textContent = textoOriginal;
+    
+    if (r.ok) {
+      // Éxito: cerrar modal y limpiar
+      document.getElementById('modal-prestamo').classList.remove('open');
+      
+      // Limpiar formulario
+      document.getElementById('np-cliente-id').value = '';
+      document.getElementById('np-cliente-q').value = '';
+      document.getElementById('np-cliente-info').textContent = '';
+      document.getElementById('np-capital').value = '';
+      document.getElementById('np-cuotas').value = '';
+      document.getElementById('np-obs').value = '';
+      document.getElementById('np-preview').style.display = 'none';
+      
+      // Notificar usuario
+      alert('✅ Préstamo creado exitosamente\n\nPréstamo #' + d.id + ' para ' + cliente_nombre);
+      
+      // Recargar lista si estamos en la página
+      if (typeof buscar === 'function') buscar();
+    } else {
+      // Error del servidor
+      const mensajeError = d.error || d.detail || 'Error desconocido';
+      alert('❌ Error al crear préstamo:\n\n' + mensajeError);
+      console.error('Detalles del error:', d);
+    }
+  } catch(e) { 
+    alert('❌ Error de conexión:\n\n' + e.message);
+    console.error('Error en guardarPrestamo:', e);
+    
+    // Restaurar botón en caso de error
+    const btnGuardar = document.querySelector('[onclick="guardarPrestamo()"]');
+    btnGuardar.disabled = false;
+    btnGuardar.textContent = 'Crear Préstamo';
+  }
+}
+</script>
+{% endblock %}

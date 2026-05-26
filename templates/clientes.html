@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}Clientes{% endblock %}
+{% block topbar_title %}Clientes{% endblock %}
+{% block topbar_sub %}{{ total_clientes }} registrados{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-primary" onclick="abrirModalNuevoCliente()">+ Nuevo Cliente</button>
+{% endblock %}
+
+{% block content %}
+<!-- FILTROS AJAX -->
+<div class="card mb-3">
+  <div class="card-body" style="padding:12px 18px;">
+    <div class="flex gap-2">
+      <div class="input-icon-wrap" style="flex:1;">
+        <label for="inp-buscar" style="position:absolute;clip:rect(1px,1px,1px,1px);overflow:hidden;">Buscar cliente</label>
+        <span class="input-icon">🔍</span>
+        <input type="text" id="inp-buscar" placeholder="Buscar por nombre o cédula..."
+               oninput="buscarDebounce()" autocomplete="off">
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <label for="sel-zona" style="font-size:11px;color:var(--t3);margin-bottom:3px;">Zona</label>
+        <select id="sel-zona" onchange="buscar()" style="width:190px;">
+          <option value="">Todas las zonas</option>
+          {% for z in zonas %}
+          <option value="{{ z.id }}">{{ z.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="buscar()">Buscar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ESTADO -->
+<div id="estado-busqueda" style="text-align:center;padding:60px 0;color:var(--t3);">
+  <div style="font-size:48px;margin-bottom:12px;">🔍</div>
+  <div style="font-size:15px;font-weight:500;">Busca por nombre, cédula o selecciona una zona</div>
+  <div style="font-size:13px;margin-top:6px;">{{ total_clientes }} clientes registrados</div>
+</div>
+
+<!-- GRID -->
+<div class="grid-auto" id="grid-clientes" style="display:none;"></div>
+
+<!-- MODAL NUEVO CLIENTE -->
+<div class="modal-overlay" id="modal-cliente" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal modal-lg" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Nuevo Cliente</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cliente').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="grid-2 mb-2">
+      <div class="form-group">
+        <label>Cédula / CC *</label>
+        <input type="text" id="nc-cedula" placeholder="71525706">
+      </div>
+      <div class="form-group">
+        <label>Nombre completo *</label>
+        <input type="text" id="nc-nombre" placeholder="Luis Osorio">
+      </div>
+      <div class="form-group">
+        <label>Teléfono *</label>
+        <input type="tel" id="nc-telefono" placeholder="3508845057">
+      </div>
+      <div class="form-group">
+        <label>WhatsApp</label>
+        <input type="tel" id="nc-whatsapp" placeholder="3508845057">
+      </div>
+      <div class="form-group">
+        <label>Zona *</label>
+        <select id="nc-zona">
+          {% for z in zonas %}
+          <option value="{{ z.id }}">{{ z.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Tipo de cliente</label>
+        <select id="nc-tipo">
+          <option value="Regular">Regular</option>
+          <option value="Bueno">Bueno</option>
+          <option value="Riesgo">Riesgo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Dirección</label>
+        <input type="text" id="nc-direccion" placeholder="CB65A#32F-45">
+      </div>
+      <div class="form-group">
+        <label>Barrio</label>
+        <input type="text" id="nc-barrio" placeholder="Castilla">
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-cliente').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-primary" onclick="guardarCliente()">Guardar Cliente</button>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let _debounce = null;
+
+function buscarDebounce() {
+  clearTimeout(_debounce);
+  _debounce = setTimeout(buscar, 420);
+}
+
+async function buscar() {
+  const q       = document.getElementById('inp-buscar').value.trim();
+  const zona_id = document.getElementById('sel-zona').value;
+
+  if (!q && !zona_id) {
+    document.getElementById('grid-clientes').style.display = 'none';
+    document.getElementById('estado-busqueda').innerHTML = `
+      <div style="font-size:48px;margin-bottom:12px;">🔍</div>
+      <div style="font-size:15px;font-weight:500;">Busca por nombre, cédula o selecciona una zona</div>`;
+    document.getElementById('estado-busqueda').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('estado-busqueda').innerHTML =
+    '<div style="font-size:32px;margin-bottom:8px;">⏳</div><div>Buscando...</div>';
+  document.getElementById('estado-busqueda').style.display = 'block';
+  document.getElementById('grid-clientes').style.display = 'none';
+
+  const params = new URLSearchParams();
+  if (q)       params.set('q', q);
+  if (zona_id) params.set('zona_id', zona_id);
+
+  try {
+    const r    = await window.fetch('/clientes/buscar-ajax?' + params.toString());
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    
+    const data = await r.json();
+
+    if (!data.clientes || data.clientes.length === 0) {
+      document.getElementById('estado-busqueda').innerHTML =
+        '<div style="font-size:48px;margin-bottom:12px;">😕</div>' +
+        '<div style="font-size:15px;">Sin resultados</div>';
+      return;
+    }
+
+    const grid = document.getElementById('grid-clientes');
+    grid.innerHTML = data.clientes.map(c => {
+      const aCol = c.tipo_cliente==='Bueno' ? 'avatar-gold' : c.tipo_cliente==='Riesgo' ? 'avatar-red' : 'avatar-blue';
+      const bCol = c.tipo_cliente==='Bueno' ? 'badge-gold' : c.tipo_cliente==='Riesgo' ? 'badge-red' : 'badge-gray';
+      const pHtml = c.prestamo ? `
+        <div style="background:rgba(212, 175, 55, 0.05);border:1px solid rgba(212, 175, 55, 0.2);border-radius:6px;padding:8px 10px;margin-bottom:8px;">
+          <div class="flex-between fs-11 text-2 mb-1">
+            <span style="color:var(--accent)">Préstamo activo</span>
+            <span class="num fw-600">${c.prestamo.num_cuotas} cuotas</span>
+          </div>
+          <div class="flex-between fs-11 mt-1">
+            <span class="text-2">Capital:</span>
+            <span class="num text-red fw-600">$${Number(c.prestamo.capital).toLocaleString('es-CO')}</span>
+          </div>
+        </div>
+        <div class="flex gap-1" onclick="event.stopPropagation()">
+          <a href="/clientes/${c.id}" class="btn btn-ghost btn-xs" style="flex:1;justify-content:center;">Editar</a>
+          <button type="button" onclick="cobrarCliente(${c.id})" class="btn btn-primary btn-xs" style="flex:1;justify-content:center;">Cobrar</button>
+        </div>` :
+        `<div class="fs-12 text-3" style="padding:6px 0 8px;">Sin préstamo activo</div>
+        <div class="flex gap-1" onclick="event.stopPropagation()">
+          <a href="/clientes/${c.id}" class="btn btn-ghost btn-xs" style="flex:1;justify-content:center;">Editar</a>
+        </div>`;
+
+      return `
+      <div class="card">
+        <div class="card-body">
+          <div class="flex-between mb-2">
+            <div class="flex-center gap-2">
+              <div class="avatar ${aCol}" style="width:40px;height:40px;font-size:14px;">
+                ${c.nombre.substring(0,2).toUpperCase()}
+              </div>
+              <div>
+                <div class="fw-600 fs-13">${c.nombre}</div>
+                <div class="fs-11 text-2">CC ${c.cedula}</div>
+              </div>
+            </div>
+            <span class="badge ${bCol}">${c.tipo_cliente || 'Regular'}</span>
+          </div>
+          <div class="fs-12 text-2 mb-2">📍 ${c.zona} &nbsp;·&nbsp; 📞 ${c.telefono}</div>
+          ${pHtml}
+        </div>
+      </div>`;
+    }).join('');
+
+    document.getElementById('estado-busqueda').style.display = 'none';
+    grid.style.display = 'grid';
+  } catch(e) {
+    console.error('[Clientes] Error búsqueda:', e);
+    document.getElementById('estado-busqueda').innerHTML =
+      '<div style="font-size:48px;">❌</div>' +
+      '<div style="margin-top:8px;">Error de conexión</div>' +
+      '<div style="font-size:12px;color:#888;margin-top:4px;">Intenta nuevamente</div>';
+  }
+}
+
+function abrirModalNuevoCliente() {
+  document.getElementById('modal-cliente').classList.add('open');
+}
+
+let _cobrarId = null;
+
+function cobrarCliente(clienteId) {
+  if (!clienteId || isNaN(clienteId)) {
+    alert('Cliente inválido');
+    return;
+  }
+  _cobrarId = clienteId;
+  document.getElementById('modal-cobro-r').classList.add('open');
+}
+
+async function confirmarCobroR() {
+  if (!_cobrarId) return;
+
+  const btn = document.getElementById('btn-cr');
+  const metodo = document.getElementById('cobro-metodo-r').value;
+
+  if (!metodo) {
+    alert('Selecciona un método de pago');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Registrando...';
+
+  const fd = new FormData();
+  fd.append('metodo_pago', metodo);
+
+  try {
+    const r = await window.fetch(`/cobros/registrar-cliente/${_cobrarId}`, {
+      method: 'POST',
+      body: fd
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('modal-cobro-r').classList.remove('open');
+      if (typeof toast === 'function') toast(d.mensaje || 'Cobro registrado', 'success');
+      else alert(d.mensaje || 'Cobro registrado');
+      setTimeout(buscar, 500);
+    } else {
+      alert(d.error || 'Error al registrar cobro');
+    }
+  } catch(e) {
+    console.error('[Cobros] Error registrar:', e);
+    alert('Error de conexión. Intenta nuevamente.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Registrar Cobro';
+  }
+}
+
+async function guardarCliente() {
+  const cedula = document.getElementById('nc-cedula').value.trim();
+  const nombre = document.getElementById('nc-nombre').value.trim();
+  const telefono = document.getElementById('nc-telefono').value.trim();
+  const zona_id = document.getElementById('nc-zona').value;
+
+  if (!cedula || !nombre || !telefono || !zona_id) {
+    alert('Cédula, nombre, teléfono y zona son obligatorios');
+    return;
+  }
+
+  // Validar que zona_id sea un número válido
+  if (isNaN(zona_id)) {
+    alert('Zona inválida');
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('cedula', cedula);
+  fd.append('nombre', nombre);
+  fd.append('telefono', telefono);
+  fd.append('whatsapp', document.getElementById('nc-whatsapp').value.trim());
+  fd.append('zona_id', zona_id);
+  fd.append('tipo_cliente', document.getElementById('nc-tipo').value);
+  fd.append('direccion', document.getElementById('nc-direccion').value.trim());
+  fd.append('barrio', document.getElementById('nc-barrio').value.trim());
+
+  try {
+    const r = await window.fetch('/clientes/nuevo', { method:'POST', body: fd });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('modal-cliente').classList.remove('open');
+      if (typeof toast === 'function') toast('Cliente creado', 'success');
+      else alert('Cliente creado exitosamente');
+      buscar(); // refrescar resultados
+    } else {
+      alert(d.error || 'Error al guardar cliente');
+    }
+  } catch(e) {
+    console.error('[Clientes] Error guardar:', e);
+    alert('Error de conexión. Intenta nuevamente.');
+  }
+}
+</script>
+
+<!-- MODAL COBRO RAPIDO -->
+<div class="modal-overlay" id="modal-cobro-r" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" style="max-width:360px;" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Registrar Cobro</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cobro-r').classList.remove('open')">&#x2715;</button>
+  </div>
+  <div class="modal-body">
+    <p style="font-size:13px;color:var(--t2);margin-bottom:14px;">Se registrara la proxima cuota pendiente del cliente.</p>
+    <div class="form-group">
+      <label>Metodo de pago</label>
+      <select id="cobro-metodo-r">
+        <option value="Efectivo">Efectivo</option>
+        <option value="Nequi">Nequi</option>
+        <option value="Daviplata">Daviplata</option>
+        <option value="Transferencia">Transferencia</option>
+      </select>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-cobro-r').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-gold" id="btn-cr" onclick="confirmarCobroR()">Registrar Cobro</button>
+  </div>
+</div>
+</div>
+{% endblock %}

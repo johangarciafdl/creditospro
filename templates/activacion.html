@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>CreditosPro — Activacion Requerida</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#0A0A0A;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;-webkit-font-smoothing:antialiased}
+.wrap{width:100%;max-width:480px;opacity:0;transform:translateY(20px)}
+.logo{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#C8A95A,#7A5A18);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;box-shadow:0 0 40px rgba(200,169,90,.3)}
+.logo svg{width:28px;height:28px;color:#0A0A0A}
+h1{color:#fff;font-size:22px;font-weight:700;text-align:center;letter-spacing:-.4px;margin-bottom:6px}
+.sub{color:rgba(255,255,255,.35);font-size:13px;text-align:center;margin-bottom:28px;line-height:1.6}
+.box{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px}
+.section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.3);margin-bottom:8px}
+.machine-id{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 14px;font-family:'Courier New',monospace;font-size:14px;color:#C8A95A;letter-spacing:2px;text-align:center;margin-bottom:4px;word-break:break-all}
+.copy-btn{display:block;width:100%;padding:8px;background:rgba(200,169,90,.1);border:1px solid rgba(200,169,90,.2);border-radius:8px;color:rgba(200,169,90,.8);font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;margin-bottom:20px;transition:all .15s}
+.copy-btn:hover{background:rgba(200,169,90,.2)}
+.divider{height:1px;background:rgba(255,255,255,.06);margin:20px 0}
+label{display:block;font-size:12px;font-weight:500;color:rgba(255,255,255,.4);margin-bottom:6px}
+textarea{width:100%;padding:10px 14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;font-family:'Courier New',monospace;font-size:12px;resize:vertical;min-height:80px;outline:none;transition:border-color .2s}
+textarea:focus{border-color:rgba(200,169,90,.5)}
+textarea::placeholder{color:rgba(255,255,255,.2)}
+.btn{width:100%;padding:12px;background:linear-gradient(135deg,#C8A95A,#7A5A18);border:none;border-radius:10px;color:#0A0A0A;font-size:14px;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;margin-top:12px;transition:all .2s}
+.btn:hover{opacity:.9;transform:translateY(-1px)}
+.btn:active{transform:scale(.98)}
+.error{background:rgba(220,38,38,.1);border:1px solid rgba(220,38,38,.2);border-radius:8px;padding:10px 14px;font-size:12px;color:#FCA5A5;margin-top:10px;display:none}
+.success{background:rgba(22,163,74,.1);border:1px solid rgba(22,163,74,.2);border-radius:8px;padding:10px 14px;font-size:12px;color:#86EFAC;margin-top:10px;display:none}
+.contact{text-align:center;margin-top:20px;font-size:12px;color:rgba(255,255,255,.2)}
+.contact a{color:rgba(200,169,90,.6);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 6v12M9 9h4.5a1.5 1.5 0 0 1 0 3H10a1.5 1.5 0 0 0 0 3H15"/></svg>
+  </div>
+  <h1>Activacion Requerida</h1>
+  <div class="sub">Este software necesita autorizacion para funcionar en este equipo.<br>Contacta a Johan Garcia para obtener tu clave de activacion.</div>
+
+  <div class="box">
+    <div class="section-title">1. Tu ID de equipo</div>
+    <div class="machine-id" id="machine-id">Cargando...</div>
+    <button class="copy-btn" onclick="copiarId()">Copiar ID del equipo</button>
+
+    <div class="divider"></div>
+
+    <div class="section-title">2. Ingresa la clave de activacion</div>
+    <label>Clave proporcionada por Johan Garcia</label>
+    <textarea id="license-key" placeholder="CPRO-XXXXXX-XXXXXX-XXXXXX-XXXXXX-..."></textarea>
+    <button class="btn" onclick="activar()">Activar Software</button>
+    <div class="error" id="error-box"></div>
+    <div class="success" id="success-box"></div>
+  </div>
+
+  <div class="contact">
+    ¿Necesitas tu clave? Contacta a <a href="tel:+573000000000">Johan Garcia</a>
+  </div>
+</div>
+
+<script>
+anime({targets:'#wrap',translateY:[20,0],opacity:[0,1],duration:700,easing:'easeOutBack'});
+
+async function loadMachineId(){
+  try{
+    const r = await window.fetch('/license/machine-id');
+    const d = await r.json();
+    document.getElementById('machine-id').textContent = d.machine_id;
+  }catch(e){
+    document.getElementById('machine-id').textContent = 'Error al obtener ID';
+  }
+}
+loadMachineId();
+
+function copiarId(){
+  const txt = document.getElementById('machine-id').textContent;
+  navigator.clipboard.writeText(txt).then(()=>{
+    const btn = event.target;
+    btn.textContent = '✓ Copiado!';
+    anime({targets:btn,scale:[.97,1],duration:200,easing:'easeOutBack'});
+    setTimeout(()=>btn.textContent='Copiar ID del equipo', 2000);
+  });
+}
+
+async function activar(){
+  const key = document.getElementById('license-key').value.trim();
+  const err = document.getElementById('error-box');
+  const ok  = document.getElementById('success-box');
+  err.style.display='none'; ok.style.display='none';
+  if(!key){ err.textContent='Ingresa la clave de activacion'; err.style.display='block'; return; }
+
+  try{
+    const fd = new FormData();
+    fd.append('license_key', key);
+    const r = await window.fetch('/license/activate', {method:'POST', body:fd});
+    const d = await r.json();
+    if(d.valid){
+      ok.textContent = `✓ Software activado para ${d.empresa_nombre}. Validez: ${d.days_left} dias.`;
+      ok.style.display='block';
+      anime({targets:ok,scale:[.96,1],duration:400,easing:'easeOutBack'});
+      setTimeout(()=>window.location.href='/', 2000);
+    }else{
+      err.textContent = d.error || 'Clave inválida';
+      err.style.display='block';
+      anime({targets:err,translateX:[-5,5,-4,4,0],duration:300,easing:'linear'});
+    }
+  }catch(e){ err.textContent='Error de conexion'; err.style.display='block'; }
+}
+</script>
+</body>
+</html>

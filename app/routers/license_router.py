@@ -1,0 +1,58 @@
+"""License router - endpoints para activacion y verificacion"""
+from pathlib import Path
+
+from fastapi import APIRouter, Request, Form
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from app.utils.settings import settings
+
+router = APIRouter()
+templates = Jinja2Templates(directory="templates")
+
+
+def get_license_manager():
+    try:
+        import sys
+        root_dir = Path(__file__).resolve().parents[2]
+        if str(root_dir) not in sys.path:
+            sys.path.insert(0, str(root_dir))
+        import license_manager
+        return license_manager
+    except Exception:
+        return None
+
+
+@router.get("/machine-id")
+async def get_machine_id():
+    lm = get_license_manager()
+    if not lm:
+        return JSONResponse({"machine_id": "ERROR-LM-NOT-FOUND"})
+    return JSONResponse({"machine_id": lm.get_fingerprint()})
+
+
+@router.post("/activate")
+async def activate(request: Request, license_key: str = Form(...)):
+    lm = get_license_manager()
+    if not lm:
+        return JSONResponse({"valid": False, "error": "Sistema de licencias no disponible"})
+    result = lm.save_license(license_key)
+    request.app.state.license_valid = result.get("valid", False)
+    request.app.state.license_info = result
+    return JSONResponse(result)
+
+
+@router.get("/status")
+async def license_status():
+    lm = get_license_manager()
+    if not lm:
+        return JSONResponse({"valid": settings.ENVIRONMENT == "development", "dev_mode": True})
+    return JSONResponse(lm.check_license())
+
+
+@router.get("/activar")
+async def activar_page(request: Request):
+    lm = get_license_manager()
+    status = lm.check_license() if lm else {"valid": settings.ENVIRONMENT == "development"}
+    if status.get("valid"):
+        return RedirectResponse("/", 302)
+    return templates.TemplateResponse(request, "activacion.html", {})

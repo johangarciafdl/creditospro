@@ -1,0 +1,54 @@
+# Entorno virtual
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Compilados PyInstaller
+dist/
+build/
+*.spec
+
+# Base de datos (datos reales)
+*.db
+*.db-shm
+*.db-wal
+data/*.db
+data/*.db-shm
+data/*.db-wal
+backups/
+*.bak
+*.backup
+
+# Uploads de usuarios
+uploads/
+uploads/fotos/
+uploads/*.jpg
+uploads/*.jpeg
+uploads/*.png
+
+# Variables de entorno
+.env
+.env.*
+license.key
+license_*.txt
+*.key
+
+# Ejecutables
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+node_modules/

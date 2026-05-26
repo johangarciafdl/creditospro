@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>CreditosPro — Acceso</title>
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#0A0A0A">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--gold:#C8A95A;--gold-2:#D4B96A;--black:#0A0A0A;--font:'Inter',system-ui,sans-serif}
+html,body{min-height:100%;font-family:var(--font);background:var(--black);-webkit-font-smoothing:antialiased}
+body{overflow-x:hidden}
+canvas#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0}
+.grid-ov{position:fixed;inset:0;z-index:1;background-image:linear-gradient(rgba(200,169,90,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(200,169,90,.035) 1px,transparent 1px);background-size:56px 56px;mask-image:radial-gradient(ellipse at center,black 20%,transparent 70%);-webkit-mask-image:radial-gradient(ellipse at center,black 20%,transparent 70%)}
+.glow{position:fixed;width:700px;height:700px;border-radius:50%;background:radial-gradient(circle,rgba(200,169,90,.09) 0%,transparent 65%);top:50%;left:50%;transform:translate(-50%,-50%);z-index:1;pointer-events:none}
+
+/* PARTICLES */
+.particles{position:fixed;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+
+/* LAYOUT */
+.wrap{position:relative;z-index:10;width:100%;height:100vh;display:flex}
+
+/* LEFT */
+.left{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:60px}
+.brand-icon{width:80px;height:80px;border-radius:22px;background:linear-gradient(135deg,var(--gold) 0%,#7A5A18 100%);display:flex;align-items:center;justify-content:center;margin-bottom:28px;box-shadow:0 0 60px rgba(200,169,90,.35),0 8px 32px rgba(0,0,0,.5)}
+.brand-icon svg{width:42px;height:42px;color:#0A0A0A}
+.brand-title{font-size:58px;font-weight:800;color:#fff;letter-spacing:-2.5px;line-height:1;margin-bottom:14px;text-align:center}
+.brand-title span{color:var(--gold)}
+.brand-sub{font-size:15px;color:rgba(255,255,255,.3);text-align:center;max-width:320px;line-height:1.65;margin-bottom:44px}
+.stats-row{display:flex;gap:36px}
+.stat{text-align:center}
+.stat-val{font-size:26px;font-weight:700;color:var(--gold);font-variant-numeric:tabular-nums;letter-spacing:-1px}
+.stat-label{font-size:10px;color:rgba(255,255,255,.28);text-transform:uppercase;letter-spacing:.8px;margin-top:3px}
+.stat-sep{width:1px;background:rgba(255,255,255,.07);align-self:stretch}
+
+/* RIGHT */
+.right{width:440px;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:32px;border-left:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.02);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.card{width:100%;max-width:360px}
+.greeting{font-size:10px;font-weight:600;color:var(--gold);letter-spacing:1.8px;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.greeting::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--gold);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+.card-title{font-size:26px;font-weight:700;color:#fff;letter-spacing:-.5px;margin-bottom:6px}
+.card-sub{font-size:13px;color:rgba(255,255,255,.3);margin-bottom:30px}
+.empresa-pill{display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;padding:6px 10px;border-radius:999px;background:rgba(200,169,90,.1);border:1px solid rgba(200,169,90,.2);color:rgba(255,255,255,.72);font-size:12px;font-weight:500}
+.empresa-pill strong{color:var(--gold)}
+
+/* FIELDS */
+.field{margin-bottom:16px}
+.field label{display:block;font-size:11px;font-weight:500;color:rgba(255,255,255,.35);margin-bottom:6px;letter-spacing:.3px}
+.field-wrap{position:relative}
+.field-ico{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.2);display:flex;pointer-events:none}
+.field input{width:100%;padding:12px 14px 12px 38px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);border-radius:10px;font-size:14px;color:#fff;font-family:var(--font);transition:border-color .2s,background .2s,box-shadow .2s;outline:none}
+.field input::placeholder{color:rgba(255,255,255,.18)}
+.field input:focus{border-color:rgba(200,169,90,.5);background:rgba(255,255,255,.08);box-shadow:0 0 0 3px rgba(200,169,90,.09)}
+.field-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(255,255,255,.22);cursor:pointer;display:flex;padding:4px;transition:color .15s}
+.field-toggle:hover{color:rgba(255,255,255,.6)}
+
+/* ERROR */
+.error-box{display:none;background:rgba(220,38,38,.1);border:1px solid rgba(220,38,38,.2);border-radius:8px;padding:10px 14px;font-size:12px;color:#FCA5A5;margin-bottom:14px;align-items:center;gap:8px}
+.error-box.show{display:flex}
+@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-5px)}40%,80%{transform:translateX(5px)}}
+
+/* SUBMIT */
+.btn-submit{width:100%;padding:13px;background:linear-gradient(135deg,var(--gold) 0%,#9A7428 100%);border:none;border-radius:10px;font-size:14px;font-weight:600;color:#0A0A0A;font-family:var(--font);cursor:pointer;transition:transform .2s,box-shadow .2s;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:22px;box-shadow:0 4px 20px rgba(200,169,90,.25);position:relative;overflow:hidden}
+.btn-submit:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(200,169,90,.38)}
+.btn-submit:active{transform:translateY(0) scale(.98)}
+.btn-submit:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.btn-submit::after{content:'';position:absolute;inset:0;background:linear-gradient(120deg,transparent 30%,rgba(255,255,255,.15) 50%,transparent 70%);transform:translateX(-100%)}
+.btn-submit:not(:disabled):hover::after{animation:shimmer .6s ease forwards}
+@keyframes shimmer{to{transform:translateX(100%)}}
+
+/* SPLASH */
+#splash{position:fixed;inset:0;background:var(--black);z-index:9999;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px}
+#splash.show{display:flex}
+.splash-logo{width:70px;height:70px;border-radius:18px;background:linear-gradient(135deg,var(--gold),#7A5A18);display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(.7);box-shadow:0 0 40px rgba(200,169,90,.3)}
+.splash-logo svg{width:36px;height:36px;color:#0A0A0A}
+.splash-ring{width:80px;height:80px;border-radius:50%;border:2px solid rgba(200,169,90,.2);border-top-color:var(--gold);position:absolute;animation:spin .8s linear infinite}
+.splash-wrap{position:relative;width:80px;height:80px;display:flex;align-items:center;justify-content:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+.splash-msg{font-size:14px;color:rgba(255,255,255,.45);font-weight:400;letter-spacing:.2px;opacity:0}
+.splash-bar{width:180px;height:2px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
+.splash-fill{height:100%;width:0;background:linear-gradient(90deg,var(--gold),var(--gold-2));border-radius:2px}
+
+.divider{display:flex;align-items:center;gap:12px;margin:18px 0}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.055)}
+.divider span{font-size:10px;color:rgba(255,255,255,.18)}
+.footer-note{text-align:center;font-size:10px;color:rgba(255,255,255,.13);line-height:1.7}
+.footer-note strong{color:rgba(255,255,255,.22)}
+
+@media(max-width:768px){.left{display:none}.right{width:100%;border-left:none;background:transparent}}
+</style>
+<script>document.documentElement.classList.add('js-ready');</script>
+<style>
+.js-ready .left{opacity:0}
+.js-ready .brand-icon,.js-ready .brand-title,.js-ready .brand-sub,.js-ready .stats-row{opacity:0;transform:translateY(20px)}
+.js-ready .right{opacity:0;transform:translateX(30px)}
+</style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+<div class="grid-ov"></div>
+<div class="glow" id="glow"></div>
+<div class="particles" id="particles"></div>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-wrap">
+    <div class="splash-ring" id="splash-ring"></div>
+    <div class="splash-logo" id="splash-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 6v12M9 9h4.5a1.5 1.5 0 0 1 0 3H10a1.5 1.5 0 0 0 0 3H15"/></svg>
+    </div>
+  </div>
+  <div class="splash-msg" id="splash-msg">Verificando credenciales...</div>
+  <div class="splash-bar"><div class="splash-fill" id="splash-fill"></div></div>
+</div>
+
+<div class="wrap">
+  <!-- LEFT -->
+  <div class="left" id="left">
+    <div class="brand-icon" id="brand-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 6v12M9 9h4.5a1.5 1.5 0 0 1 0 3H10a1.5 1.5 0 0 0 0 3H15"/></svg>
+    </div>
+    <div class="brand-title" id="brand-title">Creditos<span>Pro</span></div>
+    <div class="brand-sub" id="brand-sub">Gestion inteligente de creditos gota a gota. Rapido, seguro y confiable.</div>
+    <div class="stats-row" id="stats-row">
+      <div class="stat"><div class="stat-val" id="c-clientes">—</div><div class="stat-label">Clientes</div></div>
+      <div class="stat-sep"></div>
+      <div class="stat"><div class="stat-val" id="c-prestamos">—</div><div class="stat-label">Prestamos</div></div>
+      <div class="stat-sep"></div>
+      <div class="stat"><div class="stat-val" id="c-zonas">—</div><div class="stat-label">Zonas</div></div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right" id="right">
+    <div class="card">
+      <div class="greeting">Sistema activo</div>
+      <div class="card-title">Bienvenido</div>
+      <div class="card-sub">Acceso exclusivo para personal autorizado</div>
+      {% if empresa_nombre %}
+      <div class="empresa-pill">Empresa <strong>{{ empresa_nombre }}</strong></div>
+      {% endif %}
+
+      <div class="error-box" id="err-box">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="err-msg">Usuario o contrasena incorrectos</span>
+      </div>
+
+      <form id="login-form">
+        <div class="field">
+          <label>Usuario</label>
+          <div class="field-wrap">
+            <span class="field-ico">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
+            <input type="text" name="username" id="inp-user" placeholder="tu usuario" autocomplete="username" required>
+          </div>
+        </div>
+        <div class="field">
+          <label>Contrasena</label>
+          <div class="field-wrap">
+            <span class="field-ico">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </span>
+            <input type="password" name="password" id="inp-pass" placeholder="••••••••" autocomplete="current-password" required>
+            <button type="button" class="field-toggle" onclick="togglePass()" id="eye-btn">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <input type="hidden" name="next" value="{{ next }}">
+        <input type="hidden" name="empresa_id" value="{{ empresa_id or '' }}">
+        <button type="submit" class="btn-submit" id="btn-submit">
+          <span id="btn-text">Ingresar</span>
+          <svg id="btn-arr" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </button>
+      </form>
+
+      <div class="divider"><span>Acceso protegido</span></div>
+      <div class="footer-note">Todos los accesos son registrados y monitoreados<br><strong>CreditosPro v3.0</strong> &nbsp;&middot;&nbsp; Sistema de creditos</div>
+    </div>
+  </div>
+</div>
+
+<script>
+if(!window.anime){window.anime=(opts)=>{const raw=opts.targets;const targets=typeof raw==='string'?document.querySelectorAll(raw):raw&&raw.length!==undefined?raw:[raw];Array.from(targets||[]).forEach(el=>{if(el&&el.style){el.style.opacity='1';el.style.transform='none';}});if(opts.update)opts.update({animatables:[{target:{v:opts.v||0}}]});if(opts.complete)opts.complete();return {add(){return this}}};anime.timeline=()=>({add(opts){anime(opts);return this}});anime.stagger=()=>0;}
+// ── CANVAS NEBULA ──
+const canvas=document.getElementById('bg');
+const ctx=canvas.getContext('2d');
+function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight}
+resize();window.addEventListener('resize',resize);
+const orbs=[...Array(6)].map(()=>({
+  x:Math.random()*window.innerWidth,y:Math.random()*window.innerHeight,
+  r:150+Math.random()*200,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,
+  hue:Math.random()>.5?42:30,a:.05+Math.random()*.04
+}));
+function drawBg(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const g=ctx.createRadialGradient(canvas.width/2,canvas.height/2,0,canvas.width/2,canvas.height/2,canvas.width*.9);
+  g.addColorStop(0,'#141410');g.addColorStop(1,'#0A0A0A');
+  ctx.fillStyle=g;ctx.fillRect(0,0,canvas.width,canvas.height);
+  orbs.forEach(o=>{
+    o.x+=o.vx;o.y+=o.vy;
+    if(o.x<-o.r)o.x=canvas.width+o.r;if(o.x>canvas.width+o.r)o.x=-o.r;
+    if(o.y<-o.r)o.y=canvas.height+o.r;if(o.y>canvas.height+o.r)o.y=-o.r;
+    const gr=ctx.createRadialGradient(o.x,o.y,0,o.x,o.y,o.r);
+    gr.addColorStop(0,`hsla(${o.hue},55%,48%,${o.a})`);
+    gr.addColorStop(1,`hsla(${o.hue},55%,48%,0)`);
+    ctx.fillStyle=gr;ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill();
+  });
+  requestAnimationFrame(drawBg);
+}
+drawBg();
+
+// ── GLOW PULSE ──
+anime({targets:'#glow',scale:[1,1.18],opacity:[.7,1],duration:4000,easing:'easeInOutSine',direction:'alternate',loop:true});
+
+// ── PARTICLES ──
+const pc=document.getElementById('particles');
+function spawnP(){
+  const d=document.createElement('div');
+  const sz=1+Math.random()*2.5;
+  d.style.cssText=`position:absolute;width:${sz}px;height:${sz}px;border-radius:50%;background:#C8A95A;left:${Math.random()*100}%;bottom:0;opacity:0`;
+  pc.appendChild(d);
+  anime({targets:d,translateY:[0,-(window.innerHeight*(.6+Math.random()*.4))],opacity:[0,.7,0],duration:7000+Math.random()*5000,easing:'linear',delay:Math.random()*2000,complete:()=>d.remove()});
+}
+setInterval(spawnP,500);
+
+// ── ENTRANCE ANIMATIONS ──
+anime.timeline({easing:'easeOutQuart'})
+  .add({targets:'#right',translateX:[30,0],opacity:[0,1],duration:700},300)
+  .add({targets:'#left',opacity:[0,1],duration:400},500)
+  .add({targets:'#brand-icon',translateY:[20,0],opacity:[0,1],duration:600,easing:'easeOutBack'},550)
+  .add({targets:'#brand-title',translateY:[20,0],opacity:[0,1],duration:500},700)
+  .add({targets:'#brand-sub',translateY:[20,0],opacity:[0,1],duration:500},820)
+  .add({targets:'#stats-row',translateY:[20,0],opacity:[0,1],duration:500},940);
+
+// Floating logo
+anime({targets:'#brand-icon',translateY:[0,-10],duration:3000,easing:'easeInOutSine',direction:'alternate',loop:true,delay:1500});
+
+// ── STATS ──
+async function loadStats(){
+  try{
+    const r=await fetch('/auth/stats');
+    if(!r.ok)return;
+    const d=await r.json();
+    animCount('c-clientes',d.clientes||0);
+    animCount('c-prestamos',d.prestamos||0);
+    animCount('c-zonas',d.zonas||0);
+  }catch(e){}
+}
+function animCount(id,target){
+  const el=document.getElementById(id);
+  anime({targets:{v:0},v:target,round:1,easing:'easeOutExpo',duration:1800,update:a=>el.textContent=Math.round(a.animatables[0].target.v).toLocaleString('es-CO')});
+}
+setTimeout(loadStats,900);
+
+// ── PASS TOGGLE ──
+function togglePass(){
+  const i=document.getElementById('inp-pass');
+  i.type=i.type==='password'?'text':'password';
+}
+
+// ── FORM SUBMIT ──
+document.getElementById('login-form').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=document.getElementById('btn-submit');
+  const text=document.getElementById('btn-text');
+  const arr=document.getElementById('btn-arr');
+  const err=document.getElementById('err-box');
+  err.classList.remove('show');
+  btn.disabled=true;text.textContent='Verificando...';arr.style.display='none';
+  anime({targets:btn,scale:[.98,1],duration:200,easing:'easeOutBack'});
+
+  try{
+    const fd=new FormData(e.target);
+    const r=await fetch('/auth/login',{method:'POST',body:fd,redirect:'follow'});
+    if(r.ok||r.redirected||r.status===302||r.url!==location.href){
+      showSplash(r.url||'/dashboard');
+    }else{
+      throw new Error('bad');
+    }
+  }catch(ex){
+    // fetch throws on redirect in some browsers — treat as success
+    if(ex.message==='Failed to fetch'||ex.name==='TypeError'){
+      showSplash('/dashboard');return;
+    }
+    err.classList.add('show');
+    document.getElementById('err-msg').textContent='Usuario o contrasena incorrectos';
+    anime({targets:'#err-box',translateX:[-5,5,-4,4,-3,0],duration:400,easing:'linear'});
+    anime({targets:'#inp-pass',borderColor:['rgba(220,38,38,.5)','rgba(255,255,255,.08)'],duration:1500});
+    btn.disabled=false;text.textContent='Ingresar';arr.style.display='';
+  }
+});
+
+// ── SPLASH ──
+function showSplash(redirectUrl){
+  const splash=document.getElementById('splash');
+  splash.classList.add('show');
+  anime({targets:'#splash',opacity:[0,1],duration:300,easing:'easeOutQuad'});
+
+  const msgs=['Verificando credenciales...','Cargando workspace...','Sincronizando datos...','Bienvenido al sistema'];
+  let i=0;
+  const msgEl=document.getElementById('splash-msg');
+  anime({targets:msgEl,opacity:[0,1],duration:400,easing:'easeOutQuad'});
+
+  const interval=setInterval(()=>{
+    i++;
+    if(i<msgs.length){
+      anime({targets:msgEl,opacity:[1,0],duration:200,easing:'easeInQuad',complete:()=>{
+        msgEl.textContent=msgs[i];
+        anime({targets:msgEl,opacity:[0,1],duration:200,easing:'easeOutQuad'});
+      }});
+    }
+    if(i===msgs.length-1){
+      clearInterval(interval);
+      // Stop ring, show logo
+      document.getElementById('splash-ring').style.animation='none';
+      document.getElementById('splash-ring').style.borderColor='rgba(200,169,90,.6)';
+      anime({targets:'#splash-logo',scale:[.7,1],opacity:[0,1],duration:500,easing:'easeOutBack'});
+      anime({targets:'#splash-logo',boxShadow:['0 0 20px rgba(200,169,90,.25)','0 0 70px rgba(200,169,90,.55)'],duration:520,easing:'easeOutQuad',direction:'alternate',loop:2});
+    }
+  },420);
+
+  // Progress bar
+  anime({targets:'#splash-fill',width:['0%','100%'],duration:1600,easing:'easeInOutQuart'});
+
+  setTimeout(()=>{
+    anime({targets:'#splash',opacity:[1,0],duration:300,easing:'easeInQuad',complete:()=>window.location.replace(redirectUrl)});
+  },1900);
+}
+</script>
+</body>
+</html>
