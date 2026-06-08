@@ -312,6 +312,20 @@ class AuditLog(Base):
     )
 
 
+class LicenciaActivada(Base):
+    """Licencias activadas por equipo. Cada equipo tiene UNA licencia para UNA empresa."""
+    __tablename__ = "licencias_activadas"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
+    machine_id = Column(String(64), nullable=False, index=True)
+    license_key = Column(Text, nullable=False)
+    activa = Column(Boolean, default=True)
+    creado = Column(DateTime, default=func.now())
+    __table_args__ = (
+        UniqueConstraint("machine_id", name="uq_licencia_machine"),
+    )
+
+
 def init_db():
     """Inicializa las tablas en la base de datos. Idempotente."""
     auto_create = os.getenv("AUTO_CREATE_TABLES", "1").strip().lower() in {"1", "true", "yes", "on"}

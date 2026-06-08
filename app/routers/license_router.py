@@ -2,9 +2,12 @@
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Request, Form
+from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+
+from app.database import get_db, LicenciaActivada
 from app.utils.settings import settings
 
 router = APIRouter()
@@ -37,11 +40,30 @@ async def get_machine_id():
 
 
 @router.post("/activate")
-async def activate(request: Request, license_key: str = Form(...)):
+async def activate(request: Request, license_key: str = Form(...), db: Session = Depends(get_db)):
     lm = get_license_manager()
     if not lm:
         return JSONResponse({"valid": False, "error": "Sistema de licencias no disponible"})
     result = lm.save_license(license_key)
+    if result.get("valid"):
+        machine_id = result.get("machine_id", "")
+        empresa_id = result.get("empresa_id")
+        existing = db.query(LicenciaActivada).filter(
+            LicenciaActivada.machine_id == machine_id
+        ).first()
+        if existing:
+            existing.license_key = license_key.strip()
+            existing.empresa_id = empresa_id
+            existing.activa = True
+        else:
+            lic = LicenciaActivada(
+                empresa_id=empresa_id,
+                machine_id=machine_id,
+                license_key=license_key.strip(),
+                activa=True,
+            )
+            db.add(lic)
+        db.commit()
     request.app.state.license_valid = result.get("valid", False)
     request.app.state.license_info = result
     return JSONResponse(result)
