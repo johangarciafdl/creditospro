@@ -76,9 +76,14 @@ def validate_license(license_key: str) -> dict:
 
 
 def check_license() -> dict:
-    if not LICENSE_FILE.exists():
-        return {"valid": False, "error": "No hay licencia instalada.", "machine_id": get_fingerprint()}
-    return validate_license(LICENSE_FILE.read_text(encoding="utf-8").strip())
+    # 1. Intentar archivo local
+    if LICENSE_FILE.exists():
+        return validate_license(LICENSE_FILE.read_text(encoding="utf-8").strip())
+    # 2. Intentar variable de entorno (Railway, servidores, etc.)
+    env_key = os.getenv("CREDITOSPRO_LICENSE_KEY", "").strip()
+    if env_key:
+        return validate_license(env_key)
+    return {"valid": False, "error": "No hay licencia instalada.", "machine_id": get_fingerprint()}
 
 
 def save_license(key: str) -> dict:
