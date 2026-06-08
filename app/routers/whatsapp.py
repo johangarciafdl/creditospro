@@ -8,10 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db, NotificacionWP, ConfiguracionApp, Cliente, Cuota, Prestamo
 from app.routers.auth import get_current_user
 from app.services.whatsapp_service import ejecutar_recordatorios, enviar_notificacion, get_config_by_empresa
-<<<<<<< HEAD
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -25,15 +22,11 @@ async def panel_whatsapp(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/auth/login?next=/whatsapp", status_code=302)
 
     eid = user.empresa_id
-<<<<<<< HEAD
     allowed_zones = get_allowed_zone_ids(db, user)
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     config = get_config_by_empresa(db, eid)
     hoy = datetime.date.today()
     limite = hoy + datetime.timedelta(days=config.dias_aviso_vencimiento)
 
-<<<<<<< HEAD
     notifs_q = db.query(NotificacionWP).filter(
         NotificacionWP.empresa_id == eid
     )
@@ -45,15 +38,6 @@ async def panel_whatsapp(request: Request, db: Session = Depends(get_db)):
     if allowed_zones is not None:
         clientes_q = clientes_q.filter(Cliente.zona_id.in_(allowed_zones or [-1]))
     clientes_map = {c.id: c for c in clientes_q.all()}
-=======
-    notifs = db.query(NotificacionWP).filter(
-        NotificacionWP.empresa_id == eid
-    ).order_by(NotificacionWP.creado.desc()).limit(100).all()
-
-    clientes_map = {
-        c.id: c for c in db.query(Cliente).filter(Cliente.empresa_id == eid).all()
-    }
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     notifs_data = []
     for n in notifs:
         c = clientes_map.get(n.cliente_id)
@@ -65,25 +49,17 @@ async def panel_whatsapp(request: Request, db: Session = Depends(get_db)):
             "creado": n.creado.strftime("%d/%m %H:%M") if n.creado else "—",
         })
 
-<<<<<<< HEAD
     proximas_q = db.query(Cuota, Prestamo, Cliente).join(
-=======
-    proximas = db.query(Cuota, Prestamo, Cliente).join(
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         Prestamo, Cuota.prestamo_id == Prestamo.id
     ).join(Cliente, Prestamo.cliente_id == Cliente.id).filter(
         Cuota.empresa_id == eid,
         Cuota.estado == "Pendiente",
         Cuota.fecha_vencimiento >= hoy,
         Cuota.fecha_vencimiento <= limite,
-<<<<<<< HEAD
     )
     if allowed_zones is not None:
         proximas_q = proximas_q.filter(Prestamo.zona_id.in_(allowed_zones or [-1]))
     proximas = proximas_q.all()
-=======
-    ).all()
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
     proximas_data = [
         {"cliente": c.nombre, "tel": c.whatsapp or c.telefono,
@@ -156,11 +132,8 @@ async def enviar_manual(
     ).first()
     if not cliente:
         return JSONResponse({"error": "Cliente no encontrado"}, status_code=404)
-<<<<<<< HEAD
     if not require_zone_access(db, user, cliente.zona_id):
         return JSONResponse({"error": "No tienes permisos para ese cliente"}, status_code=403)
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
     tel = cliente.whatsapp or cliente.telefono
     ok = await enviar_notificacion(tel, mensaje, db, cliente_id, None, "Manual", user.empresa_id)

@@ -3,17 +3,12 @@
 {% block topbar_title %}Bot WhatsApp{% endblock %}
 {% block topbar_sub %}Notificaciones automáticas de cobro{% endblock %}
 {% block topbar_actions %}
-<<<<<<< HEAD
   <button class="btn btn-primary" onclick="enviarAhora()" id="btn-enviar">Enviar recordatorios ahora</button>
-=======
-  <button class="btn btn-primary" onclick="enviarAhora()" id="btn-enviar">▶ Enviar recordatorios ahora</button>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 {% endblock %}
 
 {% block content %}
 <!-- STATS -->
 <div class="stats-grid mb-3" style="grid-template-columns:repeat(3,1fr);">
-<<<<<<< HEAD
   <div class="stat-card">
     <div class="stat-label">Mensajes enviados</div>
     <div class="stat-value gold">{{ total_enviados }}</div>
@@ -25,19 +20,6 @@
   <div class="stat-card">
     <div class="stat-label">Cuotas próx. a vencer</div>
     <div class="stat-value">{{ total_pendientes }}</div>
-=======
-  <div class="stat-card green">
-    <div class="stat-label">Mensajes enviados</div>
-    <div class="stat-val green">{{ total_enviados }}</div>
-  </div>
-  <div class="stat-card red">
-    <div class="stat-label">Errores de envío</div>
-    <div class="stat-val red">{{ total_errores }}</div>
-  </div>
-  <div class="stat-card gray">
-    <div class="stat-label">Cuotas próx. a vencer</div>
-    <div class="stat-val">{{ total_pendientes }}</div>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     <div class="stat-sub">Con recordatorio pendiente</div>
   </div>
 </div>
@@ -77,11 +59,7 @@
             </td>
           </tr>
           {% else %}
-<<<<<<< HEAD
           <tr><td colspan="6" style="text-align:center;color:var(--t3);padding:20px;">✓ Sin cuotas próximas a vencer</td></tr>
-=======
-          <tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:20px;">✓ Sin cuotas próximas a vencer</td></tr>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
           {% endfor %}
         </tbody>
       </table>
@@ -104,11 +82,7 @@
               {% else %}<span class="badge badge-gray">{{ n.tipo }}</span>{% endif %}
             </td>
             <td>
-<<<<<<< HEAD
               {% if n.estado=='Enviado' %}<span class="badge badge-gold">✓ Enviado</span>
-=======
-              {% if n.estado=='Enviado' %}<span class="badge badge-green">✓ Enviado</span>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
               {% elif n.estado=='Error' %}<span class="badge badge-red">✕ Error</span>
               {% else %}<span class="badge badge-gray">Pendiente</span>{% endif %}
             </td>
@@ -183,11 +157,7 @@ async function enviarAhora() {
   const btn = document.getElementById('btn-enviar');
   btn.textContent = '⏳ Enviando...'; btn.disabled = true;
   try {
-<<<<<<< HEAD
     const r = await window.fetch('/whatsapp/enviar-ahora', { method:'POST' });
-=======
-    const r = await fetch('/whatsapp/enviar-ahora', { method:'POST' });
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     const d = await r.json();
     toast(`Enviados: ${d.enviados} · Errores: ${d.errores}`);
     setTimeout(() => location.reload(), 1500);
@@ -198,11 +168,7 @@ async function enviarAhora() {
 async function guardarConfigWP(e) {
   e.preventDefault();
   const fd = new FormData(e.target);
-<<<<<<< HEAD
   const r = await window.fetch('/whatsapp/configurar', { method:'POST', body: fd });
-=======
-  const r = await fetch('/whatsapp/configurar', { method:'POST', body: fd });
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   const d = await r.json();
   if (d.ok) toast(d.mensaje);
   else toast('Error al guardar', 'error');
@@ -221,11 +187,7 @@ async function enviarPrueba() {
   const fd = new FormData();
   fd.append('cliente_id', document.getElementById('test-cliente-id').value);
   fd.append('mensaje', document.getElementById('test-msg').value);
-<<<<<<< HEAD
   const r = await window.fetch('/whatsapp/enviar-manual', { method:'POST', body: fd });
-=======
-  const r = await fetch('/whatsapp/enviar-manual', { method:'POST', body: fd });
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   const d = await r.json();
   toast(d.ok ? 'Enviado ✓' : 'Error: ' + d.mensaje, d.ok ? 'success' : 'error');
   cerrarModal();

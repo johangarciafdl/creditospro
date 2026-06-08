@@ -15,7 +15,6 @@ build/
 *.spec
 
 # Base de datos (datos reales)
-<<<<<<< HEAD
 *.db
 *.db-shm
 *.db-wal
@@ -28,13 +27,6 @@ backups/
 
 # Uploads de usuarios
 uploads/
-=======
-data/*.db
-data/*.db-shm
-data/*.db-wal
-
-# Uploads de usuarios
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 uploads/fotos/
 uploads/*.jpg
 uploads/*.jpeg
@@ -43,12 +35,13 @@ uploads/*.png
 # Variables de entorno
 .env
 .env.*
-<<<<<<< HEAD
+!.env.example
+
+# Licencias (artefactos locales con datos sensibles)
 license.key
 license_*.txt
 *.key
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
+.lic_data
 
 # Ejecutables
 *.exe
@@ -57,12 +50,22 @@ license_*.txt
 .vscode/
 .idea/
 *.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
-<<<<<<< HEAD
 
+# Dependencias frontend
 node_modules/
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Archivos basura generados accidentalmente
+*.txt.bak
+Procfile (*)
+*.gitignore.txt

@@ -1,52 +1,77 @@
 #!/usr/bin/env python3
 """
 Script para activar licencia directamente en .env
+
+Uso:
+    python activar_licencia.py --key "CPRO-..."
+    o
+    set CREDITOSPRO_LICENSE_KEY=CPRO-...
+    python activar_licencia.py
 """
+import argparse
 import os
+import sys
 from pathlib import Path
-from dotenv import load_dotenv
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-LICENSE_KEY = "CPRO-Z0FBQUFBQnFEMkQ0Sk0xV2hUc2RwNnNENFAyRGFydWNwS1hRQ0VYckl3ZmE2SlNKd2R2WmdIZDJVTVF1dWRqcE1CclJXQnFoQjdTdk1hTl9xem9Sd2lrTlBncndPSDliQVpkNGthTVNiTG14VmJhLWZpcTV2dFhEVUxjTWpKQ3lEVUpWS1RQejFQZHlEejBfSy1lZ015NzJRWlJBX3JIS2Z2YUR0X0FXT0JYZ0ktS1AxSzhtTmx5RWdvSnlkZVAxZzNPVUdra1VsdXcyOUkxWEllUGh6QnhRaUlwaERaX2hJNUI4QjVCWVUyRnFUVWpRX3g0LUQwVmRLNDJOeDZtVHFjUUpQT29UeWlvMnNWUVNXVXowME9qTjRKQW5jeEpwakliclp3NmFNb2JJc0dlalpFZWZ2T2ktNjRpTGJWeEJkRVVrLTNHdEh2cWZKcGZ5cU9TOEt5V3cyNVJIWldDOExnPT0="
 
-def activar_licencia():
+def activar_licencia(license_key: str) -> None:
     """Activa la licencia en .env"""
     env_file = Path(__file__).parent / ".env"
-    
+    if not env_file.exists():
+        env_file.write_text("", encoding="utf-8")
+
     try:
-        # Leer contenido actual
-        content = env_file.read_text(encoding='utf-8')
-        
-        # Si ya existe LICENSE_KEY, reemplazar; si no, agregar
+        content = env_file.read_text(encoding="utf-8")
+
         if "LICENSE_KEY=" in content:
-            lines = content.split('\n')
+            lines = content.split("\n")
             for i, line in enumerate(lines):
                 if line.startswith("LICENSE_KEY="):
-                    lines[i] = f"LICENSE_KEY={LICENSE_KEY}"
-            content = '\n'.join(lines)
+                    lines[i] = f"LICENSE_KEY={license_key}"
+            content = "\n".join(lines)
         else:
-            content += f"\n\n# Licencia activada\nLICENSE_KEY={LICENSE_KEY}\n"
-        
-        # Guardar
-        env_file.write_text(content, encoding='utf-8')
-        
-        print("\n" + "="*70)
-        print("✅ LICENCIA ACTIVADA EXITOSAMENTE")
-        print("="*70)
-        print(f"\nMachine ID: 90D10A0E0EED699650502BDB767CF18F")
-        print(f"Empresa: ElRuso")
-        print(f"\nLicencia guardada en: .env")
-        print("\n⚠️  Reinicia el servidor para que surta efecto\n")
-        
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+            content += f"\n\n# Licencia activada\nLICENSE_KEY={license_key}\n"
+
+        env_file.write_text(content, encoding="utf-8")
+
+        print("\n" + "=" * 70)
+        print("LICENCIA ACTIVADA EXITOSAMENTE")
+        print("=" * 70)
+        print(f"\nLicencia guardada en: {env_file}")
+        print("\nReinicia el servidor para que surta efecto\n")
+
+    except OSError as e:
+        print(f"Error de E/S al actualizar .env: {e}")
         sys.exit(1)
 
-if __name__ == "__main__":
-    print("\n" + "="*70)
+
+def main():
+    parser = argparse.ArgumentParser(description="Activa una licencia en el archivo .env")
+    parser.add_argument(
+        "--key",
+        default=None,
+        help="License key. Si no se pasa, se intenta leer de la variable CREDITOSPRO_LICENSE_KEY.",
+    )
+    args = parser.parse_args()
+
+    license_key = (args.key or os.getenv("CREDITOSPRO_LICENSE_KEY", "")).strip()
+    if not license_key:
+        print("ERROR: No se proporciono license key.")
+        print("Uso: python activar_licencia.py --key \"CPRO-...\"")
+        print('  o: set CREDITOSPRO_LICENSE_KEY=CPRO-... y luego ejecuta el script')
+        sys.exit(2)
+
+    print("\n" + "=" * 70)
     print("SCRIPT: CreditosPro - Activar Licencia")
-    print("="*70)
-    activar_licencia()
+    print("=" * 70)
+    activar_licencia(license_key)
+
+
+if __name__ == "__main__":
+    main()

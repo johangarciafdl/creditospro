@@ -1,11 +1,6 @@
 """
-<<<<<<< HEAD
 CreditosPro v2.1 — Módulo Administrador (.exe)
 ===============================================
-=======
-CreditosPro v2.0 — Módulo Administrador (.exe)
-================================================
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 Wrapper PyWebView que abre el panel de admin en una ventana nativa de Windows.
 
 Modo de uso:
@@ -26,15 +21,9 @@ Arquitectura:
   │  │  PyWebView (ventana) │◄────────────►│FastAPI │  │
   │  └──────────────────────┘              │ Server │  │
   └─────────────────────────────────────────┤        ├──┘
-<<<<<<< HEAD
                                              │ SQLite │
   Cobradores (celular/navegador) ──────────►│  DB    │
                                              └────────┘
-=======
-                                            │ SQLite │
-  Cobradores (celular/navegador) ──────────►│  DB    │
-                                            └────────┘
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 """
 import sys
 import os
@@ -45,7 +34,6 @@ import subprocess
 import signal
 from pathlib import Path
 
-<<<<<<< HEAD
 # ─── Cargar variables de entorno desde .env si existe ────────────────────────
 _base = Path(__file__).parent
 _dotenv = _base / ".env"
@@ -72,12 +60,6 @@ if not os.getenv("SECRET_KEY"):
 parser = argparse.ArgumentParser(description="CreditosPro Admin")
 parser.add_argument("--url", default="", help="URL del servidor remoto (ej: https://mi-servidor.railway.app)")
 parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8000")), help="Puerto local (default 8000)")
-=======
-# ─── Argumento: URL del servidor remoto (opcional) ───────────────────────────
-parser = argparse.ArgumentParser(description="CreditosPro Admin")
-parser.add_argument("--url", default="", help="URL del servidor remoto")
-parser.add_argument("--port", type=int, default=8000, help="Puerto local (default 8000)")
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 parser.add_argument("--debug", action="store_true", help="Modo debug")
 args, _ = parser.parse_known_args()
 
@@ -85,7 +67,6 @@ SERVER_URL = args.url.rstrip("/") if args.url else f"http://127.0.0.1:{args.port
 USE_REMOTE = bool(args.url)
 PORT = args.port
 
-<<<<<<< HEAD
 # Verificar si estamos usando PostgreSQL o SQLite
 DB_URL = os.getenv("DATABASE_URL", "")
 USING_POSTGRES = DB_URL.startswith("postgresql://") or DB_URL.startswith("postgres://")
@@ -94,8 +75,6 @@ if USING_POSTGRES:
 else:
     print("[CreditosPro] Base de datos: SQLite (Local)")
 
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 # ─── Ventana principal ────────────────────────────────────────────────────────
 class AdminApp:
@@ -227,17 +206,45 @@ class NativeAPI:
             print(f"Error impresión: {e}")
 
     def abrir_archivo(self, ruta: str):
-        """Abre un archivo Excel/PDF con la aplicación predeterminada"""
-        import subprocess, os
+        """Abre un archivo Excel/PDF con la aplicación predeterminada.
+
+        Restringe el acceso a rutas dentro del proyecto (uploads/, backups/, reportes/)
+        para evitar que codigo malicioso en la pagina abra archivos del sistema.
+        """
+        import subprocess
+        from pathlib import Path as _Path
+
         try:
+            if not ruta or not isinstance(ruta, str):
+                return {"ok": False, "error": "Ruta invalida"}
+
+            base = _Path(__file__).resolve().parent
+            allowed_roots = [
+                (base / sub).resolve() for sub in ("uploads", "backups", "reportes", "static")
+            ]
+            try:
+                target = (base / ruta).resolve() if not _Path(ruta).is_absolute() else _Path(ruta).resolve()
+            except (OSError, ValueError):
+                return {"ok": False, "error": "Ruta invalida"}
+
+            inside_allowed = any(
+                str(target).startswith(str(root) + os.sep) or target == root
+                for root in allowed_roots
+            )
+            if not inside_allowed or not target.is_file():
+                print(f"[CreditosPro] Bloqueado abrir_archivo fuera de carpetas permitidas: {ruta}")
+                return {"ok": False, "error": "Archivo no permitido"}
+
             if sys.platform == "win32":
-                os.startfile(ruta)
+                os.startfile(str(target))
             elif sys.platform == "darwin":
-                subprocess.run(["open", ruta])
+                subprocess.run(["open", str(target)], check=False)
             else:
-                subprocess.run(["xdg-open", ruta])
+                subprocess.run(["xdg-open", str(target)], check=False)
+            return {"ok": True}
         except Exception as e:
             print(f"Error abriendo archivo: {e}")
+            return {"ok": False, "error": "Error abriendo archivo"}
 
     def get_info_sistema(self):
         """Retorna info del sistema para el panel admin"""

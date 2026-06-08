@@ -6,10 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db, Zona, Cliente, Prestamo, Cobro
 from app.routers.auth import get_current_user
-<<<<<<< HEAD
 from app.utils.zone_permissions import get_allowed_zone_ids
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -23,15 +20,11 @@ async def listar_zonas(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/auth/login?next=/zonas", status_code=302)
 
     eid = user.empresa_id
-<<<<<<< HEAD
     allowed_zones = get_allowed_zone_ids(db, user)
     zonas_q = db.query(Zona).filter(Zona.empresa_id == eid)
     if allowed_zones is not None:
         zonas_q = zonas_q.filter(Zona.id.in_(allowed_zones or [-1]))
     zonas = zonas_q.all()
-=======
-    zonas = db.query(Zona).filter(Zona.empresa_id == eid).all()
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     data = []
     for z in zonas:
         clientes = db.query(Cliente).filter(Cliente.empresa_id == eid, Cliente.zona_id == z.id, Cliente.activo == True).count()
@@ -90,11 +83,8 @@ async def editar_zona(
     nombre: str = Form(...), cobrador_nombre: str = Form(""),
     cobrador_tel: str = Form(""), cobrador_moto: str = Form(""),
     activa: str = Form("true"),
-<<<<<<< HEAD
     bot_phone: str = Form(""), bot_apikey: str = Form(""),
     bot_activo: str = Form("false"),
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     db: Session = Depends(get_db)
 ):
     user = get_current_user(request, db)
@@ -112,11 +102,8 @@ async def editar_zona(
     zona.cobrador_tel = cobrador_tel or None
     zona.cobrador_moto = cobrador_moto or None
     zona.activa = activa.lower() in ("true", "1", "on")
-<<<<<<< HEAD
     zona.bot_phone = bot_phone.strip() or None
     zona.bot_apikey = bot_apikey.strip() or None
     zona.bot_activo = bot_activo.lower() in ("true", "1", "on")
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     db.commit()
     return JSONResponse({"ok": True})

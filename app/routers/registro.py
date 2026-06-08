@@ -2,6 +2,8 @@
 Registro de nueva empresa - Onboarding multi-tenant
 Permite que cualquier empresa nueva cree su cuenta independiente
 """
+import logging
+
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -9,25 +11,39 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db, Empresa, Usuario, ConfiguracionApp, Zona
 from app.utils.security import get_password_hash, create_access_token
-<<<<<<< HEAD
 from app.routers.auth import SESSION_COOKIE, IS_PRODUCTION
 from app.utils.settings import settings
-=======
-from app.routers.auth import SESSION_COOKIE
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
+from app.utils.csrf import ensure_csrf_token
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+logger = logging.getLogger(__name__)
+
+
+def _render_registro(request: Request, error: str | None = None, success: bool = False):
+    """Renderiza la pagina de registro garantizando que el token CSRF este disponible."""
+    response = templates.TemplateResponse(
+        request,
+        "registro.html",
+        {"error": error, "success": success, "csrf_token": ""},
+    )
+    token = ensure_csrf_token(request, response)
+    # Re-renderizar el contexto con el token correcto
+    response = templates.TemplateResponse(
+        request,
+        "registro.html",
+        {"error": error, "success": success, "csrf_token": token},
+    )
+    # Asegurar que la cookie viaje en esta respuesta
+    ensure_csrf_token(request, response)
+    return response
 
 
 @router.get("")
 @router.get("/")
 async def registro_page(request: Request):
-<<<<<<< HEAD
     if not settings.ALLOW_PUBLIC_REGISTRATION:
         return RedirectResponse(url="/seleccionar-empresa", status_code=302)
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     # Si ya tiene sesión activa, ir al dashboard
     from app.routers.auth import get_current_user
     from app.database import SessionLocal
@@ -38,7 +54,7 @@ async def registro_page(request: Request):
             return RedirectResponse(url="/dashboard", status_code=302)
     finally:
         db.close()
-    return templates.TemplateResponse(request, "registro.html", {"error": None, "success": False})
+    return _render_registro(request)
 
 
 @router.post("")
@@ -52,34 +68,30 @@ async def registro_submit(
     admin_username: str = Form(...),
     admin_password: str = Form(...),
     admin_password2: str = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-<<<<<<< HEAD
     if not settings.ALLOW_PUBLIC_REGISTRATION:
         return JSONResponse({"error": "Registro publico deshabilitado"}, status_code=403)
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
-    # Validaciones
-    if len(admin_password) < 6:
-        return templates.TemplateResponse(request, "registro.html", {
-            "error": "La contraseña debe tener al menos 6 caracteres", "success": False
-        })
+
+    from app.utils.password_policy import validar_password
+    try:
+        validar_password(admin_password)
+    except HTTPException as e:
+        return _render_registro(request, error=e.detail)
     if admin_password != admin_password2:
-        return templates.TemplateResponse(request, "registro.html", {
-            "error": "Las contraseñas no coinciden", "success": False
-        })
+        return _render_registro(request, error="Las contraseñas no coinciden")
 
     username_clean = admin_username.strip().lower()
 
-    # Username único globalmente para evitar confusiones
     existente = db.query(Usuario).filter(Usuario.username == username_clean).first()
     if existente:
-        return templates.TemplateResponse(request, "registro.html", {
-            "error": "Ese nombre de usuario ya está en uso, elige otro", "success": False
-        })
+        # Mensaje generico para no permitir enumeracion de usernames existentes
+        return _render_registro(
+            request,
+            error="No se pudo completar el registro con esos datos. Revisa e intenta de nuevo.",
+        )
 
     try:
-        # Crear empresa
         empresa = Empresa(
             nombre=empresa_nombre.strip(),
             nit=empresa_nit.strip() or None,
@@ -90,7 +102,6 @@ async def registro_submit(
         db.add(empresa)
         db.flush()
 
-        # Config por defecto de la empresa
         config = ConfiguracionApp(
             empresa_id=empresa.id,
             empresa_nombre=empresa_nombre.strip(),
@@ -101,7 +112,6 @@ async def registro_submit(
         )
         db.add(config)
 
-        # Zona por defecto
         zona = Zona(
             empresa_id=empresa.id,
             codigo="Z001",
@@ -112,16 +122,11 @@ async def registro_submit(
         db.add(zona)
         db.flush()
 
-        # Admin de la empresa
         admin = Usuario(
             empresa_id=empresa.id,
             username=username_clean,
             nombre=admin_nombre.strip(),
-<<<<<<< HEAD
             password_hash=get_password_hash(admin_password),
-=======
-            hashed_password=get_password_hash(admin_password),
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
             rol="admin",
             activo=True,
         )
@@ -129,7 +134,6 @@ async def registro_submit(
         db.commit()
         db.refresh(admin)
 
-        # Login automático después del registro
         token = create_access_token({
             "sub": str(admin.id),
             "rol": admin.rol,
@@ -139,17 +143,19 @@ async def registro_submit(
 
         response = RedirectResponse(url="/dashboard", status_code=302)
         response.set_cookie(
-            key=SESSION_COOKIE, value=token,
-<<<<<<< HEAD
-            httponly=True, samesite="strict", max_age=60 * 60 * 12, secure=IS_PRODUCTION,
-=======
-            httponly=True, samesite="lax", max_age=60 * 60 * 12, secure=False,
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
+            key=SESSION_COOKIE,
+            value=token,
+            httponly=True,
+            samesite="strict",
+            max_age=60 * 60 * 12,
+            secure=IS_PRODUCTION,
         )
         return response
 
-    except Exception as e:
+    except Exception:
         db.rollback()
-        return templates.TemplateResponse(request, "registro.html", {
-            "error": f"Error al crear la cuenta: {str(e)}", "success": False
-        })
+        logger.exception("[REGISTRO] Error creando empresa/usuario")
+        return _render_registro(
+            request,
+            error="No se pudo crear la cuenta. Intenta nuevamente o contacta al soporte.",
+        )

@@ -85,9 +85,23 @@ def ensure_sqlite_columns():
     }
     with engine.begin() as conn:
         for table, columns in additions.items():
-            existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()}
+            # Defensive: solo permitimos nombres de tabla/columna alfanumericos
+            # (estos vienen de un dict constante, pero validamos por si acaso)
+            if not table.replace("_", "").isalnum():
+                raise ValueError(f"Nombre de tabla invalido: {table}")
+            existing = {
+                row[1]
+                for row in conn.execute(
+                    text("PRAGMA table_info(:tname)").bindparams(tname=table)
+                ).fetchall()
+            }
             for name, ddl in columns.items():
+                if not name.replace("_", "").isalnum():
+                    raise ValueError(f"Nombre de columna invalido: {name}")
                 if name not in existing:
+                    # DDL no soporta bindparams en algunos casos; validar DDL
+                    if not all(c.isalnum() or c in " _" for c in ddl):
+                        raise ValueError(f"DDL invalido: {ddl}")
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 

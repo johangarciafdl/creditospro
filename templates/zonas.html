@@ -15,11 +15,7 @@
           <div class="fw-600" style="font-size:15px;">{{ z.nombre }}</div>
           <div class="fs-11 text-2">{{ z.ciudad }} · Código: {{ z.codigo }}</div>
         </div>
-<<<<<<< HEAD
         {% if z.activa %}<span class="badge badge-gold">Activa</span>
-=======
-        {% if z.activa %}<span class="badge badge-green">Activa</span>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         {% else %}<span class="badge badge-gray">Inactiva</span>{% endif %}
       </div>
 
@@ -30,13 +26,8 @@
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
-<<<<<<< HEAD
         <div style="background:rgba(212, 175, 55, 0.05);border-radius:6px;padding:8px;text-align:center;">
           <div class="fs-20 fw-600 text-gold" style="color:var(--accent)">{{ z.clientes }}</div>
-=======
-        <div style="background:var(--verde-50);border-radius:6px;padding:8px;text-align:center;">
-          <div class="fs-20 fw-600 text-green">{{ z.clientes }}</div>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
           <div class="fs-11 text-2">Clientes</div>
         </div>
         <div style="background:var(--bg);border-radius:6px;padding:8px;text-align:center;">
@@ -54,11 +45,7 @@
 
       <div class="flex gap-1">
         <button class="btn btn-ghost btn-xs" style="flex:1;" onclick="editarZona({{ z.id }}, '{{ z.nombre }}', '{{ z.cobrador }}', '{{ z.cobrador_tel }}', '{{ z.cobrador_moto }}')">✏ Editar</button>
-<<<<<<< HEAD
         <a href="/reportes/resumen-zonas" class="btn btn-secondary btn-xs" style="flex:1;justify-content:center;">⬇ Excel</a>
-=======
-        <a href="/reportes/resumen-zonas" class="btn btn-excel btn-xs" style="flex:1;justify-content:center;">⬇ Excel</a>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
       </div>
     </div>
   </div>
@@ -84,7 +71,6 @@
         <div class="form-group"><label>Moto/Placa</label><input type="text" name="cobrador_moto"></div>
       </div>
     </form>
-<<<<<<< HEAD
   
           <div style="height:1px;background:var(--border);margin:14px 0;"></div>
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--gold);margin-bottom:8px;">CallMeBot WhatsApp</div>
@@ -105,9 +91,6 @@
               Activar bot para esta zona
             </label>
           </div></div>
-=======
-  </div>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   <div class="modal-footer">
     <button class="btn" onclick="document.getElementById('modal-zona').classList.remove('open')">Cancelar</button>
     <button class="btn btn-primary" onclick="guardarZona()">Guardar Zona</button>
@@ -120,11 +103,7 @@
 <script>
 async function guardarZona() {
   const fd = new FormData(document.getElementById('form-zona'));
-<<<<<<< HEAD
   const r = await window.fetch('/zonas/nueva', { method:'POST', body: fd });
-=======
-  const r = await fetch('/zonas/nueva', { method:'POST', body: fd });
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   const d = await r.json();
   if (d.ok) { toast('Zona creada ✓'); setTimeout(() => location.reload(), 800); }
   else toast('Error', 'error');
@@ -148,11 +127,7 @@ function editarZona(id, nombre, cobrador, tel, moto) {
 async function actualizarZona(id) {
   const fd = new FormData(document.getElementById('fe-zona'));
   fd.append('activa', 'true');
-<<<<<<< HEAD
   const r = await window.fetch(`/zonas/${id}/editar`, { method:'POST', body: fd });
-=======
-  const r = await fetch(`/zonas/${id}/editar`, { method:'POST', body: fd });
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   const d = await r.json();
   if (d.ok) { toast('Zona actualizada ✓'); cerrarModal(); setTimeout(() => location.reload(), 800); }
 }

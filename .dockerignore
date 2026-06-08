@@ -1,0 +1,60 @@
+# Archivos que NO deben ir a la imagen Docker
+# (mantiene la imagen pequena y evita filtrar secretos)
+
+# Git y metadata
+.git
+.gitignore
+.gitattributes
+
+# Entornos virtuales y caches
+.venv
+venv/
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Entorno y secretos — NUNCA al repositorio/imagen
+.env
+.env.*
+!.env.example
+*.key
+license.key
+license_*.txt
+.lic_data
+
+# Datos generados en runtime (se montan como volumenes)
+uploads/
+backups/
+reports/
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Documentacion local
+*.md
+docs/
+
+# Pruebas y herramientas de desarrollo
+tests/
+.pytest.ini
+.coverage
+htmlcov/
+prueba_*.py
+diagnostico_*.py
+limpiar_*.py
+normalizar_*.py
+crear_indices.py
+crear_empresa.py
+
+# OS
+Thumbs.db
+.DS_Store

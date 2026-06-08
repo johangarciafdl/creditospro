@@ -102,24 +102,27 @@ async function cargarRuta() {
   }
 
   lista.innerHTML = items.map(p => {
-    const venc = p.dias > 0;
+    const dias = Number(p.dias||0);
+    const venc = dias > 0;
+    const waDigits = String(p.whatsapp||'').replace(/\D/g,'').slice(0,20);
+    const telDigits = String(p.telefono||'').replace(/[^\d+\-\s()]/g,'').slice(0,20);
     return `
     <div class="card card-hover">
       <div style="padding:14px 14px 10px;">
         <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
           <div>
-            <div style="font-weight:600;font-size:14px;">${p.cliente}</div>
-            <div style="font-size:11px;color:var(--t3);">Cuota ${p.cuota_num}/${p.total_cuotas} · ${p.vencimiento}</div>
+            <div style="font-weight:600;font-size:14px;">${esc(p.cliente)}</div>
+            <div style="font-size:11px;color:var(--t3);">Cuota ${Number(p.cuota_num||0)}/${Number(p.total_cuotas||0)} · ${esc(p.vencimiento)}</div>
           </div>
           <div style="text-align:right;">
-            <div style="font-family:var(--mono);font-weight:700;font-size:16px;">$${Number(p.valor).toLocaleString('es-CO')}</div>
-            <div style="font-size:10px;font-weight:600;color:${venc?'var(--red)':'var(--amber)'};">${venc?p.dias+'d vencida':'Vence hoy'}</div>
+            <div style="font-family:var(--mono);font-weight:700;font-size:16px;">$${Number(p.valor||0).toLocaleString('es-CO')}</div>
+            <div style="font-size:10px;font-weight:600;color:${venc?'var(--red)':'var(--amber)'};">${venc?dias+'d vencida':'Vence hoy'}</div>
           </div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button onclick="abrirCobro(${p.cuota_id},'${p.cliente}',${p.valor},${p.cuota_num})" class="btn btn-gold btn-sm" style="flex:1;justify-content:center;">💰 Cobrar</button>
-          ${p.whatsapp?`<a href="https://wa.me/57${p.whatsapp.replace(/\D/g,'')}" target="_blank" class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;padding:5px 10px;">💬</a>`:''}
-          ${p.telefono?`<a href="tel:${p.telefono}" class="btn btn-sm" style="padding:5px 10px;">📞</a>`:''}
+          <button onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(String(p.cliente||'')).slice(1,-1))},${Number(p.valor||0)},${Number(p.cuota_num||0)})" class="btn btn-gold btn-sm" style="flex:1;justify-content:center;">💰 Cobrar</button>
+          ${waDigits?`<a href="https://wa.me/57${attr(waDigits)}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;padding:5px 10px;">💬</a>`:''}
+          ${telDigits?`<a href="tel:${attr(telDigits)}" class="btn btn-sm" style="padding:5px 10px;">📞</a>`:''}
         </div>
       </div>
     </div>`;

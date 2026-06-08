@@ -1,76 +1,91 @@
 """
-<<<<<<< HEAD
 CreditosPro v2.1 - Seguridad
-=======
-CreditosPro v2.0 - Seguridad
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 bcrypt directo (compatible con bcrypt >= 4.0) + JWT con python-jose
 """
-import os
-import datetime
+import logging
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-<<<<<<< HEAD
+import bcrypt
+from jose import JWTError, jwt
+
 from app.utils.settings import settings
 
-ALGORITHM = "HS256"
-=======
-SECRET_KEY = os.getenv("CREDITOSPRO_SECRET", "creditospro-dev-secret-2025-cambia-esto-en-produccion")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 12
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
+logger = logging.getLogger(__name__)
 
-# bcrypt directo, sin passlib (compatible con Python 3.12+ y bcrypt 4.x)
-import bcrypt
+ALGORITHM = "HS256"
 
-<<<<<<< HEAD
 
 def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-=======
-def get_password_hash(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 def verify_password(plain: str, hashed: str) -> bool:
     try:
         return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logger.warning("Hash de contrasena invalido: %s", e)
         return False
 
-<<<<<<< HEAD
 
-from jose import JWTError, jwt
+# Hash de un valor dummy con la misma configuracion que las contrasenas reales.
+# Se usa para igualar el tiempo de respuesta del login cuando el usuario
+# no existe, evitando ataques de timing/enumeracion de usuarios.
+# Pre-generado al import time para que el primer login no sufra el costo
+# extra de la generacion del hash (que seria medible por un atacante).
+_DUMMY_HASH: str = bcrypt.hashpw(b"__timing_dummy__", bcrypt.gensalt()).decode("utf-8")
+
+
+def _get_dummy_hash() -> str:
+    """Devuelve el hash dummy pre-generado."""
+    return _DUMMY_HASH
+
+
+def verify_password_with_timing_safety(plain: str, hashed: Optional[str]) -> bool:
+    """Verifica una contrasena manteniendo tiempo constante.
+
+    Si hashed es None (usuario no existe en BD), aun asi ejecuta bcrypt
+    contra un hash dummy para que el tiempo de respuesta sea indistinguible
+    de cuando el usuario existe. Esto bloquea ataques de enumeracion por
+    timing.
+    """
+    if not hashed:
+        # Usuario no existe: ejecutar dummy bcrypt para igualar timing
+        try:
+            bcrypt.checkpw(plain.encode("utf-8"), _get_dummy_hash().encode("utf-8"))
+        except Exception:
+            pass
+        return False
+    return verify_password(plain, hashed)
 
 
 def create_access_token(data: dict) -> str:
+    """Crea un JWT con iat, nbf, exp y jti para permitir revocacion futura."""
+    if not settings.SECRET_KEY:
+        raise RuntimeError("SECRET_KEY no esta configurada")
+
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(hours=settings.ACCESS_TOKEN_EXPIRE_HOURS)
+
     to_encode = data.copy()
-    expire = datetime.datetime.utcnow() + datetime.timedelta(hours=settings.ACCESS_TOKEN_EXPIRE_HOURS)
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "iat": int(now.timestamp()),
+        "nbf": int(now.timestamp()),
+        "exp": int(expire.timestamp()),
+        "jti": uuid.uuid4().hex,
+    })
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 
 def decode_token(token: str) -> Optional[dict]:
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"require": ["exp", "iat"]},
+        )
         return payload
     except JWTError:
         return None
-=======
-from jose import JWTError, jwt
-
-def create_access_token(data: dict) -> str:
-    to_encode = data.copy()
-    expire = datetime.datetime.utcnow() + datetime.timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-def decode_token(token: str) -> Optional[dict]:
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except JWTError:
-        return None
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5

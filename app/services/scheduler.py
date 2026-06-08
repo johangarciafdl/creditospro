@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 """Scheduler v2.2 — multi-tenant, corregido asyncio + logging centralizado"""
 import asyncio
 import threading
@@ -14,15 +13,6 @@ logger = logging.getLogger(__name__)
 
 def actualizar_estados_cuotas():
     """Tarea síncrona: marca cuotas vencidas."""
-=======
-"""Scheduler v2.1 - multi-tenant, fixed asyncio loop conflict"""
-import asyncio, threading, datetime, time
-from app.database import SessionLocal, Cuota, Empresa
-from sqlalchemy import and_
-
-
-def actualizar_estados_cuotas():
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     db = SessionLocal()
     try:
         hoy = datetime.date.today()
@@ -33,59 +23,73 @@ def actualizar_estados_cuotas():
             c.estado = "Vencida"
         if cuotas:
             db.commit()
-<<<<<<< HEAD
             logger.info(f"Scheduler: {len(cuotas)} cuotas vencidas actualizadas")
         else:
             logger.debug("Scheduler: 0 cuotas vencidas hoy")
     except Exception as e:
         logger.error(f"Scheduler error estados: {e}", exc_info=True)
-=======
-            print(f"Scheduler: {len(cuotas)} cuotas vencidas actualizadas")
-    except Exception as e:
-        print(f"Scheduler error estados: {e}")
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     finally:
         db.close()
 
 
 async def _recordatorios_async():
-<<<<<<< HEAD
     """Envía recordatorios WhatsApp de forma asíncrona."""
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     from app.services.whatsapp_service import ejecutar_recordatorios
     db = SessionLocal()
     try:
         empresas = db.query(Empresa).filter(Empresa.activa == True).all()
         for empresa in empresas:
             resultado = await ejecutar_recordatorios(db, empresa.id)
-<<<<<<< HEAD
             logger.info(f"WP empresa {empresa.id}: {resultado}")
     except Exception as e:
         logger.error(f"Scheduler WP error: {e}", exc_info=True)
-=======
-            print(f"WP empresa {empresa.id}: {resultado}")
-    except Exception as e:
-        print(f"Scheduler WP error: {e}")
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     finally:
         db.close()
 
 
-<<<<<<< HEAD
 def _ejecutar_recordatorios_sync():
     """Wrapper síncrono para ejecutar async recordatorios."""
     asyncio.run(_recordatorios_async())
 
 
+# ── Healthcheck del scheduler ────────────────────────────────────────────────
+# Expuesto para /health: el endpoint puede detectar si el hilo sigue vivo.
+_scheduler_heartbeat: float = 0.0
+_scheduler_alive: bool = False
+_scheduler_lock = threading.Lock()
+
+
+def get_scheduler_status() -> dict:
+    """Devuelve estado del scheduler para /health."""
+    with _scheduler_lock:
+        if not _scheduler_alive:
+            return {"running": False, "last_heartbeat": None, "stale": True}
+        age = time.time() - _scheduler_heartbeat
+        return {
+            "running": True,
+            "last_heartbeat": _scheduler_heartbeat,
+            "seconds_since_heartbeat": round(age, 1),
+            # Si el latido tiene >5min de antiguedad, el hilo esta colgado
+            "stale": age > 300,
+        }
+
+
 def loop_scheduler():
     """Bucle principal del scheduler. Corre en hilo separado."""
+    global _scheduler_heartbeat, _scheduler_alive
     ultimo_estado = None
     ultimo_wp = None
     logger.info("Scheduler iniciado correctamente")
 
+    with _scheduler_lock:
+        _scheduler_alive = True
+        _scheduler_heartbeat = time.time()
+
     while True:
         ahora = datetime.datetime.now()
+
+        with _scheduler_lock:
+            _scheduler_heartbeat = time.time()
 
         # Cada hora: actualizar estados de cuotas
         if ultimo_estado is None or (ahora - ultimo_estado).total_seconds() >= 3600:
@@ -101,33 +105,10 @@ def loop_scheduler():
                 logger.error(f"Error ejecutando recordatorios: {e}", exc_info=True)
             ultimo_wp = ahora
 
-=======
-def loop_scheduler():
-    ultimo_estado = None
-    ultimo_wp = None
-    print("Scheduler iniciado")
-    while True:
-        ahora = datetime.datetime.now()
-        if ultimo_estado is None or (ahora - ultimo_estado).total_seconds() >= 3600:
-            actualizar_estados_cuotas()
-            ultimo_estado = ahora
-        if (ahora.hour == 8 and ahora.minute < 5 and
-                (ultimo_wp is None or ultimo_wp.date() < ahora.date())):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(_recordatorios_async())
-            finally:
-                loop.close()
-            ultimo_wp = ahora
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         time.sleep(60)
 
 
 def iniciar_scheduler():
     t = threading.Thread(target=loop_scheduler, daemon=True, name="Scheduler")
     t.start()
-<<<<<<< HEAD
     return t
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5

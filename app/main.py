@@ -1,20 +1,13 @@
 """
-<<<<<<< HEAD
 CreditosPro v2.1 — Sistema de Gestión de Créditos y Cobros
 FastAPI + PostgreSQL/SQLite + Autenticación JWT + WhatsApp Bot
 """
 import sys
 import os
-=======
-CreditosPro v2.0 — Sistema de Gestión de Créditos y Cobros
-FastAPI + SQLite + Autenticación JWT + WhatsApp Bot
-"""
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 import uvicorn
 import threading
 import webbrowser
 import time
-<<<<<<< HEAD
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -26,7 +19,7 @@ if _dotenv_path.exists():
     try:
         from dotenv import load_dotenv
         load_dotenv(_dotenv_path)
-        print(f"[CreditosPro] Variables cargadas desde {_dotenv_path}")
+        logging.getLogger(__name__).info("Variables cargadas desde %s", _dotenv_path)
     except ImportError:
         pass
 
@@ -34,10 +27,12 @@ from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
+from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.database import init_db, IS_SQLITE, get_db, Cliente
+from app.database import init_db, IS_SQLITE, get_db, Cliente, SessionLocal
 from app.routers import clientes, prestamos, cobros, zonas, reportes, whatsapp, dashboard, registro, pwa, selector
 from app.routers import license_router
 from app.utils.license_middleware import LicenseMiddleware
@@ -45,39 +40,28 @@ from app.routers import auth
 from app.services.scheduler import iniciar_scheduler
 from app.utils.seed import seed_data_demo
 from app.utils.csrf import CSRFMiddleware
-from app.utils.rate_limit import InMemoryRateLimitMiddleware
+from app.utils.rate_limit import InMemoryRateLimitMiddleware, init_middleware as init_rate_limit
+from app.utils.security_headers import SecurityHeadersMiddleware
+from app.utils.request_id import RequestIDMiddleware
+from app.utils.body_size_limit import BodySizeLimitMiddleware
 from app.utils.settings import settings
 from app.utils.zone_permissions import require_zone_access
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format="%(asctime)s [%(levelname)s] [%(request_id)s] %(name)s: %(message)s",
 )
+# Inyectar filtro que agrega request_id a cada LogRecord
+from app.utils.request_id import RequestIDFilter
+for h in logging.getLogger().handlers:
+    h.addFilter(RequestIDFilter())
 logger = logging.getLogger(__name__)
-=======
-from pathlib import Path
-from contextlib import asynccontextmanager
-
-from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
-from starlette.middleware.sessions import SessionMiddleware
-
-from app.database import init_db
-from app.routers import clientes, prestamos, cobros, zonas, reportes, whatsapp, dashboard, registro
-from app.routers import auth
-from app.services.scheduler import iniciar_scheduler
-from app.utils.seed import seed_data_demo
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 BASE_DIR = Path(__file__).parent.parent
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-<<<<<<< HEAD
     # Check license
     try:
         import license_manager as lm
@@ -85,27 +69,34 @@ async def lifespan(app: FastAPI):
         app.state.license_valid = _lic.get("valid", False)
         app.state.license_info = _lic
     except Exception:
+        logger.warning("license_manager no disponible al arrancar", exc_info=True)
         dev_mode = settings.ENVIRONMENT == "development"
         app.state.license_valid = dev_mode
         app.state.license_info = {"valid": dev_mode, "dev_mode": dev_mode}
-    """Inicialización segura de la aplicación con manejo de errores."""
+
     logger.info("Iniciando CreditosPro...")
 
     # Verificar variables de entorno críticas
     required_vars = ["DATABASE_URL", "SECRET_KEY"]
     missing = [v for v in required_vars if not os.getenv(v)]
     if missing:
-        logger.error(f"Faltan variables de entorno requeridas: {', '.join(missing)}")
+        logger.error("Faltan variables de entorno requeridas: %s", ", ".join(missing))
         logger.error("Crea un archivo .env a partir de .env.example")
         sys.exit(1)
 
-    # Conexión a base de datos con timeout y fallback informativo
+    if settings.IS_PRODUCTION and not os.getenv("SESSION_SECRET_KEY", "").strip():
+        logger.warning(
+            "SESSION_SECRET_KEY no esta definida; se usara SECRET_KEY como respaldo. "
+            "Configura ambas variables por separado en produccion."
+        )
+
+    # Conexión a base de datos con manejo de errores
     try:
         logger.info("Conectando a la base de datos...")
         init_db()
-        logger.info("✅ Base de datos conectada correctamente")
+        logger.info("Base de datos conectada correctamente")
     except Exception as e:
-        logger.error(f"❌ Error conectando a la base de datos: {e}")
+        logger.exception("Error conectando a la base de datos: %s", e)
         if not IS_SQLITE:
             logger.error(
                 "No se pudo conectar a PostgreSQL. Verifica tu DATABASE_URL en .env\n"
@@ -116,79 +107,78 @@ async def lifespan(app: FastAPI):
     # Seed data (solo en desarrollo con ENABLE_SEED_DATA=1)
     try:
         seed_data_demo()
-    except Exception as e:
-        logger.warning(f"Warning al cargar datos demo: {e}")
+    except Exception:
+        logger.warning("Warning al cargar datos demo", exc_info=True)
 
     # Iniciar scheduler
     try:
         iniciar_scheduler()
-        logger.info("✅ Scheduler iniciado")
-    except Exception as e:
-        logger.error(f"Error iniciando scheduler: {e}")
+        logger.info("Scheduler iniciado")
+    except Exception:
+        logger.exception("Error iniciando scheduler")
 
     yield
     logger.info("CreditosPro finalizado")
-=======
-    init_db()
-    seed_data_demo()
-    iniciar_scheduler()
-    yield
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 app = FastAPI(
     redirect_slashes=False,
-<<<<<<< HEAD
     title="CreditosPro v2.1",
     description="Sistema de gestión de créditos y cobros",
     version="2.1.0",
-=======
-    title="CreditosPro v2.0",
-    description="Sistema de gestión de créditos y cobros",
-    version="2.0.0",
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     lifespan=lifespan,
-    docs_url="/api/docs",
+    docs_url="/api/docs" if settings.ENVIRONMENT != "production" else None,
+    redoc_url=None,
+    openapi_url="/api/openapi.json" if settings.ENVIRONMENT != "production" else None,
 )
 
-# Middleware de sesiones (necesario para Starlette sessions)
-<<<<<<< HEAD
+# Middleware de sesiones (clave separada de la SECRET_KEY de JWT cuando sea posible)
 session_secret = os.getenv("SESSION_SECRET_KEY") or os.getenv("SECRET_KEY")
 if not session_secret:
     raise RuntimeError("SESSION_SECRET_KEY o SECRET_KEY es obligatoria")
 app.add_middleware(
     SessionMiddleware,
-    secret_key=session_secret
+    secret_key=session_secret,
+    https_only=settings.IS_PRODUCTION,
+    same_site="strict",
 )
+
+# El orden importa: ultimo en agregar = primero en ejecutar.
+# 1) RequestID: debe ser el PRIMERO que corre para que todos los demas
+#    puedan correlacionar logs por request_id.
+app.add_middleware(RequestIDMiddleware)
+# 2) BodySize: antes que el resto para rechazar payloads grandes rapido.
+app.add_middleware(BodySizeLimitMiddleware)
 app.add_middleware(LicenseMiddleware)
 app.add_middleware(CSRFMiddleware)
 app.add_middleware(InMemoryRateLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware, is_production=settings.IS_PRODUCTION, use_strict_csp=False)
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
+# CORS endurecido: lista blanca de headers, sin wildcard cuando se usan credenciales.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-=======
-app.add_middleware(
-    SessionMiddleware,
-    secret_key="creditospro-session-secret-2025"
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],
-    allow_credentials=True,
-    allow_methods=["*"],
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
-    allow_headers=["*"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-CSRF-Token",
+        "X-Requested-With",
+    ],
+    max_age=600,
 )
 
 # Static files
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-<<<<<<< HEAD
 
 templates = Jinja2Templates(directory="templates")
+
+# Inyectar el nonce CSP en cada render: los templates pueden usar
+# {{ csp_nonce }} dentro de <script> y <style> inline legitimos.
+from app.utils.security_headers import _csp_nonce_var
+templates.env.globals["csp_nonce"] = lambda: _csp_nonce_var.get() or ""
 
 
 def get_license_info() -> dict:
@@ -196,23 +186,16 @@ def get_license_info() -> dict:
         import license_manager as lm
         return lm.check_license()
     except Exception:
+        logger.warning("get_license_info: license_manager no disponible", exc_info=True)
         dev_mode = settings.ENVIRONMENT == "development"
         return {"valid": dev_mode, "dev_mode": dev_mode}
+
 
 # Routers
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(registro.router, prefix="/registro", tags=["Registro"])
 app.include_router(selector.router, tags=["Selector"])
 app.include_router(license_router.router, prefix="/license", tags=["License"])
-=======
-app.mount("/uploads", StaticFiles(directory=str(BASE_DIR / "uploads")), name="uploads")
-
-templates = Jinja2Templates(directory="templates")
-
-# Routers
-app.include_router(auth.router, prefix="/auth", tags=["Auth"])
-app.include_router(registro.router, prefix="/registro", tags=["Registro"])
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 app.include_router(dashboard.router, tags=["Dashboard"])
 app.include_router(clientes.router, prefix="/clientes", tags=["Clientes"])
 app.include_router(prestamos.router, prefix="/prestamos", tags=["Préstamos"])
@@ -220,32 +203,22 @@ app.include_router(cobros.router, prefix="/cobros", tags=["Cobros"])
 app.include_router(zonas.router, prefix="/zonas", tags=["Zonas"])
 app.include_router(reportes.router, prefix="/reportes", tags=["Reportes"])
 app.include_router(whatsapp.router, prefix="/whatsapp", tags=["WhatsApp Bot"])
-<<<<<<< HEAD
 app.include_router(pwa.router, tags=["PWA"])
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 @app.get("/")
 async def root(request: Request):
-<<<<<<< HEAD
     from app.routers.auth import get_current_user
-    from app.database import SessionLocal
     license_info = getattr(request.app.state, "license_info", None) or get_license_info()
     request.app.state.license_valid = license_info.get("valid", False)
     request.app.state.license_info = license_info
 
-=======
-    # Verificar si hay sesión
-    from app.routers.auth import get_current_user
-    from app.database import SessionLocal
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     db = SessionLocal()
     try:
         user = get_current_user(request, db)
     finally:
         db.close()
-<<<<<<< HEAD
+
     if user and license_info.get("valid"):
         return RedirectResponse(url="/dashboard", status_code=302)
 
@@ -270,6 +243,10 @@ async def foto_cliente(filename: str, request: Request, db=Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404)
 
+    # Bloquear path traversal explicitamente (separadores y secuencias relativas)
+    if "/" in filename or "\\" in filename or ".." in filename or filename.startswith("."):
+        raise HTTPException(status_code=404)
+
     cliente = db.query(Cliente).filter(
         Cliente.empresa_id == user.empresa_id,
         Cliente.foto_path == f"fotos/{filename}",
@@ -287,39 +264,49 @@ async def foto_cliente(filename: str, request: Request, db=Depends(get_db)):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "version": "2.1.0"}
-=======
-    if not user:
-        return RedirectResponse(url="/auth/login", status_code=302)
-    return RedirectResponse(url="/dashboard", status_code=302)
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
+    """Healthcheck que verifica DB y licencia. Devuelve 503 si algo falla."""
+    db_ok = False
+    db_error = None
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception as e:
+        db_error = str(e)[:200]
+        logger.warning("Healthcheck DB fallo: %s", db_error)
+    finally:
+        db.close()
+
+    license_valid = bool(getattr(app.state, "license_valid", False))
+    payload = {
+        "status": "healthy" if db_ok else "unhealthy",
+        "version": "2.1.0",
+        "database": "ok" if db_ok else "error",
+        "license_valid": license_valid,
+    }
+    if db_error:
+        payload["database_error"] = db_error
+    return JSONResponse(payload, status_code=200 if db_ok else 503)
 
 
-def abrir_navegador():
+def abrir_navegador(url: str = "http://127.0.0.1:8000"):
     time.sleep(1.5)
-    webbrowser.open("http://127.0.0.1:8000")
+    webbrowser.open(url)
 
 
 def run():
-    t = threading.Thread(target=abrir_navegador, daemon=True)
-    t.start()
-<<<<<<< HEAD
-
     port = int(os.getenv("PORT", "8000"))
+    host = os.getenv("HOST", "127.0.0.1")
     no_browser = os.getenv("CREDITOSPRO_NO_BROWSER", "0") == "1"
-    if no_browser:
-        t.join(timeout=0.1)
+
+    if not no_browser:
+        url = f"http://127.0.0.1:{port}"
+        threading.Thread(target=abrir_navegador, args=(url,), daemon=True).start()
 
     uvicorn.run(
         "app.main:app",
-        host="127.0.0.1",
+        host=host,
         port=port,
-=======
-    uvicorn.run(
-        "app.main:app",
-        host="127.0.0.1",
-        port=8000,
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         log_level="warning",
         reload=False,
     )

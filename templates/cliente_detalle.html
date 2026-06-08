@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 {% extends "base.html" %}
 {% block title %}{{ cliente.nombre }}{% endblock %}
 {% block topbar_title %}{{ cliente.nombre }}{% endblock %}
@@ -9,39 +8,20 @@
 {% endblock %}
 
 {% set cuotas_vencidas_nav = 0 %}
-=======
-﻿{% extends "base.html" %}
-{% block title %}{{ cliente.nombre }}{% endblock %}
-{% block topbar_title %}{{ cliente.nombre }}{% endblock %}
-{% block topbar_sub %}CC {{ cliente.cedula }} Â· {{ zona.nombre if zona else '' }}{% endblock %}
-{% block topbar_actions %}
-  <a href="/clientes" class="btn btn-ghost btn-sm">â† Volver</a>
-  <button class="btn btn-primary" onclick="abrirModalPrestamo()">+ Nuevo PrÃ©stamo</button>
-{% endblock %}
-
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 {% block content %}
 <div class="grid-2 mb-3">
   <!-- PERFIL -->
   <div class="card">
     <div class="card-header">
       <div class="card-title">Perfil del Afiliado</div>
-<<<<<<< HEAD
       <button class="btn btn-ghost btn-sm" onclick="abrirEditar()">Editar</button>
-=======
-      <button class="btn btn-ghost btn-sm" onclick="abrirEditar()">âœ Editar</button>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     </div>
     <div class="card-body">
       <div class="flex-center gap-3 mb-3">
         {% if cliente.foto_path %}
           <img src="/uploads/{{ cliente.foto_path }}" style="width:72px;height:72px;border-radius:12px;object-fit:cover;border:2px solid var(--border);">
         {% else %}
-<<<<<<< HEAD
           <div class="avatar {% if cliente.tipo_cliente=='Bueno' %}avatar-gold{% elif cliente.tipo_cliente=='Riesgo' %}avatar-red{% else %}avatar-blue{% endif %}" style="width:72px;height:72px;font-size:24px;border-radius:12px;">
-=======
-          <div class="avatar {% if cliente.tipo_cliente=='Bueno' %}avatar-green{% elif cliente.tipo_cliente=='Riesgo' %}avatar-red{% else %}avatar-blue{% endif %}" style="width:72px;height:72px;font-size:24px;border-radius:12px;">
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
             {{ cliente.nombre[:2].upper() }}
           </div>
         {% endif %}
@@ -49,11 +29,7 @@
           <div style="font-size:18px;font-weight:600;">{{ cliente.nombre }}</div>
           <div class="text-2">CC {{ cliente.cedula }}</div>
           <div class="mt-1">
-<<<<<<< HEAD
             {% if cliente.tipo_cliente=='Bueno' %}<span class="badge badge-gold">Bueno</span>
-=======
-            {% if cliente.tipo_cliente=='Bueno' %}<span class="badge badge-green">Bueno</span>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
             {% elif cliente.tipo_cliente=='Riesgo' %}<span class="badge badge-red">Riesgo</span>
             {% else %}<span class="badge badge-gray">Regular</span>{% endif %}
           </div>
@@ -61,7 +37,6 @@
       </div>
 
       <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:13px;">
-<<<<<<< HEAD
         <span class="text-2">Telefono</span><span>{{ cliente.telefono }}</span>
         {% if cliente.whatsapp %}<span class="text-2">WhatsApp</span><span>{{ cliente.whatsapp }}</span>{% endif %}
         <span class="text-2">Direccion</span><span>{{ cliente.direccion or '-' }}</span>
@@ -69,35 +44,18 @@
         <span class="text-2">Zona</span><span>{{ zona.nombre if zona else '-' }}</span>
         {% if cliente.codeudor_nombre %}
         <span class="text-2">Codeudor</span><span>{{ cliente.codeudor_nombre }} - {{ cliente.codeudor_tel or '' }}</span>
-=======
-        <span class="text-2">ðŸ“ž TelÃ©fono</span><span>{{ cliente.telefono }}</span>
-        {% if cliente.whatsapp %}<span class="text-2">ðŸ’¬ WhatsApp</span><span>{{ cliente.whatsapp }}</span>{% endif %}
-        <span class="text-2">ðŸ“ DirecciÃ³n</span><span>{{ cliente.direccion or 'â€”' }}</span>
-        <span class="text-2">ðŸ˜ Barrio</span><span>{{ cliente.barrio or 'â€”' }}</span>
-        <span class="text-2">ðŸ—º Zona</span><span>{{ zona.nombre if zona else 'â€”' }}</span>
-        {% if cliente.codeudor_nombre %}
-        <span class="text-2">ðŸ‘¥ Codeudor</span><span>{{ cliente.codeudor_nombre }} Â· {{ cliente.codeudor_tel or '' }}</span>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         {% endif %}
       </div>
 
       <!-- Subir foto -->
       <div class="mt-2">
-<<<<<<< HEAD
         <label style="font-size:12px;font-weight:500;color:var(--t2);display:block;margin-bottom:6px;">Foto del afiliado</label>
-=======
-        <label style="font-size:12px;font-weight:500;color:var(--text-2);display:block;margin-bottom:6px;">Foto del afiliado</label>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         <div class="photo-drop" onclick="document.getElementById('inp-foto-edit').click()">
           {% if cliente.foto_path %}
           <img src="/uploads/{{ cliente.foto_path }}" style="width:64px;height:64px;border-radius:8px;object-fit:cover;">
           <div class="fs-11 mt-1">Clic para cambiar</div>
           {% else %}
-<<<<<<< HEAD
           <div style="font-size:14px;">Sin foto</div>
-=======
-          <div style="font-size:24px;">ðŸ“·</div>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
           <div class="fs-12">Subir foto del cliente</div>
           {% endif %}
         </div>
@@ -110,24 +68,18 @@
   <div>
     <div class="card mb-3">
       <div class="card-header">
-<<<<<<< HEAD
         <div class="card-title">Ubicacion</div>
         <button class="btn btn-ghost btn-sm" onclick="abrirMaps()">Ver en Maps</button>
       </div>
       <div class="card-body" style="padding:0;">
         {% if cliente.lat and cliente.lng %}
         <div id="mapa" style="height:180px;background:rgba(212, 175, 55, 0.05);border-radius:0 0 10px 10px;overflow:hidden;"></div>
-=======
-        <div class="card-title">UbicaciÃ³n</div>
-        <button class="btn btn-ghost btn-sm" onclick="abrirMaps()">ðŸ—º Ver en Maps</button>
-      </div>
-      <div class="card-body" style="padding:0;">
-        {% if cliente.lat and cliente.lng %}
-        <div id="mapa" style="height:180px;background:#e8f5ef;border-radius:0 0 10px 10px;overflow:hidden;"></div>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         <script>
           document.addEventListener('DOMContentLoaded', () => {
-            const lat = {{ cliente.lat }}, lng = {{ cliente.lng }};
+            // Limitar a rangos validos de coordenadas; defensivo contra datos sucios
+            const lat = Math.max(-90, Math.min(90, Number({{ cliente.lat|tojson }})));
+            const lng = Math.max(-180, Math.min(180, Number({{ cliente.lng|tojson }})));
+            if (!isFinite(lat) || !isFinite(lng)) return;
             const div = document.getElementById('mapa');
             div.innerHTML = `<iframe width="100%" height="180" frameborder="0" style="border:0" loading="lazy"
               src="https://maps.google.com/maps?q=${lat},${lng}&z=16&output=embed"></iframe>`;
@@ -135,15 +87,9 @@
         </script>
         {% else %}
         <div class="map-box" style="border-radius:0 0 10px 10px;height:180px;" onclick="capturarUbicacion()">
-<<<<<<< HEAD
 
           <div style="font-weight:500;">Sin ubicacion registrada</div>
           <div class="fs-12 text-2">Clic para registrar ubicacion actual</div>
-=======
-          <div style="font-size:32px;">ðŸ“</div>
-          <div style="font-weight:500;">Sin ubicaciÃ³n registrada</div>
-          <div class="fs-12 text-2">Clic para registrar ubicaciÃ³n actual</div>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         </div>
         {% endif %}
       </div>
@@ -175,11 +121,7 @@
             <div class="num fw-600 fs-13 text-red">${{ "{:,.0f}".format(total_saldo.v) }}</div>
           </div>
           <div style="background:var(--bg);border-radius:8px;padding:12px;">
-<<<<<<< HEAD
             <div class="fs-11 text-2 mb-1">Préstamos totales</div>
-=======
-            <div class="fs-11 text-2 mb-1">PrÃ©stamos totales</div>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
             <div class="fw-600 fs-13">{{ prestamos|length }}</div>
           </div>
         </div>
@@ -193,23 +135,14 @@
 <div class="card mb-3">
   <div class="card-header">
     <div>
-<<<<<<< HEAD
       <div class="card-title">Préstamo #{{ p.id }}</div>
       <div class="card-subtitle">Iniciado {{ p.fecha_inicio }} · {{ p.num_cuotas }} cuotas</div>
-=======
-      <div class="card-title">PrÃ©stamo #{{ p.id }}</div>
-      <div class="card-subtitle">Iniciado {{ p.fecha_inicio }} Â· {{ p.num_cuotas }} cuotas</div>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     </div>
     <div class="flex-center gap-2">
       <div class="progress" style="width:120px;">
         <div class="progress-fill {% if p.vencidas > 0 %}red{% endif %}" style="width:{{ (p.pagado/p.capital*100) if p.capital else 0 | round }}%"></div>
       </div>
-<<<<<<< HEAD
       {% if p.estado=='Cancelado' %}<span class="badge badge-gold">Cancelado</span>
-=======
-      {% if p.estado=='Cancelado' %}<span class="badge badge-green">Cancelado</span>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
       {% elif p.vencidas > 0 %}<span class="badge badge-red">{{ p.vencidas }} vencida(s)</span>
       {% else %}<span class="badge badge-blue">Activo</span>{% endif %}
     </div>
@@ -222,32 +155,19 @@
       <div><div class="fs-11 text-2">Saldo</div><div class="num fw-600 text-red">${{ "{:,.0f}".format(p.saldo) }}</div></div>
     </div>
     <details>
-<<<<<<< HEAD
       <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:500;">Ver plan de cuotas ({{ p.num_cuotas }})</summary>
-=======
-      <summary style="cursor:pointer;font-size:12px;color:var(--verde-600);font-weight:500;">Ver plan de cuotas ({{ p.num_cuotas }})</summary>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
       <div style="margin-top:10px;max-height:200px;overflow-y:auto;">
         <table>
           <thead><tr><th>#</th><th>Vencimiento</th><th>Valor</th><th>Pagado</th><th>Estado</th></tr></thead>
           <tbody>
             {% for c in p.cuotas %}
             <tr>
-<<<<<<< HEAD
               <td class="num text-2">{{ c.numero }}</td>
               <td class="fs-12">{{ c.fecha_vencimiento }}</td>
               <td class="num">${{ "{:,.0f}".format(c.valor) }}</td>
               <td class="num {% if c.valor_pagado > 0 %}text-green{% endif %}">${{ "{:,.0f}".format(c.valor_pagado) }}</td>
               <td>
                 {% if c.estado=='Pagada' %}<span class="badge badge-gold">Pagada</span>
-=======
-              <td class="num text-2">{{ c.num }}</td>
-              <td class="fs-12">{{ c.vencimiento.strftime('%d/%m/%Y') }}</td>
-              <td class="num">${{ "{:,.0f}".format(c.valor) }}</td>
-              <td class="num {% if c.pagado > 0 %}text-green{% endif %}">${{ "{:,.0f}".format(c.pagado) }}</td>
-              <td>
-                {% if c.estado=='Pagada' %}<span class="badge badge-green">Pagada</span>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
                 {% elif c.estado=='Vencida' %}<span class="badge badge-red">Vencida</span>
                 {% elif c.estado=='Parcial' %}<span class="badge badge-yellow">Parcial</span>
                 {% else %}<span class="badge badge-gray">Pendiente</span>{% endif %}
@@ -262,7 +182,6 @@
 </div>
 {% endfor %}
 
-<<<<<<< HEAD
 <!-- MODAL EDITAR CLIENTE -->
 <div class="modal-overlay" id="modal-editar-cliente" onclick="if(event.target===this)this.classList.remove('open')">
 <div class="modal modal-lg" onclick="event.stopPropagation()">
@@ -303,17 +222,11 @@
 </div>
 </div>
 
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 <!-- MODAL NUEVO PRÃ‰STAMO -->
 <div class="modal-overlay" id="modal-prestamo" onclick="if(event.target===this)this.classList.remove('open')">
 <div class="modal" onclick="event.stopPropagation()">
   <div class="modal-header">
-<<<<<<< HEAD
     <div class="modal-title">Nuevo Préstamo â€” {{ cliente.nombre }}</div>
-=======
-    <div class="modal-title">Nuevo PrÃ©stamo â€” {{ cliente.nombre }}</div>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-prestamo').classList.remove('open')">âœ•</button>
   </div>
   <div class="modal-body">
@@ -333,7 +246,6 @@
           <input type="number" name="capital" min="1000" step="1000" placeholder="360000" oninput="calcularPrev()">
         </div>
         <div class="form-group">
-<<<<<<< HEAD
           <label>Tasa de interés (%)</label>
           <input type="number" name="tasa_interes" value="20" step="0.5" oninput="calcularPrev()">
         </div>
@@ -343,17 +255,6 @@
         </div>
         <div class="form-group">
           <label>Plazo (días por cuota)</label>
-=======
-          <label>Tasa de interÃ©s (%)</label>
-          <input type="number" name="tasa_interes" value="20" step="0.5" oninput="calcularPrev()">
-        </div>
-        <div class="form-group">
-          <label>NÃºmero de cuotas</label>
-          <input type="number" name="num_cuotas" value="30" min="1" oninput="calcularPrev()">
-        </div>
-        <div class="form-group">
-          <label>Plazo (dÃ­as por cuota)</label>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
           <input type="number" name="plazo_dias" value="30">
         </div>
         <div class="form-group">
@@ -369,17 +270,10 @@
           <textarea name="observaciones" rows="2" placeholder="Notas..."></textarea>
         </div>
       </div>
-<<<<<<< HEAD
       <div id="preview-calc" style="display:none;background:rgba(212, 175, 55, 0.05);border:1px solid rgba(212, 175, 55, 0.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;">
         <div class="fw-600 text-gold mb-1" style="color:var(--accent)">Resumen del préstamo:</div>
         <div class="flex gap-3">
           <span>Interés: <strong id="pv-int" class="num"></strong></span>
-=======
-      <div id="preview-calc" style="display:none;background:var(--verde-50);border:1px solid var(--verde-100);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;">
-        <div class="fw-600 text-green mb-1">Resumen del prÃ©stamo:</div>
-        <div class="flex gap-3">
-          <span>InterÃ©s: <strong id="pv-int" class="num"></strong></span>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
           <span>Total: <strong id="pv-tot" class="num"></strong></span>
           <span>Cuota: <strong id="pv-cuo" class="num"></strong></span>
         </div>
@@ -388,11 +282,7 @@
   </div>
   <div class="modal-footer">
     <button class="btn" onclick="document.getElementById('modal-prestamo').classList.remove('open')">Cancelar</button>
-<<<<<<< HEAD
     <button class="btn btn-primary" onclick="guardarPrestamo()">Guardar Préstamo</button>
-=======
-    <button class="btn btn-primary" onclick="guardarPrestamo()">Guardar PrÃ©stamo</button>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   </div>
 </div>
 </div>
@@ -400,20 +290,15 @@
 
 {% block extra_scripts %}
 <script>
-<<<<<<< HEAD
 const fechaInicioPrest = document.getElementById('fecha-inicio-prest');
 if (fechaInicioPrest) {
   fechaInicioPrest.value = new Date().toISOString().split('T')[0];
 }
-=======
-document.getElementById('fecha-inicio-prest').value = new Date().toISOString().split('T')[0];
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 function abrirModalPrestamo() {
   document.getElementById('modal-prestamo').classList.add('open');
 }
 
-<<<<<<< HEAD
 function abrirEditar() {
   document.getElementById('modal-editar-cliente').classList.add('open');
 }
@@ -435,19 +320,13 @@ async function guardarClienteEditado() {
   }
 }
 
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 async function calcularPrev() {
   const capital = document.querySelector('[name=capital]').value;
   const tasa = document.querySelector('[name=tasa_interes]').value;
   const cuotas = document.querySelector('[name=num_cuotas]').value;
   if (!capital || !tasa || !cuotas) return;
   try {
-<<<<<<< HEAD
     const r = await window.fetch(`/prestamos/calcular?capital=${capital}&tasa=${tasa}&cuotas=${cuotas}`);
-=======
-    const r = await fetch(`/prestamos/calcular?capital=${capital}&tasa=${tasa}&cuotas=${cuotas}`);
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     const d = await r.json();
     document.getElementById('preview-calc').style.display = 'block';
     document.getElementById('pv-int').textContent = fmtCOP(d.interes_total);
@@ -460,17 +339,10 @@ async function guardarPrestamo() {
   const form = document.getElementById('form-prestamo');
   const fd = new FormData(form);
   try {
-<<<<<<< HEAD
     const r = await window.fetch('/prestamos/nuevo', { method:'POST', body: fd });
     const d = await r.json();
     if (d.ok) { toast('Préstamo registrado âœ“'); setTimeout(() => location.reload(), 1000); }
     else toast(d.error || 'Error', 'error');
-=======
-    const r = await fetch('/prestamos/nuevo', { method:'POST', body: fd });
-    const d = await r.json();
-    if (d.ok) { toast('PrÃ©stamo registrado âœ“'); setTimeout(() => location.reload(), 1000); }
-    else toast(d.detail || 'Error', 'error');
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   } catch(e) { toast('Error', 'error'); }
 }
 
@@ -482,11 +354,7 @@ async function subirFoto(inp) {
   fd.append('telefono', '{{ cliente.telefono }}');
   fd.append('zona_id', '{{ cliente.zona_id }}');
   fd.append('tipo_cliente', '{{ cliente.tipo_cliente }}');
-<<<<<<< HEAD
   const r = await window.fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
-=======
-  const r = await fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   const d = await r.json();
   if (d.ok) { toast('Foto actualizada'); setTimeout(() => location.reload(), 800); }
 }
@@ -509,21 +377,11 @@ function capturarUbicacion() {
       fd.append('tipo_cliente', '{{ cliente.tipo_cliente }}');
       fd.append('lat', pos.coords.latitude);
       fd.append('lng', pos.coords.longitude);
-<<<<<<< HEAD
       const r = await window.fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
       const d = await r.json();
       if (d.ok) { toast('Ubicación guardada âœ“'); setTimeout(() => location.reload(), 800); }
-=======
-      const r = await fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
-      const d = await r.json();
-      if (d.ok) { toast('UbicaciÃ³n guardada âœ“'); setTimeout(() => location.reload(), 800); }
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     });
   }
 }
 </script>
 {% endblock %}
-<<<<<<< HEAD
-=======
-
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5

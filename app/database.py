@@ -3,7 +3,6 @@ CreditosPro v2.1 - Database Multi-tenant
 Cada Empresa tiene datos completamente aislados.
 Unique constraints son POR empresa, no globales.
 """
-<<<<<<< HEAD
 import datetime
 import logging
 import os
@@ -11,7 +10,8 @@ from pathlib import Path
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Numeric, Date,
-    DateTime, Boolean, Text, ForeignKey, UniqueConstraint, Index, Table
+    DateTime, Boolean, Text, ForeignKey, UniqueConstraint, Index, Table,
+    CheckConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, relationship
 from sqlalchemy.sql import func
@@ -58,23 +58,6 @@ engine = create_engine(
     connect_args=connect_args,
     **engine_kwargs,
 )
-=======
-from sqlalchemy import (
-    create_engine, Column, Integer, String, Float, Date,
-    DateTime, Boolean, Text, ForeignKey, UniqueConstraint
-)
-from sqlalchemy.orm import DeclarativeBase, sessionmaker, relationship
-from sqlalchemy.sql import func
-from pathlib import Path
-import datetime
-
-BASE_DIR = Path(__file__).parent.parent
-DB_PATH = BASE_DIR / "data" / "creditospro.db"
-DB_PATH.parent.mkdir(exist_ok=True)
-
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}, pool_pre_ping=True)
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -82,7 +65,6 @@ class Base(DeclarativeBase):
     pass
 
 
-<<<<<<< HEAD
 usuario_zonas = Table(
     "usuario_zonas",
     Base.metadata,
@@ -92,8 +74,6 @@ usuario_zonas = Table(
 )
 
 
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 class Empresa(Base):
     __tablename__ = "empresas"
     id = Column(Integer, primary_key=True, index=True)
@@ -122,22 +102,15 @@ class Usuario(Base):
     username = Column(String(100), nullable=False, index=True)
     nombre = Column(String(200), nullable=False)
     email = Column(String(200), nullable=True)
-<<<<<<< HEAD
     password_hash = Column(String(500), nullable=False)
-=======
-    hashed_password = Column(String(500), nullable=False)
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     rol = Column(String(50), default="cobrador")
     activo = Column(Boolean, default=True)
-    zona_id = Column(Integer, ForeignKey("zonas.id"), nullable=True)
+    zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="SET NULL"), nullable=True)
     ultimo_login = Column(DateTime, nullable=True)
     creado = Column(DateTime, default=func.now())
 
     empresa = relationship("Empresa", back_populates="usuarios")
-<<<<<<< HEAD
     zonas_asignadas = relationship("Zona", secondary=usuario_zonas, back_populates="usuarios_asignados")
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     __table_args__ = (UniqueConstraint("empresa_id", "username", name="uq_user_empresa"),)
 
 
@@ -154,23 +127,17 @@ class Zona(Base):
     cobrador_tel = Column(String(20))
     cobrador_moto = Column(String(50))
     activa = Column(Boolean, default=True)
-<<<<<<< HEAD
     # CallMeBot por zona
     bot_phone = Column(String(20), nullable=True)
     bot_apikey = Column(String(100), nullable=True)
     bot_activo = Column(Boolean, default=False)
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     creado = Column(DateTime, default=func.now())
 
     empresa = relationship("Empresa", back_populates="zonas")
     clientes = relationship("Cliente", back_populates="zona_rel")
-<<<<<<< HEAD
     usuarios_asignados = relationship("Usuario", secondary=usuario_zonas, back_populates="zonas_asignadas")
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     __table_args__ = (UniqueConstraint("empresa_id", "codigo", name="uq_zona_empresa"),)
 
 
@@ -185,7 +152,7 @@ class Cliente(Base):
     whatsapp = Column(String(20), nullable=True)
     direccion = Column(String(300))
     barrio = Column(String(100))
-    zona_id = Column(Integer, ForeignKey("zonas.id"))
+    zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="SET NULL"))
     foto_path = Column(String(300), nullable=True)
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
@@ -207,23 +174,14 @@ class Prestamo(Base):
     __tablename__ = "prestamos"
     id = Column(Integer, primary_key=True, index=True)
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False, index=True)
-    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
-    zona_id = Column(Integer, ForeignKey("zonas.id"), nullable=False)
-<<<<<<< HEAD
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="RESTRICT"), nullable=False)
+    zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="RESTRICT"), nullable=False)
     capital = Column(Numeric(12, 2), nullable=False)
     tasa_interes = Column(Numeric(5, 2), default=20.0)
     interes_total = Column(Numeric(12, 2))
     total_pagar = Column(Numeric(12, 2))
     num_cuotas = Column(Integer, nullable=False)
     valor_cuota = Column(Numeric(12, 2))
-=======
-    capital = Column(Float, nullable=False)
-    tasa_interes = Column(Float, default=20.0)
-    interes_total = Column(Float)
-    total_pagar = Column(Float)
-    num_cuotas = Column(Integer, nullable=False)
-    valor_cuota = Column(Float)
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     plazo_dias = Column(Integer, default=30)
     fecha_inicio = Column(Date, default=datetime.date.today)
     fecha_fin = Column(Date)
@@ -234,59 +192,54 @@ class Prestamo(Base):
 
     cliente = relationship("Cliente", back_populates="prestamos")
     cuotas = relationship("Cuota", back_populates="prestamo", cascade="all, delete-orphan")
-<<<<<<< HEAD
     __table_args__ = (
         Index("ix_prestamos_empresa_cliente", "empresa_id", "cliente_id"),
         Index("ix_prestamos_empresa_zona_estado", "empresa_id", "zona_id", "estado"),
+        CheckConstraint("capital > 0", name="ck_prestamo_capital_pos"),
+        CheckConstraint("num_cuotas > 0 AND num_cuotas <= 365", name="ck_prestamo_cuotas_rango"),
+        CheckConstraint("tasa_interes >= 0 AND tasa_interes <= 100", name="ck_prestamo_tasa_rango"),
+        CheckConstraint("estado IN ('Activo','Pagado','Mora','Castigado','Cancelado')",
+                        name="ck_prestamo_estado"),
     )
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 class Cuota(Base):
     __tablename__ = "cuotas"
     id = Column(Integer, primary_key=True, index=True)
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False, index=True)
-    prestamo_id = Column(Integer, ForeignKey("prestamos.id"), nullable=False)
+    prestamo_id = Column(Integer, ForeignKey("prestamos.id", ondelete="CASCADE"), nullable=False)
     numero = Column(Integer, nullable=False)
-<<<<<<< HEAD
     valor = Column(Numeric(12, 2), nullable=False)
     fecha_vencimiento = Column(Date, nullable=False)
     fecha_pago = Column(Date, nullable=True)
     valor_pagado = Column(Numeric(12, 2), default=0.0, nullable=False)
-=======
-    valor = Column(Float, nullable=False)
-    fecha_vencimiento = Column(Date, nullable=False)
-    fecha_pago = Column(Date, nullable=True)
-    valor_pagado = Column(Float, default=0.0, nullable=False)
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     estado = Column(String(20), default="Pendiente")
     notificado_wp = Column(Boolean, default=False)
     creado = Column(DateTime, default=func.now())
 
     prestamo = relationship("Prestamo", back_populates="cuotas")
-<<<<<<< HEAD
     __table_args__ = (
         Index("ix_cuotas_empresa_prestamo_estado", "empresa_id", "prestamo_id", "estado"),
         Index("ix_cuotas_empresa_estado_vencimiento", "empresa_id", "estado", "fecha_vencimiento"),
+        CheckConstraint("valor > 0", name="ck_cuota_valor_pos"),
+        CheckConstraint("valor_pagado >= 0", name="ck_cuota_pagado_no_neg"),
+        CheckConstraint("valor_pagado <= valor", name="ck_cuota_pagado_no_excede"),
+        CheckConstraint(
+            "estado IN ('Pendiente','Pagada','Vencida','Parcial')",
+            name="ck_cuota_estado",
+        ),
     )
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 class Cobro(Base):
     __tablename__ = "cobros"
     id = Column(Integer, primary_key=True, index=True)
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False, index=True)
-    cuota_id = Column(Integer, ForeignKey("cuotas.id"), nullable=False)
-    prestamo_id = Column(Integer, ForeignKey("prestamos.id"), nullable=False)
-    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
-    zona_id = Column(Integer, ForeignKey("zonas.id"), nullable=False)
-<<<<<<< HEAD
+    cuota_id = Column(Integer, ForeignKey("cuotas.id", ondelete="RESTRICT"), nullable=False)
+    prestamo_id = Column(Integer, ForeignKey("prestamos.id", ondelete="RESTRICT"), nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="RESTRICT"), nullable=False)
+    zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="RESTRICT"), nullable=False)
     valor_cobrado = Column(Numeric(12, 2), nullable=False)
-=======
-    valor_cobrado = Column(Float, nullable=False)
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     fecha = Column(Date, default=datetime.date.today)
     hora = Column(DateTime, default=func.now())
     cobrador = Column(String(200))
@@ -294,23 +247,21 @@ class Cobro(Base):
     observaciones = Column(Text, nullable=True)
     lat_cobro = Column(Float, nullable=True)
     lng_cobro = Column(Float, nullable=True)
-    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
-<<<<<<< HEAD
+    usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
     __table_args__ = (
         Index("ix_cobros_empresa_fecha", "empresa_id", "fecha"),
         Index("ix_cobros_empresa_cliente", "empresa_id", "cliente_id"),
         Index("ix_cobros_empresa_prestamo", "empresa_id", "prestamo_id"),
+        CheckConstraint("valor_cobrado > 0", name="ck_cobro_valor_pos"),
     )
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 class NotificacionWP(Base):
     __tablename__ = "notificaciones_wp"
     id = Column(Integer, primary_key=True, index=True)
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False, index=True)
-    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
-    cuota_id = Column(Integer, ForeignKey("cuotas.id"), nullable=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    cuota_id = Column(Integer, ForeignKey("cuotas.id", ondelete="SET NULL"), nullable=True)
     telefono = Column(String(20), nullable=False)
     mensaje = Column(Text, nullable=False)
     estado = Column(String(20), default="Pendiente")
@@ -329,11 +280,7 @@ class ConfiguracionApp(Base):
     empresa_dir = Column(String(300), nullable=True)
     pais = Column(String(100), default="Colombia")
     moneda = Column(String(10), default="COP")
-<<<<<<< HEAD
     tasa_default = Column(Numeric(5, 2), default=20.0)
-=======
-    tasa_default = Column(Float, default=20.0)
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
     cuotas_default = Column(Integer, default=30)
     dias_aviso_vencimiento = Column(Integer, default=2)
     dias_mora = Column(Integer, default=1)
@@ -347,8 +294,25 @@ class ConfiguracionApp(Base):
     empresa = relationship("Empresa", back_populates="configuracion")
 
 
+class AuditLog(Base):
+    """Registro de acciones sensibles para auditoria y trazabilidad."""
+    __tablename__ = "audit_log"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="SET NULL"), nullable=True, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True, index=True)
+    username = Column(String(100), nullable=True)
+    action = Column(String(80), nullable=False, index=True)
+    category = Column(String(40), nullable=False, index=True)
+    details = Column(String(500), nullable=True)
+    ip = Column(String(45), nullable=True)
+    created_at = Column(DateTime, default=func.now(), index=True)
+    __table_args__ = (
+        Index("ix_audit_log_empresa_created", "empresa_id", "created_at"),
+        Index("ix_audit_log_category_action", "category", "action"),
+    )
+
+
 def init_db():
-<<<<<<< HEAD
     """Inicializa las tablas en la base de datos. Idempotente."""
     auto_create = os.getenv("AUTO_CREATE_TABLES", "1").strip().lower() in {"1", "true", "yes", "on"}
     if not auto_create:
@@ -360,9 +324,6 @@ def init_db():
     except Exception as e:
         logger.error(f"Error al inicializar la base de datos: {e}")
         raise
-=======
-    Base.metadata.create_all(bind=engine)
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 
 def get_db():

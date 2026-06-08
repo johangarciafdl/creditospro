@@ -1,4 +1,5 @@
 """License router - endpoints para activacion y verificacion"""
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Request, Form
@@ -8,6 +9,7 @@ from app.utils.settings import settings
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+logger = logging.getLogger(__name__)
 
 
 def get_license_manager():
@@ -18,7 +20,11 @@ def get_license_manager():
             sys.path.insert(0, str(root_dir))
         import license_manager
         return license_manager
+    except ImportError:
+        logger.warning("license_manager.py no esta disponible")
+        return None
     except Exception:
+        logger.exception("Error cargando license_manager")
         return None
 
 

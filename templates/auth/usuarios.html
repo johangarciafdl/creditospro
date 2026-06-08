@@ -3,11 +3,7 @@
 {% block topbar_title %}Gestión de Usuarios{% endblock %}
 {% block topbar_sub %}{{ usuarios|length }} registrados{% endblock %}
 {% block topbar_actions %}
-<<<<<<< HEAD
   <button class="btn btn-primary" onclick="toggleModal('modal-nuevo')">+ Nuevo Usuario</button>
-=======
-  <button class="btn btn-primary" onclick="abrirModal('modal-nuevo')">+ Nuevo Usuario</button>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 {% endblock %}
 
 {% block content %}
@@ -31,7 +27,6 @@
             {% elif u.rol == 'supervisor' %}<span class="badge badge-blue">Supervisor</span>
             {% else %}<span class="badge badge-gray">Cobrador</span>{% endif %}
           </td>
-<<<<<<< HEAD
           <td class="fs-12 text-2">{% if u.zonas_asignadas %}{% for z in u.zonas_asignadas %}{{ z.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}{% elif u.zona_id %}{% for z in zonas %}{% if z.id == u.zona_id %}{{ z.nombre }}{% endif %}{% endfor %}{% else %}-{% endif %}</td>
           <td class="fs-12 text-2">{{ u.ultimo_login.strftime('%d/%m/%y %H:%M') if u.ultimo_login else '—' }}</td>
           <td>{% if u.activo %}<span class="badge badge-green">Activo</span>{% else %}<span class="badge badge-gray">Inactivo</span>{% endif %}</td>
@@ -39,15 +34,6 @@
             <button class="btn btn-ghost btn-xs" data-uid="{{ u.id }}" data-nombre="{{ u.nombre }}" data-rol="{{ u.rol }}" data-zonas="{% if u.zonas_asignadas %}{% for z in u.zonas_asignadas %}{{ z.id }}{% if not loop.last %},{% endif %}{% endfor %}{% elif u.zona_id %}{{ u.zona_id }}{% endif %}" data-activo="{{ 'true' if u.activo else 'false' }}" onclick="editarUsuarioBtn(this)">Editar</button>
             {% if u.id != current_user.id %}
             <button class="btn btn-danger btn-xs" data-uid="{{ u.id }}" data-nombre="{{ u.nombre }}" onclick="eliminarUsuarioBtn(this)">✕</button>
-=======
-          <td class="fs-12 text-2">{% for z in zonas %}{% if z.id == u.zona_id %}{{ z.nombre }}{% endif %}{% endfor %}{% if not u.zona_id %}—{% endif %}</td>
-          <td class="fs-12 text-2">{{ u.ultimo_login.strftime('%d/%m/%y %H:%M') if u.ultimo_login else '—' }}</td>
-          <td>{% if u.activo %}<span class="badge badge-green">Activo</span>{% else %}<span class="badge badge-gray">Inactivo</span>{% endif %}</td>
-          <td>
-            <button class="btn btn-ghost btn-xs" onclick="editarUsuario({{ u.id }}, '{{ u.nombre }}', '{{ u.rol }}', {{ u.zona_id or 'null' }}, {{ 'true' if u.activo else 'false' }})">✏ Editar</button>
-            {% if u.id != current_user.id %}
-            <button class="btn btn-danger btn-xs" onclick="eliminarUsuario({{ u.id }}, '{{ u.nombre }}')">✕</button>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
             {% endif %}
           </td>
         </tr>
@@ -58,19 +44,11 @@
 </div>
 
 <!-- MODAL NUEVO -->
-<<<<<<< HEAD
 <div class="modal-overlay" id="modal-nuevo" onclick="if(event.target===this)cerrarToggleModal('modal-nuevo')">
 <div class="modal" onclick="event.stopPropagation()">
   <div class="modal-header">
     <div class="modal-title">Nuevo Usuario</div>
     <button class="btn btn-ghost btn-icon" onclick="cerrarToggleModal('modal-nuevo')">✕</button>
-=======
-<div class="modal-overlay" id="modal-nuevo" onclick="if(event.target===this)cerrarModal('modal-nuevo')">
-<div class="modal" onclick="event.stopPropagation()">
-  <div class="modal-header">
-    <div class="modal-title">Nuevo Usuario</div>
-    <button class="btn btn-ghost btn-icon" onclick="cerrarModal('modal-nuevo')">✕</button>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   </div>
   <div class="modal-body">
     <form id="form-nuevo" onsubmit="crearUsuario(event)">
@@ -87,7 +65,6 @@
           </select>
         </div>
         <div class="form-group">
-<<<<<<< HEAD
           <label>Zonas asignadas</label>
           <div style="max-height:140px;overflow-y:auto;border:1px solid var(--border-2);border-radius:var(--rsm);padding:6px 10px;background:var(--surface);">
             {% for z in zonas %}
@@ -101,17 +78,6 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" onclick="cerrarToggleModal('modal-nuevo')">Cancelar</button>
-=======
-          <label>Zona asignada</label>
-          <select name="zona_id">
-            <option value="">Sin zona específica</option>
-            {% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}
-          </select>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-ghost" onclick="cerrarModal('modal-nuevo')">Cancelar</button>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         <button type="submit" class="btn btn-primary">Crear Usuario</button>
       </div>
     </form>
@@ -120,19 +86,11 @@
 </div>
 
 <!-- MODAL EDITAR -->
-<<<<<<< HEAD
 <div class="modal-overlay" id="modal-editar" onclick="if(event.target===this)cerrarToggleModal('modal-editar')">
 <div class="modal" onclick="event.stopPropagation()">
   <div class="modal-header">
     <div class="modal-title">Editar Usuario</div>
     <button class="btn btn-ghost btn-icon" onclick="cerrarToggleModal('modal-editar')">✕</button>
-=======
-<div class="modal-overlay" id="modal-editar" onclick="if(event.target===this)cerrarModal('modal-editar')">
-<div class="modal" onclick="event.stopPropagation()">
-  <div class="modal-header">
-    <div class="modal-title">Editar Usuario</div>
-    <button class="btn btn-ghost btn-icon" onclick="cerrarModal('modal-editar')">✕</button>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   </div>
   <div class="modal-body">
     <form id="form-editar" onsubmit="guardarEdicion(event)">
@@ -148,15 +106,7 @@
           </select>
         </div>
         <div class="form-group">
-<<<<<<< HEAD
           <label>Zonas asignadas (1 a 5)</label><select id="edit-zonas" name="zona_ids" multiple size="5">{% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}</select>
-=======
-          <label>Zona</label>
-          <select id="edit-zona" name="zona_id">
-            <option value="">Sin zona</option>
-            {% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}
-          </select>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         </div>
         <div class="form-group">
           <label>Nueva contraseña (dejar en blanco para no cambiar)</label>
@@ -171,11 +121,7 @@
         </div>
       </div>
       <div class="modal-footer">
-<<<<<<< HEAD
         <button type="button" class="btn btn-ghost" onclick="cerrarToggleModal('modal-editar')">Cancelar</button>
-=======
-        <button type="button" class="btn btn-ghost" onclick="cerrarModal('modal-editar')">Cancelar</button>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         <button type="submit" class="btn btn-primary">Guardar</button>
       </div>
     </form>
@@ -184,7 +130,6 @@
 </div>
 
 <script>
-<<<<<<< HEAD
 function editarUsuarioBtn(btn) {
   var uid    = parseInt(btn.dataset.uid);
   var nombre = btn.dataset.nombre;
@@ -200,15 +145,10 @@ function eliminarUsuarioBtn(btn) {
 }
 function toggleModal(id){ document.getElementById(id).classList.add('open'); }
 function cerrarToggleModal(id){ document.getElementById(id).classList.remove('open'); }
-=======
-function abrirModal(id){ document.getElementById(id).classList.add('open'); }
-function cerrarModal(id){ document.getElementById(id).classList.remove('open'); }
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 
 async function crearUsuario(e){
   e.preventDefault();
   const fd = new FormData(e.target);
-<<<<<<< HEAD
   const btn = e.target.querySelector('button[type="submit"]');
   const texto = btn.textContent;
   btn.disabled = true;
@@ -234,22 +174,6 @@ function editarUsuario(id, nombre, rol, zonas, activo){
   document.getElementById('edit-activo').value = activo ? 'true' : 'false';
   document.getElementById('edit-pass').value = '';
   toggleModal('modal-editar');
-=======
-  const r = await fetch('/auth/usuarios/nuevo', {method:'POST', body:fd});
-  const d = await r.json();
-  if(d.ok){ alert(d.mensaje); location.reload(); }
-  else alert(d.error || 'Error');
-}
-
-function editarUsuario(id, nombre, rol, zona_id, activo){
-  document.getElementById('edit-id').value = id;
-  document.getElementById('edit-nombre').value = nombre;
-  document.getElementById('edit-rol').value = rol;
-  document.getElementById('edit-zona').value = zona_id || '';
-  document.getElementById('edit-activo').value = activo ? 'true' : 'false';
-  document.getElementById('edit-pass').value = '';
-  abrirModal('modal-editar');
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
 }
 
 async function guardarEdicion(e){
@@ -270,7 +194,4 @@ async function eliminarUsuario(id, nombre){
 }
 </script>
 {% endblock %}
-<<<<<<< HEAD
 
-=======
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5

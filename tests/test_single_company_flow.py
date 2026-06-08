@@ -23,6 +23,9 @@ def test_base_menu_visible_without_animation_dependency():
 
     template = Path("templates/base.html").read_text(encoding="utf-8")
 
+    # El menu debe ser visible por defecto (display:flex en .nav-item)
     assert ".nav-item{display:flex" in template
-    assert ".js-ready .nav-item{opacity:0" in template
+    # Debe haber fallback de anime.js por si el CDN falla
     assert "if(!window.anime)" in template
+    # El fallback debe forzar opacity:1 para no dejar el menu invisible
+    assert "opacity='1'" in template or 'opacity="1"' in template

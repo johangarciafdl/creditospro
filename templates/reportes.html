@@ -40,7 +40,6 @@
     <div class="card-header"><div class="card-title">Exportaciones Rápidas</div></div>
     <div class="card-body">
       <div style="display:flex;flex-direction:column;gap:8px;">
-<<<<<<< HEAD
         <button class="btn btn-secondary" onclick="descargar('cobros-diarios')">
           ⬇ Cobros del día (hoy)
         </button>
@@ -51,18 +50,6 @@
           ⬇ Resumen por zona (período)
         </button>
         <button class="btn btn-secondary" onclick="descargar('cobros-diarios', true)">
-=======
-        <button class="btn btn-excel" onclick="descargar('cobros-diarios')">
-          ⬇ Cobros del día (hoy)
-        </button>
-        <button class="btn btn-excel" onclick="descargar('cartera')">
-          ⬇ Cartera activa (saldos)
-        </button>
-        <button class="btn btn-excel" onclick="descargar('resumen-zonas')">
-          ⬇ Resumen por zona (período)
-        </button>
-        <button class="btn btn-excel" onclick="descargar('cobros-diarios', true)">
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
           ⬇ Cobros filtrados por zona/fecha
         </button>
       </div>
@@ -80,31 +67,19 @@
           <td class="fw-600">Cobros diarios</td>
           <td class="text-2 fs-12">Todos los cobros registrados en una fecha</td>
           <td class="fs-12 text-2">Fecha, Zona</td>
-<<<<<<< HEAD
           <td><button class="btn btn-secondary btn-sm" onclick="descargar('cobros-diarios', true)">⬇ Descargar</button></td>
-=======
-          <td><button class="btn btn-excel btn-sm" onclick="descargar('cobros-diarios', true)">⬇ Descargar</button></td>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         </tr>
         <tr>
           <td class="fw-600">Cartera activa</td>
           <td class="text-2 fs-12">Saldos vigentes de todos los préstamos</td>
           <td class="fs-12 text-2">—</td>
-<<<<<<< HEAD
           <td><button class="btn btn-secondary btn-sm" onclick="descargar('cartera')">⬇ Descargar</button></td>
-=======
-          <td><button class="btn btn-excel btn-sm" onclick="descargar('cartera')">⬇ Descargar</button></td>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         </tr>
         <tr>
           <td class="fw-600">Resumen por zona</td>
           <td class="text-2 fs-12">Capital, recaudos, saldo y clientes por zona</td>
           <td class="fs-12 text-2">Período</td>
-<<<<<<< HEAD
           <td><button class="btn btn-secondary btn-sm" onclick="descargar('resumen-zonas', true)">⬇ Descargar</button></td>
-=======
-          <td><button class="btn btn-excel btn-sm" onclick="descargar('resumen-zonas', true)">⬇ Descargar</button></td>
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
         </tr>
       </tbody>
     </table>
@@ -127,11 +102,7 @@ function descargar(tipo, usarFiltros=false) {
     if (tipo === 'resumen-zonas') { if (desde) params.append('fecha_desde', desde); if (hasta) params.append('fecha_hasta', hasta); }
     if ([...params].length) url += '?' + params.toString();
   }
-<<<<<<< HEAD
   if (typeof toast === 'function') toast('Generando Excel...');
-=======
-  toast('Generando Excel... ⬇');
->>>>>>> 7761f488b2aa6200974f069ea5072699c6dbd1e5
   window.location.href = url;
 }
 </script>

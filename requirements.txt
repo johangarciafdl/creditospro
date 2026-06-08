@@ -1,18 +1,33 @@
-fastapi>=0.115.0
-pydantic>=2.8.0
-uvicorn[standard]>=0.32.0
-sqlalchemy>=2.0.36
-alembic>=1.13.3
-jinja2>=3.1.4
-python-multipart>=0.0.12
-python-dotenv>=1.0.0
-openpyxl>=3.1.5
-httpx>=0.27.0
-aiofiles>=23.2.1
-pillow>=11.0.0
-bcrypt>=4.0.0
-python-jose[cryptography]>=3.3.0
-itsdangerous>=2.2.0
-pytest>=8.3.0
-psycopg2-binary
-gunicorn
+# Web framework
+fastapi>=0.115.0,<0.120.0
+uvicorn[standard]>=0.32.0,<0.40.0
+python-multipart>=0.0.12,<0.1.0
+jinja2>=3.1.4,<4.0.0
+itsdangerous>=2.2.0,<3.0.0  # usado por starlette SessionMiddleware
+
+# Validacion y modelos
+pydantic>=2.8.0,<3.0.0
+
+# Base de datos
+sqlalchemy>=2.0.36,<3.0.0
+alembic>=1.13.3,<2.0.0
+psycopg2-binary>=2.9.9,<3.0.0  # PostgreSQL (no necesario para SQLite)
+
+# Configuracion
+python-dotenv>=1.0.0,<2.0.0
+
+# Seguridad
+bcrypt>=4.0.0,<5.0.0
+python-jose[cryptography]>=3.3.0,<4.0.0
+cryptography>=42.0.0,<46.0.0  # usado por license_manager (Fernet)
+
+# Cliente HTTP (WhatsApp/CallMeBot)
+httpx>=0.27.0,<0.30.0
+
+# Reportes y archivos
+openpyxl>=3.1.5,<4.0.0
+pillow>=11.0.0,<12.0.0
+
+# Testing
+pytest>=8.3.0,<9.0.0
+pytest-asyncio>=0.23.0,<1.0.0
