@@ -36,7 +36,7 @@
 </div>
 
 <div class="grid-2 mb-4" style="grid-template-columns:1fr 380px;">
-  <!-- CHART -->
+  <!-- CHART - Barras HTML/CSS -->
   <div class="card card-anim">
     <div class="card-header">
       <div>
@@ -44,8 +44,8 @@
         <div class="card-sub">Tendencia de recaudo diario</div>
       </div>
     </div>
-    <div class="card-body" style="padding:12px 20px 20px;min-height:340px;">
-      <canvas id="chart-cobros"></canvas>
+    <div class="card-body" style="padding:16px 20px 12px;">
+      <div id="chart-bars" style="display:flex;align-items:flex-end;gap:8px;height:220px;padding-bottom:30px;position:relative;"></div>
     </div>
   </div>
 
@@ -123,104 +123,59 @@
 
 {% block extra_scripts %}
 <script>
-const chartData = typeof chart_data === 'string' ? JSON.parse('{{ chart_data | safe }}') : {{ chart_data | tojson }};
-const canvas = document.getElementById('chart-cobros');
-const ctx = canvas.getContext('2d');
+const chartData = {{ chart_data | safe }};
+const bars = document.getElementById('chart-bars');
+const labels = document.getElementById('chart-labels');
+const vals = chartData.map(d => d.valor);
+const max = Math.max(...vals, 1);
+const hasData = vals.some(v => v > 0);
+
+chartData.forEach(d => {
+  const col = document.createElement('div');
+  col.style.cssText = 'flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;';
+
+  // Value label
+  const valEl = document.createElement('div');
+  valEl.style.cssText = 'font-size:10px;font-weight:600;color:#555;font-family:var(--mono);white-space:nowrap;';
+  valEl.textContent = d.valor > 0 ? fmt(d.valor) : '';
+
+  // Bar
+  const bar = document.createElement('div');
+  const pct = d.valor > 0 ? Math.max((d.valor / max) * 170, 4) : 0;
+  bar.style.cssText = 'width:100%;border-radius:4px 4px 0 0;transition:height 0.3s;';
+  bar.style.height = pct + 'px';
+  bar.style.background = d.valor > 0
+    ? 'linear-gradient(180deg, rgba(147,115,33,0.9), rgba(147,115,33,0.3))'
+    : 'rgba(147,115,33,0.1)';
+
+  // Day label
+  const dayEl = document.createElement('div');
+  dayEl.style.cssText = 'font-size:11px;color:#9ca3af;font-weight:500;';
+  dayEl.textContent = d.dia;
+
+  // Date label
+  const dateEl = document.createElement('div');
+  dateEl.style.cssText = 'font-size:9px;color:#bbb;';
+  dateEl.textContent = d.fecha;
+
+  col.appendChild(valEl);
+  col.appendChild(bar);
+  col.appendChild(dayEl);
+  col.appendChild(dateEl);
+  bars.appendChild(col);
+});
+
+if (!hasData) {
+  const msg = document.createElement('div');
+  msg.style.cssText = 'position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);text-align:center;';
+  msg.innerHTML = '<div style="font-size:28px;margin-bottom:6px;">📊</div><div style="font-size:12px;color:#999;">Sin cobros en los últimos 7 días</div>';
+  bars.appendChild(msg);
+}
 
 function fmt(n) {
   if (n >= 1000000) return '$' + (n/1000000).toFixed(1) + 'M';
   if (n >= 1000) return '$' + (n/1000).toFixed(0) + 'K';
   return '$' + n.toLocaleString('es-CO');
 }
-
-function drawChart() {
-  const container = canvas.parentElement;
-  const W = Math.max(container.clientWidth || container.offsetWidth || 600, 300);
-  const H = Math.max(container.clientHeight || container.offsetHeight || 300, 220);
-  canvas.width = W;
-  canvas.height = H;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
-
-  const vals = chartData.map(d => d.valor);
-  const hasData = vals.some(v => v > 0);
-  const max = Math.max(...vals, 1);
-  const pad = {t:16, r:12, b:40, l:56};
-  const cW = W - pad.l - pad.r;
-  const cH = H - pad.t - pad.b;
-  const barW = cW / chartData.length;
-
-  ctx.clearRect(0, 0, W, H);
-
-  // Grid lines
-  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
-  ctx.lineWidth = 1;
-  [0.25, 0.5, 0.75, 1].forEach(p => {
-    const y = pad.t + cH * (1 - p);
-    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
-    ctx.fillStyle = '#aaa';
-    ctx.font = '10px Inter, sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(fmt(max * p), pad.l - 6, y + 3);
-  });
-
-  // Bars
-  chartData.forEach((d, i) => {
-    const x = pad.l + i * barW + barW * 0.12;
-    const w = barW * 0.76;
-    const barH = d.valor > 0 ? Math.max((d.valor / max) * cH, 8) : 0;
-    const y = pad.t + cH - barH;
-
-    if (d.valor > 0) {
-      // Real bar with gradient
-      const gr = ctx.createLinearGradient(0, y, 0, pad.t + cH);
-      gr.addColorStop(0, 'rgba(147,115,33,0.95)');
-      gr.addColorStop(1, 'rgba(147,115,33,0.3)');
-      ctx.fillStyle = gr;
-      ctx.beginPath();
-      ctx.roundRect(x, y, w, barH, [4, 4, 0, 0]);
-      ctx.fill();
-
-      // Value label on top
-      ctx.fillStyle = '#555';
-      ctx.font = 'bold 10px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(fmt(d.valor), x + w / 2, y - 6);
-    } else {
-      // Ghost bar (visible but transparent) when no data
-      const ghostH = 6;
-      const ghostY = pad.t + cH - ghostH;
-      ctx.fillStyle = 'rgba(147,115,33,0.12)';
-      ctx.beginPath();
-      ctx.roundRect(x, ghostY, w, ghostH, [2, 2, 0, 0]);
-      ctx.fill();
-    }
-
-    // Day label
-    ctx.fillStyle = '#9ca3af';
-    ctx.font = '11px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(d.dia, x + w / 2, H - pad.b + 16);
-
-    // Date label
-    ctx.fillStyle = '#bbb';
-    ctx.font = '9px Inter, sans-serif';
-    ctx.fillText(d.fecha, x + w / 2, H - pad.b + 28);
-  });
-
-  // Empty state message
-  if (!hasData) {
-    ctx.fillStyle = '#999';
-    ctx.font = '13px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Sin cobros en los últimos 7 días', W / 2, pad.t + 20);
-    ctx.fillStyle = '#ccc';
-    ctx.font = '22px Inter, sans-serif';
-    ctx.fillText('📊', W / 2, pad.t + 50);
-  }
-}
-
-requestAnimationFrame(drawChart);
-window.addEventListener('resize', drawChart);
 </script>
 {% endblock %}
