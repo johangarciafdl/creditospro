@@ -38,11 +38,13 @@ EXPOSE 8000
 
 # Healthcheck: el endpoint /health responde 200 si DB esta OK
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request, sys; \
-        r = urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3); \
+    CMD python -c "import urllib.request, sys, os; \
+        port = os.environ.get('PORT', '8000'); \
+        r = urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3); \
         sys.exit(0 if r.status == 200 else 1)" || exit 1
 
 # Comando por defecto: uvicorn con 1 worker (la app usa in-memory state:
 # rate limit, token blacklist, scheduler). Para multi-worker cambiar a
 # redis y gunicorn -w N.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Shell form para que $PORT se expanda (Railway, Heroku, etc.)
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
