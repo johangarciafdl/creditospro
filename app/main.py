@@ -62,25 +62,10 @@ BASE_DIR = Path(__file__).parent.parent
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Check license: archivo → env var → base de datos
+    # 1) Check license rapido: archivo → env var
     try:
         import license_manager as lm
         _lic = lm.check_license()
-        if not _lic.get("valid"):
-            from app.database import SessionLocal, LicenciaActivada
-            db = SessionLocal()
-            try:
-                fp = lm.get_fingerprint()
-                db_lic = db.query(LicenciaActivada).filter(
-                    LicenciaActivada.machine_id == fp,
-                    LicenciaActivada.activa == True,
-                ).first()
-                if db_lic:
-                    _lic = lm.validate_license(db_lic.license_key)
-            except Exception:
-                logger.debug("No se pudo consultar licencias en DB", exc_info=True)
-            finally:
-                db.close()
         app.state.license_valid = _lic.get("valid", False)
         app.state.license_info = _lic
     except Exception:
@@ -118,6 +103,29 @@ async def lifespan(app: FastAPI):
                 "Para desarrollo local, usa: sqlite:///./creditospro.db"
             )
         sys.exit(1)
+
+    # 2) Si la licencia no es valida por archivo/env, buscar en la DB
+    #    (la tabla ya existe porque init_db() ya corrió)
+    if not app.state.license_valid:
+        try:
+            import license_manager as lm
+            from app.database import SessionLocal, LicenciaActivada
+            db = SessionLocal()
+            try:
+                fp = lm.get_fingerprint()
+                db_lic = db.query(LicenciaActivada).filter(
+                    LicenciaActivada.machine_id == fp,
+                    LicenciaActivada.activa == True,
+                ).first()
+                if db_lic:
+                    _lic = lm.validate_license(db_lic.license_key)
+                    app.state.license_valid = _lic.get("valid", False)
+                    app.state.license_info = _lic
+                    logger.info("Licencia cargada desde DB para machine %s", fp[:8])
+            finally:
+                db.close()
+        except Exception:
+            logger.debug("No se pudo consultar licencias en DB", exc_info=True)
 
     # Seed data (solo en desarrollo con ENABLE_SEED_DATA=1)
     try:

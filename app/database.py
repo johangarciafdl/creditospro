@@ -318,6 +318,7 @@ class LicenciaActivada(Base):
     id = Column(Integer, primary_key=True, index=True)
     empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
     machine_id = Column(String(64), nullable=False, index=True)
+    ip = Column(String(45), nullable=True)
     license_key = Column(Text, nullable=False)
     activa = Column(Boolean, default=True)
     creado = Column(DateTime, default=func.now())

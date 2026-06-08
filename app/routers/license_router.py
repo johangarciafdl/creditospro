@@ -48,17 +48,23 @@ async def activate(request: Request, license_key: str = Form(...), db: Session =
     if result.get("valid"):
         machine_id = result.get("machine_id", "")
         empresa_id = result.get("empresa_id")
+        client_ip = request.client.host if request.client else ""
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            client_ip = forwarded.split(",")[0].strip()
         existing = db.query(LicenciaActivada).filter(
             LicenciaActivada.machine_id == machine_id
         ).first()
         if existing:
             existing.license_key = license_key.strip()
             existing.empresa_id = empresa_id
+            existing.ip = client_ip
             existing.activa = True
         else:
             lic = LicenciaActivada(
                 empresa_id=empresa_id,
                 machine_id=machine_id,
+                ip=client_ip,
                 license_key=license_key.strip(),
                 activa=True,
             )
