@@ -227,7 +227,7 @@ function renderPendientes(items){
           <div style="font-size:10px;font-weight:600;color:${color};">${esc(label)}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0;">
-          <button onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(String(p.cliente||'')).slice(1,-1))},${Number(p.valor||0)},${Number(p.cuota_num||0)})" class="btn btn-gold btn-sm">Cobrar</button>
+          <button onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(p.cliente||''))},${Number(p.valor||0)},${Number(p.cuota_num||0)})" class="btn btn-gold btn-sm">Cobrar</button>
           ${waDigits?`<a href="https://wa.me/57${attr(waDigits)}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;">WA</a>`:''}
         </div>
       </div>

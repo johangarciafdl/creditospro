@@ -135,8 +135,8 @@ function fmt(n) {
 
 function drawChart() {
   const container = canvas.parentElement;
-  const W = container.clientWidth;
-  const H = Math.max(container.clientHeight, 220);
+  const W = Math.max(container.clientWidth || container.offsetWidth || 600, 300);
+  const H = Math.max(container.clientHeight || container.offsetHeight || 300, 220);
   canvas.width = W;
   canvas.height = H;
   canvas.style.width = W + 'px';
@@ -220,7 +220,7 @@ function drawChart() {
   }
 }
 
-drawChart();
+requestAnimationFrame(drawChart);
 window.addEventListener('resize', drawChart);
 </script>
 {% endblock %}

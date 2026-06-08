@@ -120,7 +120,7 @@ async function cargarRuta() {
           </div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(String(p.cliente||'')).slice(1,-1))},${Number(p.valor||0)},${Number(p.cuota_num||0)})" class="btn btn-gold btn-sm" style="flex:1;justify-content:center;">💰 Cobrar</button>
+          <button onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(p.cliente||''))},${Number(p.valor||0)},${Number(p.cuota_num||0)})" class="btn btn-gold btn-sm" style="flex:1;justify-content:center;">💰 Cobrar</button>
           ${waDigits?`<a href="https://wa.me/57${attr(waDigits)}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;padding:5px 10px;">💬</a>`:''}
           ${telDigits?`<a href="tel:${attr(telDigits)}" class="btn btn-sm" style="padding:5px 10px;">📞</a>`:''}
         </div>
