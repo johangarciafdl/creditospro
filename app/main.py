@@ -62,18 +62,6 @@ BASE_DIR = Path(__file__).parent.parent
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1) Check license rapido: archivo → env var
-    try:
-        import license_manager as lm
-        _lic = lm.check_license()
-        app.state.license_valid = _lic.get("valid", False)
-        app.state.license_info = _lic
-    except Exception:
-        logger.warning("license_manager no disponible al arrancar", exc_info=True)
-        dev_mode = settings.ENVIRONMENT == "development"
-        app.state.license_valid = dev_mode
-        app.state.license_info = {"valid": dev_mode, "dev_mode": dev_mode}
-
     logger.info("Iniciando CreditosPro...")
 
     # Verificar variables de entorno críticas
@@ -104,28 +92,46 @@ async def lifespan(app: FastAPI):
             )
         sys.exit(1)
 
-    # 2) Si la licencia no es valida por archivo/env, buscar en la DB
-    #    (la tabla ya existe porque init_db() ya corrió)
+    # Cargar licencia: la DB es la fuente persistente (sobrevive redeploys)
+    app.state.license_valid = False
+    app.state.license_info = {"valid": False}
+    try:
+        import license_manager as lm
+        from app.database import SessionLocal, LicenciaActivada
+        fp = lm.get_fingerprint()
+        db = SessionLocal()
+        try:
+            db_lic = db.query(LicenciaActivada).filter(
+                LicenciaActivada.machine_id == fp,
+                LicenciaActivada.activa == True,
+            ).first()
+            if db_lic:
+                _lic = lm.validate_license(db_lic.license_key)
+                app.state.license_valid = _lic.get("valid", False)
+                app.state.license_info = _lic
+                logger.info("Licencia cargada desde DB (machine %s, empresa %s)",
+                            fp[:8], db_lic.empresa_id)
+        finally:
+            db.close()
+    except Exception:
+        logger.debug("No se pudo cargar licencia desde DB", exc_info=True)
+
+    # Fallback: archivo local (solo desarrollo)
     if not app.state.license_valid:
         try:
             import license_manager as lm
-            from app.database import SessionLocal, LicenciaActivada
-            db = SessionLocal()
-            try:
-                fp = lm.get_fingerprint()
-                db_lic = db.query(LicenciaActivada).filter(
-                    LicenciaActivada.machine_id == fp,
-                    LicenciaActivada.activa == True,
-                ).first()
-                if db_lic:
-                    _lic = lm.validate_license(db_lic.license_key)
-                    app.state.license_valid = _lic.get("valid", False)
-                    app.state.license_info = _lic
-                    logger.info("Licencia cargada desde DB para machine %s", fp[:8])
-            finally:
-                db.close()
+            _lic = lm.check_license()
+            app.state.license_valid = _lic.get("valid", False)
+            app.state.license_info = _lic
         except Exception:
-            logger.debug("No se pudo consultar licencias en DB", exc_info=True)
+            dev_mode = settings.ENVIRONMENT == "development"
+            app.state.license_valid = dev_mode
+            app.state.license_info = {"valid": dev_mode, "dev_mode": dev_mode}
+
+    if app.state.license_valid:
+        logger.info("Licencia valida - sistema habilitado")
+    else:
+        logger.warning("Sin licencia valida - usuario debe activar en /license/activar")
 
     # Seed data (solo en desarrollo con ENABLE_SEED_DATA=1)
     try:
