@@ -46,30 +46,43 @@ async def activate(request: Request, license_key: str = Form(...), db: Session =
         return JSONResponse({"valid": False, "error": "Sistema de licencias no disponible"})
     result = lm.save_license(license_key)
     if result.get("valid"):
-        machine_id = result.get("machine_id", "")
-        empresa_id = result.get("empresa_id")
-        client_ip = request.client.host if request.client else ""
-        forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded:
-            client_ip = forwarded.split(",")[0].strip()
-        existing = db.query(LicenciaActivada).filter(
-            LicenciaActivada.machine_id == machine_id
-        ).first()
-        if existing:
-            existing.license_key = license_key.strip()
-            existing.empresa_id = empresa_id
-            existing.ip = client_ip
-            existing.activa = True
-        else:
-            lic = LicenciaActivada(
-                empresa_id=empresa_id,
-                machine_id=machine_id,
-                ip=client_ip,
-                license_key=license_key.strip(),
-                activa=True,
-            )
-            db.add(lic)
-        db.commit()
+        try:
+            machine_id = result.get("machine_id", "")
+            empresa_id = result.get("empresa_id")
+            client_ip = request.client.host if request.client else ""
+            forwarded = request.headers.get("x-forwarded-for", "")
+            if forwarded:
+                client_ip = forwarded.split(",")[0].strip()
+            existing = db.query(LicenciaActivada).filter(
+                LicenciaActivada.machine_id == machine_id
+            ).first()
+            if existing:
+                existing.license_key = license_key.strip()
+                existing.empresa_id = empresa_id
+                existing.ip = client_ip
+                existing.activa = True
+            else:
+                lic = LicenciaActivada(
+                    empresa_id=empresa_id,
+                    machine_id=machine_id,
+                    ip=client_ip,
+                    license_key=license_key.strip(),
+                    activa=True,
+                )
+                db.add(lic)
+            db.commit()
+        except Exception as e:
+            logger.warning("No se pudo guardar licencia en DB: %s", e)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            try:
+                from app.database import Base, engine
+                LicenciaActivada.__table__.create(engine, checkfirst=True)
+                db.commit()
+            except Exception:
+                pass
     request.app.state.license_valid = result.get("valid", False)
     request.app.state.license_info = result
     return JSONResponse(result)
