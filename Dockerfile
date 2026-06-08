@@ -27,8 +27,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar el codigo
 COPY . /app
 
-# Ajustes finales: uploads, reports, backups
+# Ajustes finales: uploads, reports, backups + script de inicio
 RUN mkdir -p /app/uploads/fotos /app/backups /app/reports \
+    && chmod +x /app/start.sh \
     && chown -R credit:credit /app
 
 USER credit
@@ -43,8 +44,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
         r = urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3); \
         sys.exit(0 if r.status == 200 else 1)" || exit 1
 
-# Comando por defecto: uvicorn con 1 worker (la app usa in-memory state:
-# rate limit, token blacklist, scheduler). Para multi-worker cambiar a
-# redis y gunicorn -w N.
-# Shell form para que $PORT se expanda (Railway, Heroku, etc.)
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
+# Comando via script para que $PORT se expanda correctamente en Railway
+CMD ["/bin/sh", "/app/start.sh"]
