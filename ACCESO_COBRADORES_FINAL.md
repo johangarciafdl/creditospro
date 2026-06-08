@@ -195,7 +195,7 @@ http://192.168.1.50:8000
 ```
 marcos / Marcos123 (Cobrador)
 julian / 197991 (Gerente)
-johan / Jo681192 (Admin)
+johan / XXXXXX (Admin)
 ```
 
 ---

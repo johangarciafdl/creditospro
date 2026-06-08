@@ -9,7 +9,7 @@
 
 ### 1. Credenciales removidas del código fuente
 **Archivos afectados:** `database.py`, `run.py`, `security.py`, `license.py`
-- Se eliminó la contraseña hardcodeada `Jo681192*creditos` de Supabase
+- Se eliminó la contraseña hardcodeada `XXXXXX` de Supabase
 - Se eliminó la clave JWT `"creditospro-super-secreto-2024"`
 - Se eliminó la clave de licencia `"CreditosPro2024-Johan-MasterKey!!"`
 - Todas las credenciales ahora se leen desde variables de entorno
@@ -149,7 +149,7 @@
 
 ## ⚠️ Acciones requeridas del usuario
 
-1. **ROTAR credenciales de Supabase** — La contraseña `Jo681192` fue expuesta en commits anteriores. En Supabase → Project Settings → Database → Connection, generar nueva contraseña y actualizar `.env`
+1. **ROTAR credenciales de Supabase** — La contraseña `XXXXXX` fue expuesta en commits anteriores. En Supabase → Project Settings → Database → Connection, generar nueva contraseña y actualizar `.env`
 
 2. **Generar SECRET_KEY fuerte:**
    ```bash

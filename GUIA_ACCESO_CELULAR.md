@@ -112,7 +112,7 @@ Celular:
 |---------|-----------|-----|--------|
 | **marcos** | Marcos123 | Cobrador | Registrar cobros, ver clientes |
 | **julian** | 197991 | Gerente | Todo menos usuarios y configuración |
-| **johan** | Jo681192 | Admin | Acceso total |
+| **johan** | XXXXXX | Admin | Acceso total |
 
 ---
 

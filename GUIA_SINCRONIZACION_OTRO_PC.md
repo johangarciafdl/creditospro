@@ -79,7 +79,7 @@ python setup_empresa_elruso.py
 python run.py
 
 # ✅ Se abre Chrome automáticamente
-# Accede con: johan / Jo681192
+# Accede con: johan / XXXXXX
 ```
 
 **Verificación en otro PC:**
@@ -231,7 +231,7 @@ Antes de considerar la sincronización completada:
 - [ ] En el otro PC ejecutaste `setup_empresa_elruso.py`
 - [ ] En el otro PC ejecutaste `python run.py` exitosamente
 - [ ] El dashboard del otro PC es visible (no transparente)
-- [ ] Accediste con johan / Jo681192
+- [ ] Accediste con johan / XXXXXX
 - [ ] Los botones funcionan
 - [ ] No hay errores en F12 Console
 

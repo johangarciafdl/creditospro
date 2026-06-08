@@ -158,7 +158,7 @@ email:              VARCHAR
 ```
 
 **Usuarios por defecto:**
-- `johan` / `Jo681192` → ADMIN (acceso total)
+- `johan` / `XXXXXX` → ADMIN (acceso total)
 - `julian` / `197991` → GERENTE (todo menos config)
 - `marcos` / `Marcos123` → COBRADOR (solo registrar cobros)
 

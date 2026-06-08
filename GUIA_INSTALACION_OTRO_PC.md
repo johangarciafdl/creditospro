@@ -70,7 +70,7 @@ DATOS DE ACCESO PARA TODOS LOS USUARIOS:
 
 📋 ADMIN/OWNER:
    Usuario:     johan
-   Contraseña:  Jo681192
+   Contraseña:  XXXXXX
    Rol:         admin (acceso total)
 
 👔 GERENTE:
@@ -92,7 +92,7 @@ python run.py
 ✅ Se abre Chrome automáticamente
 
 **Login con cualquiera de los usuarios:**
-- johan / Jo681192 (acceso total)
+- johan / XXXXXX (acceso total)
 - julian / 197991 (gerente)
 - marcos / Marcos123 (cobrador)
 
@@ -137,7 +137,7 @@ Aparece: "Agregar a pantalla de inicio" → Toca → Se instala como app
 - [ ] `pip install -r requirements.txt` ✅ completado
 - [ ] `python setup_empresa_elruso.py` ✅ completado
 - [ ] `python run.py` abre sin errores
-- [ ] Login exitoso: johan / Jo681192
+- [ ] Login exitoso: johan / XXXXXX
 - [ ] Datos de cobros visibles
 
 ---
@@ -175,7 +175,7 @@ Verifica:
 2. Contraseña: exacta (distingue mayúsculas)
 3. Que setup_empresa_elruso.py se ejecutó sin errores
 4. Usuarios disponibles:
-   - johan / Jo681192 (admin)
+   - johan / XXXXXX (admin)
    - julian / 197991 (gerente)
    - marcos / Marcos123 (cobrador)
 ```
@@ -185,7 +185,7 @@ Verifica:
 ## Datos de Contacto
 
 ```
-Usuario Admin (Owner):  johan / Jo681192
+Usuario Admin (Owner):  johan / XXXXXX
 Usuario Gerente:        julian / 197991
 Usuario Cobrador:       marcos / Marcos123
 Empresa:                ElRuso

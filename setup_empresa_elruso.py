@@ -91,7 +91,7 @@ def setup_elruso():
             {
                 "username": "johan",
                 "nombre": "Johan",
-                "contraseña": "Jo681192",
+                "contraseña": "XXXXXX",
                 "rol": "admin",
                 "descripcion": "Admin/Owner"
             },
@@ -176,7 +176,7 @@ DATOS DE ACCESO PARA TODOS LOS USUARIOS:
 
 📋 ADMIN/OWNER:
    Usuario:     johan
-   Contraseña:  Jo681192
+   Contraseña:  XXXXXX
    Rol:         admin (acceso total)
 
 👔 GERENTE:

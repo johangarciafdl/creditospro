@@ -25,7 +25,7 @@ DATOS DE ACCESO PARA TODOS LOS USUARIOS:
 
 📋 ADMIN/OWNER:
    Usuario:     johan
-   Contraseña:  Jo681192
+   Contraseña:  XXXXXX
    Rol:         admin (acceso total)
 
 👔 GERENTE:
@@ -50,7 +50,7 @@ python run.py
 ✅ Se abre Chrome automáticamente
 
 **Login con cualquiera de los usuarios:**
-- johan / Jo681192 (acceso total)
+- johan / XXXXXX (acceso total)
 - julian / 197991 (gerente - todas las funciones)
 - marcos / Marcos123 (cobrador - registro de cobros)
 

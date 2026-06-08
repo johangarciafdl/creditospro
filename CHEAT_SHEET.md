@@ -34,7 +34,7 @@ python limpiar_elruso_duplicado.py
 
 | Usuario | Contraseña | Rol | Acceso |
 |---------|-----------|-----|--------|
-| johan | Jo681192 | ADMIN | Todo |
+| johan | XXXXXX | ADMIN | Todo |
 | julian | 197991 | GERENTE | Sin config |
 | marcos | Marcos123 | COBRADOR | Solo cobros |
 
