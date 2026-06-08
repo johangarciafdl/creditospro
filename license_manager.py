@@ -23,6 +23,9 @@ def _get_master_secret() -> str:
 
 
 def get_fingerprint() -> str:
+    override = os.getenv("CREDITOSPRO_MACHINE_ID", "").strip()
+    if override:
+        return override.upper()
     import platform
     parts = [str(uuid.getnode()), socket.gethostname(),
              platform.processor(), platform.machine(), platform.system()]
