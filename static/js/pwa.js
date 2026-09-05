@@ -145,13 +145,21 @@ async function uploadPendingCobros() {
 
     for (const cobro of cobrosPendientes) {
       try {
+        const form = new URLSearchParams();
+        form.set('cuota_id', String(cobro.cuota_id));
+        form.set('valor_cobrado', String(cobro.valor_cobrado));
+        form.set('metodo_pago', String(cobro.metodo_pago || 'Efectivo'));
+        form.set('observaciones', String(cobro.observaciones || 'Cobro sincronizado desde PWA'));
+        form.set('lat', String(cobro.lat || ''));
+        form.set('lng', String(cobro.lng || ''));
         const response = await fetch('/cobros/registrar', {
           method: 'POST',
           credentials: 'same-origin',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            'X-CSRF-Token': getCookie('cp_csrf'),
           },
-          body: JSON.stringify(cobro),
+          body: form,
         });
 
         if (response.ok) {
@@ -179,13 +187,21 @@ async function saveCobro(cobroData) {
   try {
     if (isOnline) {
       // Si está online, enviar directo al servidor
+      const form = new URLSearchParams();
+      form.set('cuota_id', String(cobroData.cuota_id));
+      form.set('valor_cobrado', String(cobroData.valor_cobrado));
+      form.set('metodo_pago', String(cobroData.metodo_pago || 'Efectivo'));
+      form.set('observaciones', String(cobroData.observaciones || 'Cobro desde PWA'));
+      form.set('lat', String(cobroData.lat || ''));
+      form.set('lng', String(cobroData.lng || ''));
       const response = await fetch('/cobros/registrar', {
         method: 'POST',
         credentials: 'same-origin',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'X-CSRF-Token': getCookie('cp_csrf'),
         },
-        body: JSON.stringify(cobroData),
+        body: form,
       });
 
       if (!response.ok) {
@@ -215,6 +231,12 @@ async function saveCobro(cobroData) {
     console.error('[PWA] Error guardando cobro:', err);
     throw err;
   }
+}
+
+function getCookie(name) {
+  const prefix = `${name}=`;
+  const item = document.cookie.split('; ').find(value => value.startsWith(prefix));
+  return item ? decodeURIComponent(item.slice(prefix.length)) : '';
 }
 
 // ─────────────────────────────────────────────────────────────────────

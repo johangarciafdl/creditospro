@@ -25,6 +25,12 @@ class LicenseMiddleware(BaseHTTPMiddleware):
         if license_valid:
             return await call_next(request)
 
+        # Una clave comercial valida habilita el acceso al login de esa empresa.
+        # Los endpoints protegidos siguen requiriendo sesion de usuario.
+        activated_empresa_id = request.session.get("activated_empresa_id")
+        if activated_empresa_id:
+            return await call_next(request)
+
         # Re-verificar en DB (puede haber cambiado tras activacion o restart)
         try:
             import sys
@@ -59,7 +65,7 @@ class LicenseMiddleware(BaseHTTPMiddleware):
             pass
 
         path = request.url.path
-        if path in RUTAS_LIBRES_EXACTAS or any(path.startswith(r) for r in RUTAS_LIBRES_PREFIJOS):
+        if path in RUTAS_LIBRES_EXACTAS or path == "/auth/login" or any(path.startswith(r) for r in RUTAS_LIBRES_PREFIJOS):
             return await call_next(request)
 
         accept = request.headers.get("accept", "")

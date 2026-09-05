@@ -16,7 +16,7 @@ DEFAULT_RULES = {
     "/registro": (5, 300),
     "/registro/": (5, 300),
     "/auth/usuarios/nuevo": (10, 300),
-    "/license/activate": (15, 600),
+    "/license/activate": (3, 60),
     "/cobros/registrar": (60, 60),
     "/whatsapp/enviar-ahora": (5, 300),
     "/whatsapp/enviar-manual": (30, 60),
@@ -26,12 +26,8 @@ UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 def _client_ip(request) -> str:
-    forwarded_for = request.headers.get("x-forwarded-for", "")
-    if forwarded_for:
-        return forwarded_for.split(",", 1)[0].strip()
-    real_ip = request.headers.get("x-real-ip", "")
-    if real_ip:
-        return real_ip.strip()
+    # Solo confiar en headers de proxy cuando el despliegue los sanea.
+    # Por defecto el socket evita que el cliente elija su propia identidad.
     return request.client.host if request.client else "unknown"
 
 

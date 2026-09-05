@@ -17,7 +17,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.database import get_db, Usuario, Zona, Empresa, ConfiguracionApp, SessionLocal
+from app.database import get_db, Usuario, Zona, Empresa, ConfiguracionApp, SessionLocal, set_tenant_context
 from app.repositories.usuario_repository import UsuarioRepository
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,16 @@ from app.utils.security import (
     get_password_hash,
     create_access_token,
     decode_token,
+    encrypt_secret,
+    decrypt_secret,
+)
+from app.utils.two_factor import (
+    backup_hashes_json,
+    consume_backup_code,
+    generate_backup_codes,
+    generate_secret,
+    provisioning_uri,
+    verify_totp,
 )
 from app.utils.token_blacklist import is_jti_revoked, revoke_jti
 from app.utils.csrf import CSRF_COOKIE, generate_csrf_token
@@ -60,10 +70,17 @@ def get_current_user(request: Request, db: Session) -> Optional[Usuario]:
         logger.info("Token con jti revocado: %s", jti[:8])
         return None
     uid = payload.get("sub")
-    if not uid:
+    token_empresa_id = payload.get("empresa_id")
+    if not uid or not isinstance(token_empresa_id, int):
+        return None
+    try:
+        set_tenant_context(db, token_empresa_id)
+    except ValueError:
         return None
     user = db.query(Usuario).filter(
-        Usuario.id == int(uid), Usuario.activo == True
+        Usuario.id == int(uid),
+        Usuario.empresa_id == token_empresa_id,
+        Usuario.activo == True,
     ).first()
     if user and jti:
         # Registrar/refresh sesion activa para listado y revocacion
@@ -96,6 +113,12 @@ def _redirect_if_no_session(request: Request, db: Session, next_url: str):
 @router.get("/login")
 async def login_page(request: Request, next: str = "/dashboard",
                      empresa_id: int = None, db: Session = Depends(get_db)):
+    activated_empresa_id = request.session.get("activated_empresa_id")
+    if not activated_empresa_id:
+        return RedirectResponse(url="/license/activar", status_code=302)
+    if empresa_id and int(activated_empresa_id) != empresa_id:
+        return RedirectResponse(url="/license/activar", status_code=302)
+    empresa_id = int(activated_empresa_id)
     token = request.cookies.get(SESSION_COOKIE)
     if token and decode_token(token):
         return RedirectResponse(url=next, status_code=302)
@@ -119,12 +142,15 @@ async def login_submit(
     empresa_id: str = Form(""),
     db: Session = Depends(get_db)
 ):
+    activated_empresa_id = request.session.get("activated_empresa_id")
+    if not activated_empresa_id:
+        return JSONResponse({"error": "Activa primero el software"}, status_code=403)
+
     q = db.query(Usuario).filter(
         Usuario.username == username.strip().lower(),
-        Usuario.activo == True
+        Usuario.activo == True,
+        Usuario.empresa_id == int(activated_empresa_id),
     )
-    if empresa_id.strip().isdigit():
-        q = q.filter(Usuario.empresa_id == int(empresa_id))
     user = q.first()
 
     # IMPORTANTE: SIEMPRE ejecutar verify_password_with_timing_safety, incluso
@@ -144,6 +170,11 @@ async def login_submit(
             status_code=401
         )
 
+    if user.two_factor_enabled:
+        request.session["two_factor_pending_user_id"] = user.id
+        request.session["two_factor_pending_at"] = datetime.datetime.now(datetime.timezone.utc).timestamp()
+        return RedirectResponse(url="/auth/2fa", status_code=303)
+
     user.ultimo_login = datetime.datetime.now()
     db.commit()
 
@@ -154,7 +185,7 @@ async def login_submit(
         "empresa_id": user.empresa_id,
     })
 
-    redirect_url = next if next.startswith("/") else "/dashboard"
+    redirect_url = next if next.startswith("/") and not next.startswith("//") else "/dashboard"
     response = RedirectResponse(url=redirect_url, status_code=302)
     response.set_cookie(
         key=SESSION_COOKIE,
@@ -177,6 +208,96 @@ async def login_submit(
     # Audit log del login
     log_action(db, user, "login", "auth", f"username={user.username}")
     return response
+
+
+@router.get("/2fa")
+async def two_factor_page(request: Request):
+    if not request.session.get("two_factor_pending_user_id"):
+        return RedirectResponse(url="/license/activar", status_code=302)
+    return templates.TemplateResponse(request, "auth/2fa.html", {"error": None})
+
+
+@router.post("/2fa")
+async def two_factor_submit(
+    request: Request,
+    code: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    from time import time
+
+    if is_rate_limited(request, "/auth/2fa", 5, 300):
+        return templates.TemplateResponse(
+            request, "auth/2fa.html", {"error": "Demasiados intentos. Intenta mas tarde."}, status_code=429
+        )
+    pending_id = request.session.get("two_factor_pending_user_id")
+    pending_at = float(request.session.get("two_factor_pending_at", 0))
+    if not pending_id or time() - pending_at > 300:
+        request.session.pop("two_factor_pending_user_id", None)
+        request.session.pop("two_factor_pending_at", None)
+        return RedirectResponse(url="/license/activar", status_code=302)
+
+    user = db.query(Usuario).filter(Usuario.id == int(pending_id), Usuario.activo == True).first()
+    secret = decrypt_secret(user.two_factor_secret) if user else None
+    valid = bool(user and secret and verify_totp(secret, code))
+    if not valid and user:
+        valid, updated_hashes = consume_backup_code(code, user.two_factor_backup_hashes)
+        if valid:
+            user.two_factor_backup_hashes = updated_hashes
+            db.commit()
+    if not valid or not user:
+        return templates.TemplateResponse(
+            request, "auth/2fa.html", {"error": "Codigo de doble factor invalido."}, status_code=401
+        )
+
+    request.session.pop("two_factor_pending_user_id", None)
+    request.session.pop("two_factor_pending_at", None)
+    user.ultimo_login = datetime.datetime.now()
+    db.commit()
+    token = create_access_token({
+        "sub": str(user.id), "rol": user.rol, "nombre": user.nombre, "empresa_id": user.empresa_id,
+    })
+    response = RedirectResponse(url="/dashboard", status_code=303)
+    response.set_cookie(
+        key=SESSION_COOKIE, value=token, httponly=True, samesite="strict",
+        max_age=60 * 60 * 12, secure=IS_PRODUCTION,
+    )
+    response.set_cookie(
+        key=CSRF_COOKIE, value=generate_csrf_token(), httponly=False, samesite="strict",
+        max_age=60 * 60 * 12, secure=IS_PRODUCTION,
+    )
+    log_action(db, user, "login_2fa", "auth", f"username={user.username}")
+    return response
+
+
+@router.get("/2fa/setup")
+async def two_factor_setup(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    secret = generate_secret()
+    user.two_factor_secret = encrypt_secret(secret)
+    db.commit()
+    return JSONResponse({"secret": secret, "otpauth_uri": provisioning_uri(secret, user.username)})
+
+
+@router.post("/2fa/setup/confirm")
+async def two_factor_setup_confirm(
+    request: Request,
+    code: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    secret = decrypt_secret(user.two_factor_secret) if user.two_factor_secret else None
+    if not secret or not verify_totp(secret, code):
+        return JSONResponse({"error": "Codigo TOTP invalido"}, status_code=400)
+    backup_codes = generate_backup_codes()
+    user.two_factor_enabled = True
+    user.two_factor_backup_hashes = backup_hashes_json(backup_codes)
+    db.commit()
+    log_action(db, user, "2fa_enabled", "auth", f"username={user.username}")
+    return JSONResponse({"ok": True, "backup_codes": backup_codes})
 
 
 @router.get("/logout")
@@ -570,7 +691,7 @@ async def listar_sesiones(request: Request, db: Session = Depends(get_db)):
         "sesiones": [
             {
                 "issued": s["issued"],
-                "expires": s["expires"],
+                "expires": s["exp"],
                 "ip": s.get("ip", "?"),
             }
             for s in sesiones

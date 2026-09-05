@@ -64,11 +64,7 @@ h1 strong{color:var(--gold);font-weight:800}
         {{ start_label }}
         <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
       </a>
-      {% if license_valid %}
-      <a class="btn btn-ghost" href="/seleccionar-empresa">Empresas</a>
-      {% else %}
-      <a class="btn btn-ghost" href="/license/activar">Ver ID equipo</a>
-      {% endif %}
+      <a class="btn btn-ghost" href="/comprar">Comprar</a>
     </div>
 
     <div class="status">
@@ -77,7 +73,7 @@ h1 strong{color:var(--gold);font-weight:800}
       <div class="item"><b>Licencia</b><span>Activacion por equipo</span></div>
     </div>
     <div class="license {{ 'ok' if license_valid else 'warn' }}">
-      {{ 'Software activado. Puedes iniciar sesion.' if license_valid else 'Activacion pendiente. Presiona Iniciar para activar este equipo.' }}
+      Presiona Iniciar para activar tu empresa y continuar al acceso de usuario.
     </div>
   </main>
 </div>

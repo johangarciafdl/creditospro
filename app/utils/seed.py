@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 def seed_data_demo():
     if os.getenv("ENABLE_SEED_DATA", "0").strip().lower() not in {"1", "true", "yes", "on"}:
         return
+    initial_password = os.getenv("INITIAL_ADMIN_PASSWORD", "").strip()
+    if not initial_password:
+        raise RuntimeError("INITIAL_ADMIN_PASSWORD es obligatoria cuando ENABLE_SEED_DATA esta activo")
     db = SessionLocal()
     try:
         if db.query(Empresa).count() > 0:
@@ -40,16 +43,13 @@ def seed_data_demo():
             empresa_id=emp.id,
             username="admin",
             nombre="Administrador",
-            password_hash=get_password_hash("Admin123"),
+            password_hash=get_password_hash(initial_password),
             rol="admin",
             activo=True,
         )
         db.add(user)
         db.commit()
-        logger.warning(
-            "Empresa inicial creada: %s / admin / Admin123 (CAMBIA LA PASSWORD)",
-            settings.DEFAULT_COMPANY_NAME,
-        )
+        logger.info("Empresa inicial creada: %s / usuario admin", settings.DEFAULT_COMPANY_NAME)
     except Exception:
         db.rollback()
         logger.exception("Error en seed inicial")

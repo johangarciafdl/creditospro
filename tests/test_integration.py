@@ -79,6 +79,15 @@ def client():
                 db.add(emp)
                 db.commit()
                 db.refresh(emp)
+                from app.utils.company_activation import assign_company_key
+                if not emp.activation_key_hash:
+                    activation_key = assign_company_key(db, emp)
+                    db.commit()
+                else:
+                    activation_key = None
+                emp_id = emp.id
+                if activation_key is None:
+                    raise AssertionError("La fixture requiere una clave de activacion nueva")
         finally:
             db.close()
 
@@ -91,7 +100,7 @@ def client():
                     db.commit()
                 else:
                     user = Usuario(
-                        empresa_id=emp.id,
+                        empresa_id=emp_id,
                         username="testuser",
                         nombre="Test User",
                         password_hash=get_password_hash("contrasena123"),
@@ -105,6 +114,9 @@ def client():
 
         c.reset_test_user = reset_test_user
         reset_test_user()
+        activation_response = c.post("/license/activate", data={"license_key": activation_key})
+        assert activation_response.status_code == 200
+        assert activation_response.json().get("valid") is True
         yield c
 
     # Cleanup
@@ -127,6 +139,8 @@ def _reset_test_user_entre_tests(client):
     reset_test_user(), el siguiente test aun encuentra al usuario
     con la contrasena original.
     """
+    client.cookies.delete("cp_session")
+    client.cookies.delete("cp_csrf")
     from app.database import SessionLocal, Usuario, Empresa
     from app.utils.security import get_password_hash
     # Reset directo: crear/actualizar usuario con la contrasena original

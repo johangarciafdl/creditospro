@@ -163,12 +163,17 @@ def main():
 
         if not db.query(Zona).filter(Zona.empresa_id == target_id).first():
             db.add(Zona(empresa_id=target_id, codigo="Z001", nombre="Zona Principal", ciudad="Medellin", activa=True))
+        initial_password = os.getenv("INITIAL_ADMIN_PASSWORD", "").strip()
         if not db.query(Usuario).filter(Usuario.empresa_id == target_id, Usuario.activo == True).first():
+            if not initial_password:
+                raise RuntimeError(
+                    "INITIAL_ADMIN_PASSWORD es obligatoria para crear el administrador inicial"
+                )
             db.add(Usuario(
                 empresa_id=target_id,
                 username="admin",
                 nombre="Administrador",
-                hashed_password=get_password_hash("Admin123"),
+                password_hash=get_password_hash(initial_password),
                 rol="admin",
                 activo=True,
             ))

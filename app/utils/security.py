@@ -3,18 +3,61 @@ CreditosPro v2.1 - Seguridad
 bcrypt directo (compatible con bcrypt >= 4.0) + JWT con python-jose
 """
 import logging
+import hashlib
+import hmac
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.utils.settings import settings
 
 logger = logging.getLogger(__name__)
 
 ALGORITHM = "HS256"
+
+
+def activation_key_hash(key: str) -> str:
+    """Obtiene un hash determinista para buscar una clave de empresa.
+
+    La clave original nunca se almacena en la base de datos.
+    """
+    normalized = (key or "").strip().upper().encode("utf-8")
+    return hashlib.sha256(normalized).hexdigest()
+
+
+def activation_key_matches(key: str, expected_hash: str | None) -> bool:
+    if not expected_hash:
+        return False
+    return hmac.compare_digest(activation_key_hash(key), expected_hash)
+
+
+def _secret_cipher() -> Fernet:
+    if not settings.SECRET_KEY:
+        raise RuntimeError("SECRET_KEY no esta configurada")
+    material = hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
+    import base64
+    return Fernet(base64.urlsafe_b64encode(material))
+
+
+def encrypt_secret(value: str) -> str:
+    return _secret_cipher().encrypt(value.encode("utf-8")).decode("ascii")
+
+
+def decrypt_secret(value: str) -> str | None:
+    try:
+        return _secret_cipher().decrypt(value.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError, TypeError):
+        return None
+
+
+def serialize_backup_hashes(values: list[str]) -> str:
+    return json.dumps(values, separators=(",", ":"))
 
 
 def get_password_hash(password: str) -> str:
@@ -87,5 +130,5 @@ def decode_token(token: str) -> Optional[dict]:
             options={"require": ["exp", "iat"]},
         )
         return payload
-    except JWTError:
+    except InvalidTokenError:
         return None

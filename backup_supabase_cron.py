@@ -23,7 +23,7 @@ import argparse
 import os
 import subprocess
 import sys
-import time
+import tarfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -40,7 +40,7 @@ def main():
     )
     args = parser.parse_args()
 
-    output_dir = Path(args.output_dir)
+    output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -62,13 +62,15 @@ def main():
         log(f"ERROR en backup_supabase.py: {result.stderr[:500]}")
         sys.exit(1)
     log("Backup generado OK")
+    manifest_path = backup_dir / "manifest.json"
+    if not manifest_path.exists() or '"status": "verified"' not in manifest_path.read_text(encoding="utf-8"):
+        log("ERROR: el manifiesto no confirma backup verificado")
+        sys.exit(1)
 
     # 2) Comprimir
     archive = output_dir / f"backup_{timestamp}.tar.gz"
-    subprocess.run(
-        ["tar", "-czf", str(archive), "-C", str(output_dir), backup_dir.name],
-        check=True,
-    )
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(backup_dir, arcname=backup_dir.name)
     log(f"Comprimido: {archive}")
 
     # 3) Subir a S3/R2 si esta configurado
@@ -108,7 +110,7 @@ def main():
         import shutil
         shutil.rmtree(backup_dir)
 
-    log(f"Backup completado en {time.time() - time.process_time():.1f}s")
+    log("Backup completado y verificado")
 
 
 if __name__ == "__main__":

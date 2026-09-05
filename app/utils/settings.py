@@ -26,6 +26,7 @@ class Settings:
     SECRET_KEY: str = ""  # Obligatoria, se valida en startup
     SESSION_SECRET_KEY: str = ""
     ACCESS_TOKEN_EXPIRE_HOURS: int = 12
+    ENABLE_DATABASE_RLS: bool = False
 
     # ── Licencia ───────────────────────────────────────────────
     LICENSE_MASTER_KEY: str = ""
@@ -89,6 +90,7 @@ def get_settings() -> Settings:
     settings.WP_TOKEN = os.getenv("WP_TOKEN", "")
     settings.WP_ACTIVO = env_bool("WP_ACTIVO", False)
     settings.ACCESS_TOKEN_EXPIRE_HOURS = env_int("ACCESS_TOKEN_EXPIRE_HOURS", 12)
+    settings.ENABLE_DATABASE_RLS = env_bool("ENABLE_DATABASE_RLS", False)
     settings.PORT = env_int("PORT", 8000)
     settings.ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
     settings.NO_BROWSER = env_bool("CREDITOSPRO_NO_BROWSER", False)

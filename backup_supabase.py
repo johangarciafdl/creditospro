@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import argparse
+import hashlib
 import json
 import os
 from decimal import Decimal
@@ -36,6 +38,8 @@ TABLES = [
     "cobros",
     "configuracion",
     "notificaciones_wp",
+    "audit_log",
+    "licencias_activadas",
 ]
 
 
@@ -82,8 +86,11 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Backup logico verificado de CreditosPro")
+    parser.add_argument("--output-dir", default=None, help="Directorio exacto del backup")
+    args = parser.parse_args()
     stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = BACKUP_DIR / f"backup_{stamp}"
+    output_dir = Path(args.output_dir) if args.output_dir else BACKUP_DIR / f"backup_{stamp}"
     json_dir = output_dir / "json"
     csv_dir = output_dir / "csv"
     json_dir.mkdir(parents=True, exist_ok=True)
@@ -95,7 +102,9 @@ def main() -> None:
     manifest: dict[str, Any] = {
         "created_at": dt.datetime.now().isoformat(timespec="seconds"),
         "database": "Supabase/PostgreSQL",
+        "status": "started",
         "tables": {},
+        "files": {},
     }
 
     with engine.connect() as conn:
@@ -115,6 +124,14 @@ def main() -> None:
             manifest["tables"][table_name] = {"status": "ok", "rows": len(rows)}
             print(f"[OK] {table_name}: {len(rows)} filas")
 
+    for path in sorted(output_dir.rglob("*")):
+        if path.is_file() and path.name != "manifest.json":
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            manifest["files"][str(path.relative_to(output_dir))] = {
+                "bytes": path.stat().st_size,
+                "sha256": digest,
+            }
+    manifest["status"] = "verified"
     write_json(output_dir / "manifest.json", [manifest])
     print()
     print(f"Backup creado en: {output_dir}")

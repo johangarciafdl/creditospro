@@ -30,6 +30,13 @@ COLOR_BLANCO = "FFFFFF"
 COLOR_TEXTO_OSCURO = "1A1A1A"
 
 
+def safe_excel_value(value):
+    """Evita que texto controlado por usuarios se interprete como formula."""
+    if isinstance(value, str) and value[:1] in {"=", "+", "-", "@"}:
+        return "'" + value
+    return value
+
+
 def estilo_header(ws, fila: int, cols: list, labels: list, color_fondo=COLOR_VERDE_OSCURO):
     fill = PatternFill(start_color=color_fondo, end_color=color_fondo, fill_type="solid")
     font = Font(color=COLOR_BLANCO, bold=True, size=10, name="Calibri")
@@ -54,7 +61,7 @@ def estilo_fila(ws, fila: int, valores: list, par: bool = True):
     align_left = Alignment(horizontal="left", vertical="center")
 
     for i, val in enumerate(valores, start=1):
-        cell = ws.cell(row=fila, column=i, value=val)
+        cell = ws.cell(row=fila, column=i, value=safe_excel_value(val))
         cell.fill = fill
         cell.font = font
         cell.alignment = align_center if isinstance(val, (int, float)) else align_left
@@ -81,7 +88,7 @@ def encabezado_reporte(ws, titulo: str, subtitulo: str, empresa: str):
     ws["A3"].font = Font(color="888888", italic=True, size=9, name="Calibri")
 
 
-def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = None, fecha: datetime.date = None) -> bytes:
+def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = None, fecha: datetime.date = None, zona_ids: list[int] | None = None) -> bytes:
     if fecha is None:
         fecha = datetime.date.today()
 
@@ -113,6 +120,8 @@ def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = N
         query = query.filter(Cobro.empresa_id == empresa_id)
     if zona_id:
         query = query.filter(Cobro.zona_id == zona_id)
+    elif zona_ids is not None:
+        query = query.filter(Cobro.zona_id.in_(zona_ids or [-1]))
     cobros = query.all()
 
     # Precargar datos relacionados en pocos queries (anti-N+1)
@@ -185,7 +194,7 @@ def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = N
     return buf.read()
 
 
-def reporte_cartera(db: Session, empresa_id: int = None) -> bytes:
+def reporte_cartera(db: Session, empresa_id: int = None, zona_ids: list[int] | None = None) -> bytes:
     wb = Workbook(write_only=True)
     ws = wb.create_sheet("Cartera Activa")
 
@@ -198,7 +207,7 @@ def reporte_cartera(db: Session, empresa_id: int = None) -> bytes:
         logger.warning("No se pudo cargar nombre de empresa desde ConfiguracionApp", exc_info=True)
         empresa = "CreditosPro"
 
-    ws.append([empresa])
+    ws.append([safe_excel_value(empresa)])
     ws.append(["ESTADO DE CARTERA"])
     ws.append([f"Generado: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')} | Saldos vigentes por cliente"])
     ws.append([])
@@ -226,6 +235,8 @@ def reporte_cartera(db: Session, empresa_id: int = None) -> bytes:
     )
     if empresa_id:
         q = q.filter(Prestamo.empresa_id == empresa_id)
+    if zona_ids is not None:
+        q = q.filter(Prestamo.zona_id.in_(zona_ids or [-1]))
     prestamos = (
         q.group_by(
             Prestamo.id,
@@ -278,7 +289,7 @@ def reporte_cartera(db: Session, empresa_id: int = None) -> bytes:
             p.prox.strftime("%d/%m/%Y") if p.prox else "—",
             p.estado,
         ]
-        ws.append(vals)
+        ws.append([safe_excel_value(value) for value in vals])
 
         total_capital += capital
         total_saldo += saldo
@@ -296,7 +307,7 @@ def reporte_cartera(db: Session, empresa_id: int = None) -> bytes:
     return buf.read()
 
 
-def reporte_resumen_zonas(db: Session, empresa_id: int = None, fecha_desde: datetime.date = None, fecha_hasta: datetime.date = None) -> bytes:
+def reporte_resumen_zonas(db: Session, empresa_id: int = None, fecha_desde: datetime.date = None, fecha_hasta: datetime.date = None, zona_ids: list[int] | None = None) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "Resumen por Zona"
@@ -323,6 +334,8 @@ def reporte_resumen_zonas(db: Session, empresa_id: int = None, fecha_desde: date
     zq = db.query(Zona).filter(Zona.activa == True)
     if empresa_id:
         zq = zq.filter(Zona.empresa_id == empresa_id)
+    if zona_ids is not None:
+        zq = zq.filter(Zona.id.in_(zona_ids or [-1]))
     zonas = zq.all()
     zona_ids = [z.id for z in zonas]
 

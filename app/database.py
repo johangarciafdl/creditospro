@@ -11,9 +11,9 @@ from pathlib import Path
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Numeric, Date,
     DateTime, Boolean, Text, ForeignKey, UniqueConstraint, Index, Table,
-    CheckConstraint,
+    CheckConstraint, event, text,
 )
-from sqlalchemy.orm import DeclarativeBase, sessionmaker, relationship
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker, relationship
 from sqlalchemy.sql import func
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,26 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+def set_tenant_context(db: Session, empresa_id: int) -> None:
+    """Fija el tenant para RLS usando solo un ID validado por autenticacion."""
+    if not isinstance(empresa_id, int) or empresa_id <= 0:
+        raise ValueError("empresa_id invalido para contexto RLS")
+    db.info["empresa_id"] = empresa_id
+
+
+@event.listens_for(Session, "after_begin")
+def apply_rls_context(session: Session, transaction, connection) -> None:
+    """Aplica el tenant a cada transaccion cuando RLS esta habilitado."""
+    from app.utils.settings import settings
+
+    empresa_id = session.info.get("empresa_id")
+    if settings.ENABLE_DATABASE_RLS and empresa_id is not None and not IS_SQLITE:
+        connection.execute(
+            text("SELECT set_config('app.empresa_id', :empresa_id, true)"),
+            {"empresa_id": str(empresa_id)},
+        )
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -87,6 +107,9 @@ class Empresa(Base):
     logo_path = Column(String(300), nullable=True)
     activa = Column(Boolean, default=True)
     plan = Column(String(50), default="basico")
+    activation_key_hash = Column(String(64), nullable=True, unique=True, index=True)
+    activation_key_hint = Column(String(24), nullable=True)
+    activation_enabled = Column(Boolean, default=True, nullable=False)
     creado = Column(DateTime, default=func.now())
 
     usuarios = relationship("Usuario", back_populates="empresa", cascade="all, delete-orphan")
@@ -107,6 +130,9 @@ class Usuario(Base):
     activo = Column(Boolean, default=True)
     zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="SET NULL"), nullable=True)
     ultimo_login = Column(DateTime, nullable=True)
+    two_factor_enabled = Column(Boolean, default=False, nullable=False)
+    two_factor_secret = Column(Text, nullable=True)
+    two_factor_backup_hashes = Column(Text, nullable=True)
     creado = Column(DateTime, default=func.now())
 
     empresa = relationship("Empresa", back_populates="usuarios")

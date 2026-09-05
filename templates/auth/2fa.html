@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>CreditosPro - Doble factor</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0A0A0A;color:#fff;font-family:Inter,system-ui,sans-serif;padding:24px}.card{width:min(100%,380px);padding:28px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);border-radius:14px;opacity:0;transform:translateY(18px)}.mark{width:58px;height:58px;margin:0 auto 20px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,#C8A95A,#7A5A18);color:#0A0A0A}.mark svg{width:30px}.eyebrow{color:#C8A95A;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;text-align:center}.title{text-align:center;font-size:24px;margin:8px 0}.sub{text-align:center;color:rgba(255,255,255,.45);font-size:13px;line-height:1.6;margin-bottom:22px}.error{padding:10px 12px;border:1px solid rgba(220,38,38,.3);background:rgba(220,38,38,.1);color:#FCA5A5;border-radius:8px;font-size:12px;margin-bottom:14px}label{display:block;color:rgba(255,255,255,.5);font-size:12px;margin-bottom:6px}input{width:100%;padding:13px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:9px;color:#fff;font:inherit;letter-spacing:3px;text-align:center}button{width:100%;margin-top:16px;padding:13px;border:0;border-radius:9px;background:linear-gradient(135deg,#C8A95A,#9A7428);font-weight:700;cursor:pointer;color:#0A0A0A}
+</style>
+</head>
+<body><main class="card" id="card"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div><div class="eyebrow">Acceso protegido</div><h1 class="title">Verificacion en dos pasos</h1><p class="sub">Escribe el codigo de tu aplicación autenticadora o un codigo de respaldo.</p>{% if error %}<div class="error">{{ error }}</div>{% endif %}<form method="post" action="/auth/2fa"><label for="code">Codigo de seguridad</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" minlength="6" maxlength="12" required autofocus><button type="submit">Continuar</button></form></main><script>anime({targets:'#card',translateY:[18,0],opacity:[0,1],duration:600,easing:'easeOutQuart'});</script></body>
+</html>

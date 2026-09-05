@@ -13,11 +13,17 @@ Endpoints:
   DELETE /equipos/{empresa}/{equipo}        - Eliminar equipo
   POST /equipos/exportar/{empresa}          - Exportar licencias
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 import json
+import csv
+import io
 from pathlib import Path
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.routers.auth import get_current_user
 
 # Importar la capa de base de datos
 try:
@@ -28,7 +34,17 @@ except ImportError:
     print("⚠️  database_layer no disponible, algunos endpoints estarán limitados")
 
 
-router = APIRouter(prefix="/equipos", tags=["equipos"])
+def require_equipment_admin(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user or user.rol != "superadmin":
+        raise HTTPException(status_code=403, detail="Solo superadmin puede gestionar equipos y licencias")
+    return user
+
+
+router = APIRouter(
+    tags=["equipos"],
+    dependencies=[Depends(require_equipment_admin)],
+)
 
 
 # ============================================================
@@ -298,17 +314,18 @@ async def exportar_licencias(empresa: str, formato: str = Query("json", regex="^
         equipos = manager.listar(empresa)
         
         if formato == "csv":
-            # Formato CSV
-            csv_lines = ["Equipo,Machine ID,Vencimiento,Licencia (primeros 50 chars)"]
+            output = io.StringIO(newline="")
+            writer = csv.writer(output)
+            writer.writerow(["Equipo", "Machine ID", "Vencimiento", "Licencia (primeros 50 chars)"])
             for eq in equipos:
                 licencia_short = eq.get("licencia", "")[:50]
-                csv_lines.append(
-                    f'{eq["nombre"]},{eq["machine_id"]},{eq["vencimiento"]},{licencia_short}'
+                writer.writerow(
+                    [eq["nombre"], eq["machine_id"], eq["vencimiento"], licencia_short]
                 )
             
             return {
                 "formato": "csv",
-                "contenido": "\n".join(csv_lines),
+                "contenido": output.getvalue(),
                 "cantidad": len(equipos)
             }
         

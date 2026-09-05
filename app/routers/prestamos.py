@@ -310,10 +310,14 @@ async def sync_prestamos(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
+    allowed_zones = get_allowed_zone_ids(db, user)
     prestamos = db.query(Prestamo).filter(
         Prestamo.empresa_id == user.empresa_id,
         Prestamo.estado.in_(["Activo", "Atrasado"])
-    ).limit(2000).all()
+    )
+    if allowed_zones is not None:
+        prestamos = prestamos.filter(Prestamo.zona_id.in_(allowed_zones or [-1]))
+    prestamos = prestamos.limit(2000).all()
     return JSONResponse([{
         "id": p.id, "cliente_id": p.cliente_id,
         "capital": float(p.capital or 0),
@@ -331,10 +335,15 @@ async def sync_cuotas(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
-    cuotas = db.query(Cuota).filter(
+    allowed_zones = get_allowed_zone_ids(db, user)
+    cuotas = db.query(Cuota).join(Prestamo, Cuota.prestamo_id == Prestamo.id).filter(
         Cuota.empresa_id == user.empresa_id,
+        Prestamo.empresa_id == user.empresa_id,
         Cuota.estado == "Pendiente"
-    ).limit(5000).all()
+    )
+    if allowed_zones is not None:
+        cuotas = cuotas.filter(Prestamo.zona_id.in_(allowed_zones or [-1]))
+    cuotas = cuotas.limit(5000).all()
     return JSONResponse([{
         "id": c.id, "prestamo_id": c.prestamo_id,
         "numero": c.numero,

@@ -48,8 +48,12 @@ from app.routers import (
 )
 from app.services.scheduler import iniciar_scheduler
 from app.utils.csrf import CSRFMiddleware
+from app.utils.body_size_limit import BodySizeLimitMiddleware
+from app.utils.audit_middleware import AuditMiddleware
+from app.utils.request_id import RequestIDMiddleware
 from app.utils.license_middleware import LicenseMiddleware
 from app.utils.rate_limit import InMemoryRateLimitMiddleware
+from app.utils.security_headers import SecurityHeadersMiddleware
 from app.utils.seed import seed_data_demo
 from app.utils.settings import settings
 from app.utils.zone_permissions import require_zone_access
@@ -122,13 +126,15 @@ app = FastAPI(
     docs_url="/api/docs",
 )
 
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=session_secret,
-)
 app.add_middleware(LicenseMiddleware)
 app.add_middleware(CSRFMiddleware)
 app.add_middleware(InMemoryRateLimitMiddleware)
+app.add_middleware(BodySizeLimitMiddleware)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    is_production=settings.IS_PRODUCTION,
+    use_strict_csp=False,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -136,9 +142,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=session_secret,
+)
+app.add_middleware(AuditMiddleware)
+app.add_middleware(RequestIDMiddleware)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-app.mount("/uploads", StaticFiles(directory=str(BASE_DIR / "uploads")), name="uploads")
 templates = Jinja2Templates(directory="templates")
 
 
@@ -192,8 +203,8 @@ async def root(request: Request):
             "software_name": settings.SOFTWARE_NAME,
             "software_owner": settings.SOFTWARE_OWNER,
             "license_valid": license_valid,
-            "start_url": "/seleccionar-empresa" if license_valid else "/license/activar",
-            "start_label": "Iniciar" if license_valid else "Activar",
+            "start_url": "/license/activar",
+            "start_label": "Iniciar",
         },
     )
 
@@ -201,6 +212,11 @@ async def root(request: Request):
 @app.get("/inicio")
 async def inicio(request: Request):
     return RedirectResponse(url="/", status_code=302)
+
+
+@app.get("/comprar")
+async def comprar():
+    return RedirectResponse(url=os.getenv("PURCHASE_URL", "/license/activar"), status_code=302)
 
 
 @app.get("/uploads/fotos/{filename}")
