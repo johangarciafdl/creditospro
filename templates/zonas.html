@@ -69,9 +69,17 @@
         <div class="form-group"><label>Nombre *</label><input type="text" name="nombre" placeholder="Granizal" required></div>
         <div class="form-group"><label>Ciudad</label><input type="text" name="ciudad" value="Medellín"></div>
         <div class="form-group"><label>País</label><input type="text" name="pais" value="Colombia"></div>
-        <div class="form-group"><label>Cobrador</label><input type="text" name="cobrador_nombre"></div>
-        <div class="form-group"><label>Tel. cobrador</label><input type="tel" name="cobrador_tel"></div>
-        <div class="form-group"><label>Moto/Placa</label><input type="text" name="cobrador_moto"></div>
+        <div class="form-group">
+          <label>Cobrador</label>
+          <select name="cobrador_nombre">
+            <option value="">Sin asignar</option>
+            {% for e in empleados %}
+            <option value="{{ e.nombre }}">{{ e.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group"><label>Tel. cobrador</label><input type="tel" name="cobrador_tel" maxlength="10" pattern="[0-9]{7,10}" inputmode="numeric" placeholder="3001234567" title="Solo numeros, entre 7 y 10 digitos"></div>
+        <div class="form-group"><label>Moto/Placa</label><input type="text" name="cobrador_moto" maxlength="6" pattern="[A-Za-z0-9]{6}" style="text-transform:uppercase" placeholder="ABC123" title="Exactamente 6 caracteres alfanumericos"></div>
       </div>
     </form>
   
@@ -104,22 +112,36 @@
 
 {% block extra_scripts %}
 <script nonce="{{ csp_nonce }}">
+const EMPLEADOS_ZONA = {{ empleados|tojson }};
+
 async function guardarZona() {
   const fd = new FormData(document.getElementById('form-zona'));
   const r = await window.fetch('/zonas/nueva', { method:'POST', body: fd });
   const d = await r.json();
   if (d.ok) { toast('Zona creada ✓'); setTimeout(() => location.reload(), 800); }
-  else toast('Error', 'error');
+  else toast(d.error || 'Error', 'error');
 }
 
 function editarZona(id, nombre, cobrador, tel, moto) {
+  // Los campos sin valor llegan como "—" (placeholder de la tarjeta), no vacios.
+  if (cobrador === '—') cobrador = '';
+  // El cobrador actual puede ya no estar activo -- se agrega igual como
+  // opcion para no perderlo silenciosamente al abrir el formulario.
+  const nombres = EMPLEADOS_ZONA.map(e => e.nombre);
+  const opciones = [`<option value=""${!cobrador ? ' selected' : ''}>Sin asignar</option>`];
+  if (cobrador && !nombres.includes(cobrador)) {
+    opciones.push(`<option value="${attr(cobrador)}" selected>${esc(cobrador)} (inactivo)</option>`);
+  }
+  for (const emp of EMPLEADOS_ZONA) {
+    opciones.push(`<option value="${attr(emp.nombre)}"${emp.nombre === cobrador ? ' selected' : ''}>${esc(emp.nombre)}</option>`);
+  }
   abrirModal('Editar Zona — ' + esc(nombre),
     `<form id="fe-zona">
       <div class="form-grid">
         <div class="form-group full"><label>Nombre</label><input name="nombre" value="${attr(nombre)}"></div>
-        <div class="form-group"><label>Cobrador</label><input name="cobrador_nombre" value="${attr(cobrador)}"></div>
-        <div class="form-group"><label>Teléfono</label><input name="cobrador_tel" value="${attr(tel)}"></div>
-        <div class="form-group full"><label>Moto/Placa</label><input name="cobrador_moto" value="${attr(moto)}"></div>
+        <div class="form-group"><label>Cobrador</label><select name="cobrador_nombre">${opciones.join('')}</select></div>
+        <div class="form-group"><label>Teléfono</label><input name="cobrador_tel" value="${attr(tel === '—' ? '' : tel)}" maxlength="10" pattern="[0-9]{7,10}" inputmode="numeric" title="Solo numeros, entre 7 y 10 digitos"></div>
+        <div class="form-group full"><label>Moto/Placa</label><input name="cobrador_moto" value="${attr(moto === '—' ? '' : moto)}" maxlength="6" pattern="[A-Za-z0-9]{6}" style="text-transform:uppercase" title="Exactamente 6 caracteres alfanumericos"></div>
       </div>
     </form>`,
     `<button class="btn" onclick="cerrarModal()">Cancelar</button>
