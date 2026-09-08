@@ -37,6 +37,9 @@ uploads/*.png
 .env.*
 !.env.example
 
+# Config local de MCP (referencia project_ref de Supabase, no es secreto pero es local)
+.mcp.json
+
 # Licencias (artefactos locales con datos sensibles)
 license.key
 license_*.txt

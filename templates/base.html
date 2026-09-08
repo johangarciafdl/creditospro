@@ -440,6 +440,37 @@ function toast(msg,tipo='success',ms=3200){
 function cop(n){return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0,maximumFractionDigits:0}).format(n||0)}
 function fmt(n){return new Intl.NumberFormat('es-CO').format(Math.round(n||0))}
 
+// ── MODAL GENERICO (abrirModal/cerrarModal) ──
+// Usado por paginas que arman el contenido del modal dinamicamente
+// (ej. zonas.html, whatsapp.html). titulo/cuerpo/pie ya vienen escapados
+// por quien llama (esc()/attr()) antes de interpolarse en el HTML.
+function abrirModal(titulo,cuerpoHtml,pieHtml){
+  let modal=document.getElementById('modal-generico');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='modal-generico';
+    modal.className='modal-overlay';
+    modal.innerHTML='<div class="modal" onclick="event.stopPropagation()">'
+      +'<div class="modal-header">'
+        +'<div class="modal-title" id="modal-generico-titulo"></div>'
+        +'<button class="btn btn-ghost btn-icon" onclick="cerrarModal()">✕</button>'
+      +'</div>'
+      +'<div class="modal-body" id="modal-generico-cuerpo"></div>'
+      +'<div class="modal-footer" id="modal-generico-pie"></div>'
+    +'</div>';
+    document.body.appendChild(modal);
+    if(typeof observer!=='undefined')observer.observe(modal,{attributes:true,attributeFilter:['class']});
+  }
+  document.getElementById('modal-generico-titulo').innerHTML=titulo||'';
+  document.getElementById('modal-generico-cuerpo').innerHTML=cuerpoHtml||'';
+  document.getElementById('modal-generico-pie').innerHTML=pieHtml||'';
+  modal.classList.add('open');
+}
+function cerrarModal(){
+  const modal=document.getElementById('modal-generico');
+  if(modal)modal.classList.remove('open');
+}
+
 // ── MODAL CLOSE ON ESC ──
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'))});
 
