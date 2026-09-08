@@ -1,5 +1,6 @@
 """Rate limit en memoria. Adecuado para 1 worker. Para multi-worker usar Redis."""
 import logging
+import re
 import time
 from collections import defaultdict, deque
 from threading import Lock
@@ -9,7 +10,7 @@ from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
-# Reglas por defecto: ruta -> (max_requests, ventana_segundos)
+# Reglas por defecto: ruta exacta -> (max_requests, ventana_segundos)
 # Se aplican solo a metodos POST/PUT/PATCH/DELETE.
 DEFAULT_RULES = {
     "/auth/login": (10, 60),
@@ -22,6 +23,19 @@ DEFAULT_RULES = {
     "/whatsapp/enviar-ahora": (5, 300),
     "/whatsapp/enviar-manual": (30, 60),
 }
+
+# Reglas para rutas con parametro (ej. /zonas/{id}/editar) -- el dict de
+# arriba solo hace match exacto y nunca las cubre. patron -> (max, ventana).
+# El patron completo (no la URL con el id real) se usa como key del bucket,
+# para que /zonas/1/editar y /zonas/2/editar compartan el mismo limite.
+PARAM_RULES = [
+    (re.compile(r"^/zonas/\d+/editar$"), 20, 60),
+    (re.compile(r"^/cobros/registrar-cliente/\d+$"), 60, 60),
+    (re.compile(r"^/clientes/\d+/editar$"), 20, 60),
+    (re.compile(r"^/auth/usuarios/\d+/editar$"), 10, 300),
+    (re.compile(r"^/auth/usuarios/\d+$"), 10, 300),
+    (re.compile(r"^/auth/sesiones/[^/]+/revocar$"), 10, 300),
+]
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -53,20 +67,29 @@ class InMemoryRateLimitMiddleware(BaseHTTPMiddleware):
             return True
 
     async def dispatch(self, request, call_next):
-        rule = self.rules.get(request.url.path)
-        if request.method in UNSAFE_METHODS and rule:
-            limit, window = rule
-            client = _client_ip(request)
-            if not self._check(request.url.path, client, limit, window):
-                logger.warning(
-                    "Rate limit alcanzado: path=%s ip=%s (%s/%ss)",
-                    request.url.path, client, limit, window,
-                )
-                return JSONResponse(
-                    {"error": "Demasiados intentos. Intenta mas tarde."},
-                    status_code=429,
-                    headers={"Retry-After": str(window)},
-                )
+        if request.method in UNSAFE_METHODS:
+            path = request.url.path
+            bucket_key = path
+            rule = self.rules.get(path)
+            if rule is None:
+                for pattern, limit, window in PARAM_RULES:
+                    if pattern.match(path):
+                        rule = (limit, window)
+                        bucket_key = pattern.pattern  # patron, no la url real, para compartir el balde
+                        break
+            if rule:
+                limit, window = rule
+                client = _client_ip(request)
+                if not self._check(bucket_key, client, limit, window):
+                    logger.warning(
+                        "Rate limit alcanzado: path=%s ip=%s (%s/%ss)",
+                        path, client, limit, window,
+                    )
+                    return JSONResponse(
+                        {"error": "Demasiados intentos. Intenta mas tarde."},
+                        status_code=429,
+                        headers={"Retry-After": str(window)},
+                    )
         return await call_next(request)
 
 
