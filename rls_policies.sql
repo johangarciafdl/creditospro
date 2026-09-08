@@ -31,6 +31,7 @@ CREATE OR REPLACE FUNCTION public.current_empresa_id()
 RETURNS integer
 LANGUAGE sql
 STABLE
+SET search_path = ''
 AS $$
   SELECT NULLIF(current_setting('app.empresa_id', true), '')::integer;
 $$;
