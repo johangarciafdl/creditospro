@@ -131,11 +131,27 @@ async function buscar() {
   if (q)       params.set('q', q);
   if (zona_id) params.set('zona_id', zona_id);
 
+  async function obtenerDatos() {
+    if (!navigator.onLine) {
+      if (!window.pwa) throw new Error('Sin conexion y sin respaldo offline');
+      const clientes = await window.pwa.getClientesOffline(q, zona_id);
+      if (typeof toast === 'function') toast('Sin conexion: mostrando datos guardados en el celular', 'warn');
+      return { clientes };
+    }
+    try {
+      const r = await window.fetch('/clientes/buscar-ajax?' + params.toString());
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      if (!window.pwa) throw e;
+      const clientes = await window.pwa.getClientesOffline(q, zona_id);
+      if (typeof toast === 'function') toast('Sin conexion: mostrando datos guardados en el celular', 'warn');
+      return { clientes };
+    }
+  }
+
   try {
-    const r    = await window.fetch('/clientes/buscar-ajax?' + params.toString());
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    
-    const data = await r.json();
+    const data = await obtenerDatos();
 
     if (!data.clientes || data.clientes.length === 0) {
       document.getElementById('estado-busqueda').innerHTML =

@@ -55,6 +55,19 @@ async def listar_zonas(request: Request, db: Session = Depends(get_db)):
     })
 
 
+@router.get("/sync")
+async def sync_zonas(request: Request, db: Session = Depends(get_db)):
+    """Lista minima (id, nombre) para que la PWA resuelva nombres de zona sin conexion."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    allowed_zones = get_allowed_zone_ids(db, user)
+    zonas_q = db.query(Zona).filter(Zona.empresa_id == user.empresa_id)
+    if allowed_zones is not None:
+        zonas_q = zonas_q.filter(Zona.id.in_(allowed_zones or [-1]))
+    return JSONResponse([{"id": z.id, "nombre": z.nombre} for z in zonas_q.all()])
+
+
 @router.post("/nueva")
 async def crear_zona(
     request: Request,

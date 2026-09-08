@@ -27,6 +27,16 @@ async function initPwaDb() {
       cobros: '++id, prestamo_id, empresa_id, fecha, sincronizado',
       sincronizacion: 'id'
     });
+    // v2: se agrega "zonas" para poder mostrar el nombre de la zona
+    // (no solo el zona_id) en Clientes/Préstamos sin conexión.
+    pwaDb.version(2).stores({
+      clientes: 'id, empresa_id, cedula',
+      prestamos: 'id, cliente_id, empresa_id, estado',
+      cuotas: 'id, prestamo_id, empresa_id, estado',
+      cobros: '++id, prestamo_id, empresa_id, fecha, sincronizado',
+      sincronizacion: 'id',
+      zonas: 'id, empresa_id',
+    });
 
     // Crear tablas si no existen
     await pwaDb.open();
@@ -119,6 +129,16 @@ async function downloadData() {
         await pwaDb.cuotas.bulkPut(cuotas);
       }
       console.log(`[PWA] ${cuotas.length} cuotas descargadas`);
+    }
+
+    // Descargar zonas (para poder mostrar el nombre de zona sin conexion)
+    const zonasRes = await fetch('/zonas/sync', { credentials: 'same-origin' });
+    if (zonasRes.ok) {
+      const zonas = await zonasRes.json();
+      if (pwaDb.zonas && pwaDb.zonas.bulkPut) {
+        await pwaDb.zonas.bulkPut(zonas);
+      }
+      console.log(`[PWA] ${zonas.length} zonas descargadas`);
     }
   } catch (err) {
     console.error('[PWA] Error descargando datos:', err);
@@ -306,6 +326,129 @@ async function getPendientesOffline(q, zonaId, fecha) {
   }));
 }
 
+/**
+ * Replica /clientes/buscar-ajax leyendo de IndexedDB (clientes+prestamos+
+ * zonas ya descargados) para poder seguir consultando clientes sin señal.
+ * No pagina (basta con un tope razonable para consulta en campo).
+ */
+async function getClientesOffline(q, zonaId) {
+  if (!pwaDb) pwaDb = await initPwaDb();
+  if (!pwaDb.clientes || !pwaDb.clientes.toArray) return [];
+
+  const qLower = (q || '').trim().toLowerCase();
+  const zonaNum = zonaId ? Number(zonaId) : null;
+  if (!qLower && !zonaNum) return [];
+
+  const [clientes, prestamos, zonas] = await Promise.all([
+    pwaDb.clientes.toArray(),
+    pwaDb.prestamos.toArray(),
+    (pwaDb.zonas && pwaDb.zonas.toArray) ? pwaDb.zonas.toArray() : Promise.resolve([]),
+  ]);
+  const zonasPorId = new Map(zonas.map(z => [z.id, z.nombre]));
+  const estadosActivos = ['Activo', 'activo', 'Atrasado', 'atrasado'];
+  const prestamoPorCliente = new Map();
+  for (const p of prestamos) {
+    if (!estadosActivos.includes(p.estado)) continue;
+    if (!prestamoPorCliente.has(p.cliente_id)) prestamoPorCliente.set(p.cliente_id, p);
+  }
+
+  return clientes
+    .filter(c => {
+      if (zonaNum && Number(c.zona_id) !== zonaNum) return false;
+      if (qLower) {
+        const enNombre = (c.nombre || '').toLowerCase().includes(qLower);
+        const enCedula = (c.cedula || '').toLowerCase().includes(qLower);
+        if (!enNombre && !enCedula) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
+    .slice(0, 100)
+    .map(c => {
+      const p = prestamoPorCliente.get(c.id);
+      return {
+        id: c.id,
+        cedula: c.cedula,
+        nombre: c.nombre,
+        telefono: c.telefono || '',
+        whatsapp: c.telefono || '',
+        zona: zonasPorId.get(c.zona_id) || '—',
+        zona_id: c.zona_id,
+        tipo_cliente: c.tipo_cliente || 'Regular',
+        foto_path: '',
+        prestamo: p ? {
+          id: p.id,
+          capital: Number(p.capital) || 0,
+          total: Number(p.total_pagar || p.capital) || 0,
+          saldo: Number(p.total_pagar || p.capital) || 0,
+          num_cuotas: p.num_cuotas || 0,
+          estado: p.estado || 'Activo',
+        } : null,
+      };
+    });
+}
+
+/**
+ * Replica /prestamos/buscar-ajax leyendo de IndexedDB para poder seguir
+ * consultando la lista de prestamos sin señal.
+ */
+async function getPrestamosOffline(q, estado, zonaId) {
+  if (!pwaDb) pwaDb = await initPwaDb();
+  if (!pwaDb.prestamos || !pwaDb.prestamos.toArray) return [];
+
+  const qLower = (q || '').trim().toLowerCase();
+  const estadoLower = (estado || '').trim().toLowerCase();
+  const zonaNum = zonaId ? Number(zonaId) : null;
+  if (!qLower && !estadoLower && !zonaNum) return [];
+
+  const [prestamos, clientes, zonas] = await Promise.all([
+    pwaDb.prestamos.toArray(),
+    pwaDb.clientes.toArray(),
+    (pwaDb.zonas && pwaDb.zonas.toArray) ? pwaDb.zonas.toArray() : Promise.resolve([]),
+  ]);
+  const clientesPorId = new Map(clientes.map(c => [c.id, c]));
+  const zonasPorId = new Map(zonas.map(z => [z.id, z.nombre]));
+
+  const formatearFecha = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+
+  return prestamos
+    .filter(p => {
+      if (zonaNum && Number(p.zona_id) !== zonaNum) return false;
+      if (estadoLower && !(p.estado || '').toLowerCase().includes(estadoLower)) return false;
+      if (qLower) {
+        const c = clientesPorId.get(p.cliente_id);
+        const enNombre = c && (c.nombre || '').toLowerCase().includes(qLower);
+        const enCedula = c && (c.cedula || '').toLowerCase().includes(qLower);
+        if (!enNombre && !enCedula) return false;
+      }
+      return true;
+    })
+    .slice(0, 100)
+    .map(p => {
+      const c = clientesPorId.get(p.cliente_id) || {};
+      return {
+        id: p.id,
+        cliente: c.nombre || '—',
+        cedula: c.cedula || '—',
+        cliente_id: p.cliente_id,
+        capital: Number(p.capital) || 0,
+        total: Number(p.total_pagar || p.capital) || 0,
+        saldo: Number(p.total_pagar || p.capital) || 0,
+        num_cuotas: p.num_cuotas || 0,
+        valor_cuota: Number(p.valor_cuota) || 0,
+        estado: p.estado || 'Activo',
+        zona: zonasPorId.get(p.zona_id) || '—',
+        fecha_inicio: formatearFecha(p.fecha_inicio),
+        tipo_cliente: c.tipo_cliente || 'Regular',
+      };
+    });
+}
+
 async function pendingCobrosCount() {
   if (!pwaDb || !pwaDb.cobros || !pwaDb.cobros.where) return 0;
   try {
@@ -464,6 +607,8 @@ window.pwa = {
   saveCobro,
   syncAllData,
   getPendientesOffline,
+  getClientesOffline,
+  getPrestamosOffline,
   pendingCobrosCount,
   isOnline: () => isOnline,
   getDb: () => pwaDb,

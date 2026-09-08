@@ -180,9 +180,27 @@ async function buscar() {
   if (estado)  params.set('estado', estado);
   if (zona_id) params.set('zona_id', zona_id);
 
+  async function obtenerDatos() {
+    if (!navigator.onLine) {
+      if (!window.pwa) throw new Error('Sin conexion y sin respaldo offline');
+      const prestamos = await window.pwa.getPrestamosOffline(q, estado, zona_id);
+      if (typeof toast === 'function') toast('Sin conexion: mostrando datos guardados en el celular', 'warn');
+      return { prestamos };
+    }
+    try {
+      const r = await window.fetch('/prestamos/buscar-ajax?' + params.toString());
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      if (!window.pwa) throw e;
+      const prestamos = await window.pwa.getPrestamosOffline(q, estado, zona_id);
+      if (typeof toast === 'function') toast('Sin conexion: mostrando datos guardados en el celular', 'warn');
+      return { prestamos };
+    }
+  }
+
   try {
-    const r    = await window.fetch('/prestamos/buscar-ajax?' + params.toString());
-    const data = await r.json();
+    const data = await obtenerDatos();
 
     if (!data.prestamos || data.prestamos.length === 0) {
       document.getElementById('estado-busqueda').innerHTML =
