@@ -178,7 +178,10 @@ async def registrar_cobro(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, 401)
-    if valor_cobrado <= 0:
+    # not (> 0) en vez de <= 0: con NaN ambas comparaciones dan False,
+    # asi que "<= 0" deja pasar un NaN sin querer (float('nan') es lo que
+    # llega si el form envia "nan"/"NaN"); "not (> 0)" si lo rechaza.
+    if not (valor_cobrado > 0):
         return JSONResponse({"error": "Valor invalido"}, 400)
 
     cuota = _lock_for_update(

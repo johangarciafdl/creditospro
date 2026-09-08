@@ -1,15 +1,27 @@
 """Zonas router v2.1 - multi-tenant"""
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db, Zona, Cliente, Prestamo, Cobro
 from app.routers.auth import get_current_user
+from app.utils.validators import validar_nombre, validar_telefono, limpiar_texto
 from app.utils.zone_permissions import get_allowed_zone_ids
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+
+
+def _sin_html(texto: str, campo: str, max_len: int = 100) -> str:
+    """Limpia y rechaza '<'/'>' -- estos campos se muestran en varios lugares
+    del frontend y no tienen un formato fijo (a diferencia de cedula/telefono),
+    asi que en vez de una lista blanca estricta solo bloqueamos lo que
+    permitiria inyectar HTML/JS."""
+    t = limpiar_texto(texto, max_len)
+    if "<" in t or ">" in t:
+        raise HTTPException(400, f"{campo} no puede contener '<' o '>'")
+    return t
 
 
 @router.get("")
@@ -63,13 +75,21 @@ async def crear_zona(
     if existente:
         return JSONResponse({"error": "Código de zona ya existe"}, status_code=400)
 
+    try:
+        nombre = _sin_html(nombre, "Nombre de zona")
+        cobrador_nombre_limpio = _sin_html(cobrador_nombre, "Cobrador") if cobrador_nombre else None
+        cobrador_moto_limpio = _sin_html(cobrador_moto, "Moto/placa", 50) if cobrador_moto else None
+        cobrador_tel_limpio = validar_telefono(cobrador_tel, requerido=False)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
     zona = Zona(
         empresa_id=user.empresa_id,
         codigo=codigo.upper(), nombre=nombre,
         ciudad=ciudad, departamento=departamento, pais=pais,
-        cobrador_nombre=cobrador_nombre or None,
-        cobrador_tel=cobrador_tel or None,
-        cobrador_moto=cobrador_moto or None,
+        cobrador_nombre=cobrador_nombre_limpio,
+        cobrador_tel=cobrador_tel_limpio,
+        cobrador_moto=cobrador_moto_limpio,
         lat=lat, lng=lng,
     )
     db.add(zona)
@@ -97,10 +117,13 @@ async def editar_zona(
     if not zona:
         return JSONResponse({"error": "No encontrado"}, status_code=404)
 
-    zona.nombre = nombre
-    zona.cobrador_nombre = cobrador_nombre or None
-    zona.cobrador_tel = cobrador_tel or None
-    zona.cobrador_moto = cobrador_moto or None
+    try:
+        zona.nombre = _sin_html(nombre, "Nombre de zona")
+        zona.cobrador_nombre = _sin_html(cobrador_nombre, "Cobrador") if cobrador_nombre else None
+        zona.cobrador_moto = _sin_html(cobrador_moto, "Moto/placa", 50) if cobrador_moto else None
+        zona.cobrador_tel = validar_telefono(cobrador_tel, requerido=False)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
     zona.activa = activa.lower() in ("true", "1", "on")
     zona.bot_phone = bot_phone.strip() or None
     zona.bot_apikey = bot_apikey.strip() or None

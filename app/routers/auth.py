@@ -119,9 +119,13 @@ async def login_page(request: Request, next: str = "/dashboard",
     if empresa_id and int(activated_empresa_id) != empresa_id:
         return RedirectResponse(url="/license/activar", status_code=302)
     empresa_id = int(activated_empresa_id)
+    # Solo rutas relativas propias: "next" viene de un query param sin firmar,
+    # sin esto un enlace "/auth/login?next=https://evil.example" redirige a
+    # una sesion ya autenticada hacia un sitio externo (phishing).
+    next_seguro = next if next.startswith("/") and not next.startswith("//") else "/dashboard"
     token = request.cookies.get(SESSION_COOKIE)
     if token and decode_token(token):
-        return RedirectResponse(url=next, status_code=302)
+        return RedirectResponse(url=next_seguro, status_code=302)
     empresa_nombre = None
     logo_url = None
     if empresa_id:

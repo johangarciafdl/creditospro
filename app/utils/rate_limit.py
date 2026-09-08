@@ -16,6 +16,7 @@ DEFAULT_RULES = {
     "/registro": (5, 300),
     "/registro/": (5, 300),
     "/auth/usuarios/nuevo": (10, 300),
+    "/auth/cambiar-password": (10, 300),
     "/license/activate": (3, 60),
     "/cobros/registrar": (60, 60),
     "/whatsapp/enviar-ahora": (5, 300),

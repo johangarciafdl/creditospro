@@ -47,12 +47,16 @@ def validar_telefono(tel: str, requerido: bool = True) -> Optional[str]:
 
 
 def validar_numero_positivo(valor, nombre: str = "valor", minimo: float = 0.01, maximo: float = 100_000_000) -> float:
-    """Valida que un valor numérico esté dentro de un rango."""
+    """Valida que un valor numérico esté dentro de un rango.
+
+    Usa una comparación encadenada (no `v < min or v > max`): con NaN esa
+    forma se evalua False en ambos lados y el valor pasa sin error.
+    """
     try:
         v = float(valor)
     except (TypeError, ValueError):
         raise HTTPException(400, f"{nombre} debe ser un número válido")
-    if v < minimo or v > maximo:
+    if not (minimo <= v <= maximo):
         raise HTTPException(400, f"{nombre} debe estar entre {minimo} y {maximo}")
     return v
 

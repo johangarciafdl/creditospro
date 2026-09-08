@@ -262,11 +262,11 @@ async function buscarCliente() {
     }
     
     lista.innerHTML = data.clientes.map(c => `
-      <div onclick="selCliente(${c.id},'${c.nombre.replace(/'/g, "\\'")}',${c.zona_id||'null'})"
+      <div onclick="selCliente(${Number(c.id)||0},${attr(JSON.stringify(c.nombre||''))},${c.zona_id?Number(c.zona_id):'null'})"
            style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);"
            onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
-        <div class="fw-600 fs-13">${c.nombre}</div>
-        <div class="fs-11 text-2">CC ${c.cedula} · ${c.zona}</div>
+        <div class="fw-600 fs-13">${esc(c.nombre)}</div>
+        <div class="fs-11 text-2">CC ${esc(c.cedula)} · ${esc(c.zona)}</div>
       </div>`).join('');
     lista.style.display = 'block';
   } catch(e) {

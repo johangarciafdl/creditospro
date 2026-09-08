@@ -44,7 +44,10 @@
       </div>
 
       <div class="flex gap-1">
-        <button class="btn btn-ghost btn-xs" style="flex:1;" onclick="editarZona({{ z.id }}, '{{ z.nombre }}', '{{ z.cobrador }}', '{{ z.cobrador_tel }}', '{{ z.cobrador_moto }}')">✏ Editar</button>
+        <button class="btn btn-ghost btn-xs" style="flex:1;"
+          data-zona-id="{{ z.id }}" data-zona-nombre="{{ z.nombre }}"
+          data-zona-cobrador="{{ z.cobrador }}" data-zona-tel="{{ z.cobrador_tel }}" data-zona-moto="{{ z.cobrador_moto }}"
+          onclick="editarZona(Number(this.dataset.zonaId), this.dataset.zonaNombre, this.dataset.zonaCobrador, this.dataset.zonaTel, this.dataset.zonaMoto)">✏ Editar</button>
         <a href="/reportes/resumen-zonas" class="btn btn-secondary btn-xs" style="flex:1;justify-content:center;">⬇ Excel</a>
       </div>
     </div>
@@ -110,17 +113,17 @@ async function guardarZona() {
 }
 
 function editarZona(id, nombre, cobrador, tel, moto) {
-  abrirModal('Editar Zona — ' + nombre,
+  abrirModal('Editar Zona — ' + esc(nombre),
     `<form id="fe-zona">
       <div class="form-grid">
-        <div class="form-group full"><label>Nombre</label><input name="nombre" value="${nombre}"></div>
-        <div class="form-group"><label>Cobrador</label><input name="cobrador_nombre" value="${cobrador}"></div>
-        <div class="form-group"><label>Teléfono</label><input name="cobrador_tel" value="${tel}"></div>
-        <div class="form-group full"><label>Moto/Placa</label><input name="cobrador_moto" value="${moto}"></div>
+        <div class="form-group full"><label>Nombre</label><input name="nombre" value="${attr(nombre)}"></div>
+        <div class="form-group"><label>Cobrador</label><input name="cobrador_nombre" value="${attr(cobrador)}"></div>
+        <div class="form-group"><label>Teléfono</label><input name="cobrador_tel" value="${attr(tel)}"></div>
+        <div class="form-group full"><label>Moto/Placa</label><input name="cobrador_moto" value="${attr(moto)}"></div>
       </div>
     </form>`,
     `<button class="btn" onclick="cerrarModal()">Cancelar</button>
-     <button class="btn btn-primary" onclick="actualizarZona(${id})">Guardar</button>`
+     <button class="btn btn-primary" onclick="actualizarZona(${Number(id)||0})">Guardar</button>`
   );
 }
 
