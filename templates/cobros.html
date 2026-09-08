@@ -189,6 +189,15 @@ async function buscar(){
   estado.style.display='block';
   const params=new URLSearchParams();
   if(q)params.set('q',q);if(zona_id)params.set('zona_id',zona_id);if(fecha)params.set('fecha',fecha);
+
+  if(_tab==='pendientes'&&!navigator.onLine&&window.pwa){
+    const items=await window.pwa.getPendientesOffline(q,zona_id,fecha);
+    renderPendientes(items);
+    estado.style.display='none';
+    if(typeof toast==='function')toast('Sin conexion: mostrando datos guardados en el celular','warn');
+    return;
+  }
+
   try{
     if(_tab==='pendientes'){
       const r=await window.fetch('/cobros/pendientes-ajax?'+params);
@@ -200,7 +209,16 @@ async function buscar(){
       renderHistorial(d.cobros||[]);
     }
     estado.style.display='none';
-  }catch(e){estado.innerHTML='<div style="color:var(--red);">Error de conexion</div>';}
+  }catch(e){
+    if(_tab==='pendientes'&&window.pwa){
+      const items=await window.pwa.getPendientesOffline(q,zona_id,fecha);
+      renderPendientes(items);
+      estado.style.display='none';
+      if(typeof toast==='function')toast('Sin conexion: mostrando datos guardados en el celular','warn');
+    }else{
+      estado.innerHTML='<div style="color:var(--red);">Error de conexion</div>';
+    }
+  }
 }
 
 function renderPendientes(items){
@@ -331,18 +349,27 @@ async function confirmarCobro(){
   const btn=document.getElementById('btn-confirmar');
   btn.disabled=true;btn.textContent='Registrando...';
 
-  const fd=new FormData();
-  fd.append('cuota_id',cuota_id);
-  fd.append('valor_cobrado',valor);
-  fd.append('metodo_pago',document.getElementById('mc-metodo').value);
-  fd.append('observaciones',document.getElementById('mc-obs').value);
-  fd.append('lat',document.getElementById('mc-lat').value);
-  fd.append('lng',document.getElementById('mc-lng').value);
-
-  // Adjuntar foto si hay
+  const metodo_pago=document.getElementById('mc-metodo').value;
+  const observaciones=document.getElementById('mc-obs').value;
+  const lat=document.getElementById('mc-lat').value;
+  const lng=document.getElementById('mc-lng').value;
   const fotoInput=document.getElementById('mc-foto-camara');
   const fotoInput2=document.getElementById('mc-foto-input');
   const fotoFile=(fotoInput.files[0]||fotoInput2.files[0]);
+
+  if(!navigator.onLine&&window.pwa){
+    await guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat,lng,fotoFile});
+    btn.disabled=false;btn.textContent='Registrar Cobro';
+    return;
+  }
+
+  const fd=new FormData();
+  fd.append('cuota_id',cuota_id);
+  fd.append('valor_cobrado',valor);
+  fd.append('metodo_pago',metodo_pago);
+  fd.append('observaciones',observaciones);
+  fd.append('lat',lat);
+  fd.append('lng',lng);
   if(fotoFile)fd.append('foto',fotoFile);
 
   try{
@@ -353,8 +380,30 @@ async function confirmarCobro(){
       toast(d.mensaje,'success');
       setTimeout(buscar,600);
     }else{alert(d.error||'Error al registrar');}
-  }catch(e){alert('Error de conexion');}
+  }catch(e){
+    if(window.pwa){
+      await guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat,lng,fotoFile});
+    }else{
+      alert('Error de conexion');
+    }
+  }
   btn.disabled=false;btn.textContent='Registrar Cobro';
+}
+
+async function guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat,lng,fotoFile}){
+  try{
+    await window.pwa.saveCobro({
+      cuota_id,valor_cobrado:valor,metodo_pago,
+      observaciones:observaciones||'Cobro registrado sin conexion',
+      lat,lng,foto:fotoFile||null,
+    });
+    document.getElementById('modal-cobro').classList.remove('open');
+    toast('Sin conexion: cobro guardado en el celular, se enviara solo al recuperar señal','warn');
+    setTimeout(buscar,600);
+  }catch(err){
+    console.error('[Cobros] Error guardando cobro offline:',err);
+    alert('No se pudo guardar el cobro ni siquiera localmente. Anotalo a mano por seguridad.');
+  }
 }
 
 function cop(n){return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0,maximumFractionDigits:0}).format(n||0)}

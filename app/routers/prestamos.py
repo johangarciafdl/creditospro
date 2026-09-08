@@ -319,7 +319,7 @@ async def sync_prestamos(request: Request, db: Session = Depends(get_db)):
         prestamos = prestamos.filter(Prestamo.zona_id.in_(allowed_zones or [-1]))
     prestamos = prestamos.limit(2000).all()
     return JSONResponse([{
-        "id": p.id, "cliente_id": p.cliente_id,
+        "id": p.id, "cliente_id": p.cliente_id, "zona_id": p.zona_id,
         "capital": float(p.capital or 0),
         "total_pagar": float(p.total_pagar or p.capital or 0),
         "num_cuotas": p.num_cuotas or 0,
@@ -331,7 +331,11 @@ async def sync_prestamos(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/sync/cuotas")
 async def sync_cuotas(request: Request, db: Session = Depends(get_db)):
-    """Retorna todas las cuotas pendientes para sincronización offline."""
+    """Retorna todas las cuotas pendientes/vencidas/parciales para sincronización offline.
+
+    Incluye Vencida y Parcial ademas de Pendiente: son justo las que un
+    cobrador sin señal necesita ver para saber a quien cobrar.
+    """
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
@@ -339,7 +343,7 @@ async def sync_cuotas(request: Request, db: Session = Depends(get_db)):
     cuotas = db.query(Cuota).join(Prestamo, Cuota.prestamo_id == Prestamo.id).filter(
         Cuota.empresa_id == user.empresa_id,
         Prestamo.empresa_id == user.empresa_id,
-        Cuota.estado == "Pendiente"
+        Cuota.estado.in_(["Pendiente", "Vencida", "Parcial"])
     )
     if allowed_zones is not None:
         cuotas = cuotas.filter(Prestamo.zona_id.in_(allowed_zones or [-1]))

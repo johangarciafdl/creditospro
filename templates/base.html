@@ -355,6 +355,8 @@ window.attr = window.esc;
       <span class="topbar-sub">{% block topbar_sub %}{% endblock %}</span>
     </div>
     <div class="topbar-actions">
+      <span data-pending-count style="display:none;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--abg);color:var(--amber);"></span>
+      <span data-online-indicator style="font-size:11px;font-weight:600;"></span>
       <span style="font-size:11px;color:var(--t4);font-family:var(--mono);" id="fecha-hora"></span>
       {% block topbar_actions %}{% endblock %}
     </div>
@@ -517,7 +519,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 // ── PWA ──
-if('serviceWorker' in navigator)navigator.serviceWorker.register('/static/sw.js').catch(()=>{});
+// El registro del Service Worker y la inicializacion de IndexedDB
+// ocurren en pwa.js (initPwa), cargado mas abajo — no duplicar aqui.
 let _pwaP=null;
 window.addEventListener('beforeinstallprompt',e=>{
   e.preventDefault();_pwaP=e;
@@ -552,6 +555,8 @@ window.fetch = function(url, opts={}) {
   return _origFetch(url, opts);
 };
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
+<script src="/static/js/pwa.js"></script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

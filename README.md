@@ -87,7 +87,9 @@ La PWA cachea datos mientras el cobrador tiene señal, y permite seguir consulta
 
 1. Por la mañana, con WiFi/datos disponibles, abre la app normalmente para que el celular descargue los datos del día.
 2. En la calle, sin señal, sigue usando la app — los cobros registrados quedan guardados localmente.
-3. Al recuperar conexión (de vuelta en la oficina, o con datos móviles), la app sincroniza automáticamente.
+3. Al recuperar conexión (de vuelta en la oficina, o con datos móviles) **con la app abierta o al reabrirla**, sincroniza automáticamente — clientes/cuotas/préstamos se actualizan y los cobros pendientes se envían solos, incluida la foto si el cobro llevaba una.
+
+En Android con Chrome, la sincronización de cobros pendientes también puede dispararse en segundo plano aunque la app esté cerrada (Background Sync). En iPhone/Safari eso no está disponible — ahí la sincronización ocurre en cuanto el cobrador vuelve a abrir la app con señal, que es el flujo normal de todos modos.
 
 Si el celular no tiene datos móviles ni acceso a la WiFi del PC en ningún momento del día, no hay forma de sincronizar en tiempo real — la alternativa es anotar los cobros y registrarlos manualmente al volver a tener acceso.
 

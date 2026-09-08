@@ -145,20 +145,20 @@ async function uploadPendingCobros() {
 
     for (const cobro of cobrosPendientes) {
       try {
-        const form = new URLSearchParams();
+        const form = new FormData();
         form.set('cuota_id', String(cobro.cuota_id));
         form.set('valor_cobrado', String(cobro.valor_cobrado));
         form.set('metodo_pago', String(cobro.metodo_pago || 'Efectivo'));
         form.set('observaciones', String(cobro.observaciones || 'Cobro sincronizado desde PWA'));
         form.set('lat', String(cobro.lat || ''));
         form.set('lng', String(cobro.lng || ''));
+        if (cobro.foto instanceof Blob) {
+          form.set('foto', cobro.foto, cobro.foto.name || 'cobro.jpg');
+        }
         const response = await fetch('/cobros/registrar', {
           method: 'POST',
           credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-            'X-CSRF-Token': getCookie('cp_csrf'),
-          },
+          headers: { 'X-CSRF-Token': getCookie('cp_csrf') },
           body: form,
         });
 
@@ -166,11 +166,14 @@ async function uploadPendingCobros() {
           // Marcar como sincronizado
           await pwaDb.cobros.update(cobro.id, { sincronizado: 1 });
           console.log(`[PWA] Cobro #${cobro.id} sincronizado`);
+        } else {
+          console.warn(`[PWA] Cobro #${cobro.id} rechazado por el servidor (${response.status})`);
         }
       } catch (err) {
         console.error(`[PWA] Error sincronizando cobro #${cobro.id}:`, err);
       }
     }
+    await updatePendingBadge();
   } catch (err) {
     console.error('[PWA] Error en uploadPendingCobros:', err);
     throw err;
@@ -187,20 +190,20 @@ async function saveCobro(cobroData) {
   try {
     if (isOnline) {
       // Si está online, enviar directo al servidor
-      const form = new URLSearchParams();
+      const form = new FormData();
       form.set('cuota_id', String(cobroData.cuota_id));
       form.set('valor_cobrado', String(cobroData.valor_cobrado));
       form.set('metodo_pago', String(cobroData.metodo_pago || 'Efectivo'));
       form.set('observaciones', String(cobroData.observaciones || 'Cobro desde PWA'));
       form.set('lat', String(cobroData.lat || ''));
       form.set('lng', String(cobroData.lng || ''));
+      if (cobroData.foto instanceof Blob) {
+        form.set('foto', cobroData.foto, cobroData.foto.name || 'cobro.jpg');
+      }
       const response = await fetch('/cobros/registrar', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-          'X-CSRF-Token': getCookie('cp_csrf'),
-        },
+        headers: { 'X-CSRF-Token': getCookie('cp_csrf') },
         body: form,
       });
 
@@ -210,26 +213,117 @@ async function saveCobro(cobroData) {
 
       return await response.json();
     } else {
-      // Si está offline, guardar en IndexedDB
+      // Si está offline, guardar en IndexedDB (incluida la foto, si hay)
+      if (!pwaDb) pwaDb = await initPwaDb();
       cobroData.sincronizado = 0;
       cobroData.fecha_registro_offline = new Date().toISOString();
 
-      if (pwaDb.cobros) {
+      if (pwaDb.cobros && pwaDb.cobros.add) {
         const id = await pwaDb.cobros.add(cobroData);
         console.log(`[PWA] Cobro guardado offline con ID ${id}`);
-        
-        // Solicitar sincronización en background
+        await updatePendingBadge();
+
+        // Solicitar sincronización en background (no soportado en iOS/Safari;
+        // ahi el respaldo es syncAllData() al reabrir la app con señal)
         if ('serviceWorker' in navigator && 'SyncManager' in window) {
-          const registration = await navigator.serviceWorker.ready;
-          await registration.sync.register('sync-cobros');
+          try {
+            const registration = await navigator.serviceWorker.ready;
+            await registration.sync.register('sync-cobros');
+          } catch (e) {
+            console.warn('[PWA] Background Sync no disponible:', e);
+          }
         }
 
         return { id, ok: true, offline: true };
       }
+      throw new Error('IndexedDB no disponible en este navegador');
     }
   } catch (err) {
     console.error('[PWA] Error guardando cobro:', err);
     throw err;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// CONSULTA DE PENDIENTES SIN CONEXIÓN
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Replica /cobros/pendientes-ajax leyendo de IndexedDB: mismas reglas
+ * (estado Pendiente/Vencida/Parcial, vence en <=3 dias, orden por
+ * vencimiento, tope 150) para que el cobrador pueda ver a quien cobrar
+ * aunque no tenga señal.
+ */
+async function getPendientesOffline(q, zonaId, fecha) {
+  if (!pwaDb) pwaDb = await initPwaDb();
+  if (!pwaDb.cuotas || !pwaDb.cuotas.where) return [];
+
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const limite = new Date(hoy);
+  limite.setDate(limite.getDate() + 3);
+  const qLower = (q || '').trim().toLowerCase();
+  const zonaNum = zonaId ? Number(zonaId) : null;
+
+  const cuotas = await pwaDb.cuotas.where('estado').anyOf(['Pendiente', 'Vencida', 'Parcial']).toArray();
+  const candidatos = [];
+
+  for (const cu of cuotas) {
+    if (!cu.fecha_vencimiento) continue;
+    const venc = new Date(cu.fecha_vencimiento + 'T00:00:00');
+    if (isNaN(venc.getTime()) || venc > limite) continue;
+
+    const prestamo = await pwaDb.prestamos.get(cu.prestamo_id);
+    if (!prestamo) continue;
+    if (zonaNum && Number(prestamo.zona_id) !== zonaNum) continue;
+
+    const cliente = await pwaDb.clientes.get(prestamo.cliente_id);
+    if (!cliente) continue;
+    if (qLower) {
+      const enNombre = (cliente.nombre || '').toLowerCase().includes(qLower);
+      const enCedula = (cliente.cedula || '').toLowerCase().includes(qLower);
+      if (!enNombre && !enCedula) continue;
+    }
+
+    candidatos.push({ cu, prestamo, cliente, venc });
+  }
+
+  candidatos.sort((a, b) => a.venc - b.venc);
+
+  return candidatos.slice(0, 150).map(({ cu, prestamo, cliente, venc }) => ({
+    cuota_id: cu.id,
+    prestamo_id: prestamo.id,
+    cliente_id: cliente.id,
+    cliente: cliente.nombre,
+    cedula: cliente.cedula,
+    whatsapp: cliente.telefono || '',
+    cuota_num: cu.numero,
+    total_cuotas: prestamo.num_cuotas,
+    valor: cu.valor,
+    estado: cu.estado,
+    vencimiento: venc.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    dias: Math.round((hoy - venc) / 86400000),
+  }));
+}
+
+async function pendingCobrosCount() {
+  if (!pwaDb || !pwaDb.cobros || !pwaDb.cobros.where) return 0;
+  try {
+    return await pwaDb.cobros.where('sincronizado').equals(0).count();
+  } catch (e) {
+    return 0;
+  }
+}
+
+async function updatePendingBadge() {
+  const el = document.querySelector('[data-pending-count]');
+  if (!el) return;
+  const n = await pendingCobrosCount();
+  if (n > 0) {
+    el.textContent = n === 1 ? '1 cobro sin enviar' : `${n} cobros sin enviar`;
+    el.style.display = 'inline-block';
+  } else {
+    el.style.display = 'none';
   }
 }
 
@@ -274,6 +368,11 @@ window.addEventListener('offline', () => {
 // ─────────────────────────────────────────────────────────────────────
 
 function showSyncNotification(message, type = 'info') {
+  if (typeof window.toast === 'function') {
+    const tipo = type === 'success' ? 'success' : type === 'warning' ? 'warn' : 'info';
+    window.toast(message, tipo);
+    return;
+  }
   const notification = document.createElement('div');
   notification.className = `pwa-notification pwa-notification-${type}`;
   notification.textContent = message;
@@ -333,6 +432,7 @@ async function initPwa() {
 
     // 3. Verificar estado online
     updateOnlineStatus(navigator.onLine);
+    await updatePendingBadge();
 
     // 4. Sincronizar datos iniciales
     if (isOnline) {
@@ -363,6 +463,8 @@ if (document.readyState === 'loading') {
 window.pwa = {
   saveCobro,
   syncAllData,
+  getPendientesOffline,
+  pendingCobrosCount,
   isOnline: () => isOnline,
   getDb: () => pwaDb,
 };
