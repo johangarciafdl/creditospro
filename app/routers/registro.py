@@ -4,12 +4,12 @@ Permite que cualquier empresa nueva cree su cuenta independiente
 """
 import logging
 
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.database import get_db, Empresa, Usuario, ConfiguracionApp, Zona
+from app.database import get_db_system, Empresa, Usuario, ConfiguracionApp, Zona
 from app.utils.security import get_password_hash, create_access_token
 from app.routers.auth import SESSION_COOKIE, IS_PRODUCTION
 from app.utils.settings import settings
@@ -68,7 +68,7 @@ async def registro_submit(
     admin_username: str = Form(...),
     admin_password: str = Form(...),
     admin_password2: str = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_system),
 ):
     if not settings.ALLOW_PUBLIC_REGISTRATION:
         return JSONResponse({"error": "Registro publico deshabilitado"}, status_code=403)

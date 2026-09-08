@@ -74,23 +74,19 @@ if errorlevel 1 (
 
 REM 2. limpiar_elruso_duplicado.py
 echo  ^ Copiando limpiar_elruso_duplicado.py...
-copy /Y "%ESTE_PC_CARPETA%\limpiar_elruso_duplicado.py" "%RUTA_RED%\limpiar_elruso_duplicado.py" >nul 2>&1
+copy /Y "%ESTE_PC_CARPETA%\scripts\limpiar_elruso_duplicado.py" "%RUTA_RED%\limpiar_elruso_duplicado.py" >nul 2>&1
 if errorlevel 1 (
     echo    [ERROR] No se pudo copiar limpiar_elruso_duplicado.py
 ) else (
     echo    [OK] limpiar_elruso_duplicado.py copiado exitosamente
 )
 
-REM 3. Archivos de documentación (opcional)
+REM 3. Documentación (opcional)
 echo.
-set /p DOCS="¿Copiar también archivos de documentación? (s/n): "
+set /p DOCS="¿Copiar también la documentación (README.md)? (s/n): "
 if /i "%DOCS%"=="s" (
-    echo  ^ Copiando GUIA_SINCRONIZACION_OTRO_PC.md...
-    copy /Y "%ESTE_PC_CARPETA%\GUIA_SINCRONIZACION_OTRO_PC.md" "%RUTA_RED%\GUIA_SINCRONIZACION_OTRO_PC.md" >nul 2>&1
-    
-    echo  ^ Copiando RESUMEN_CAMBIOS_v3_0.md...
-    copy /Y "%ESTE_PC_CARPETA%\RESUMEN_CAMBIOS_v3_0.md" "%RUTA_RED%\RESUMEN_CAMBIOS_v3_0.md" >nul 2>&1
-    
+    echo  ^ Copiando README.md...
+    copy /Y "%ESTE_PC_CARPETA%\README.md" "%RUTA_RED%\README.md" >nul 2>&1
     echo    [OK] Documentación copiada
 )
 

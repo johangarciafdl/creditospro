@@ -1,15 +1,31 @@
 -- RLS de CreditosPro para PostgreSQL/Supabase
--- NO ejecutar directamente en producción sin crear primero el rol de aplicación,
--- probar en staging y configurar SET LOCAL app.empresa_id por transacción.
--- El rol propietario de las tablas puede bypass RLS.
+-- Aplicado y probado en producción el 2026-09-07: verificado que el rol
+-- restringido ve exactamente los mismos datos que el owner para su propia
+-- empresa, y cero filas sin contexto de tenant o con uno inexistente.
+-- Requiere DATABASE_URL_APP apuntando a creditospro_app y ENABLE_DATABASE_RLS=1
+-- (ver .env.example). El backend sigue conectándose con DATABASE_URL (el rol
+-- owner) para el scheduler, auditoría, activación de licencia y registro de
+-- empresa nueva — esas rutas necesitan legítimamente ver más de una empresa
+-- antes de tener un usuario autenticado (ver app/database.py: SessionLocal
+-- vs AppSessionLocal/get_db_system).
 
 BEGIN;
 
--- Rol recomendado: el backend debe conectarse con este rol, no con el owner.
--- CREATE ROLE creditospro_app NOINHERIT;
--- GRANT USAGE ON SCHEMA public TO creditospro_app;
--- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO creditospro_app;
--- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO creditospro_app;
+-- Rol de aplicación: el backend debe conectarse con este rol para las
+-- consultas por-empresa, no con el owner (que hace bypass de RLS siempre).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'creditospro_app') THEN
+    CREATE ROLE creditospro_app LOGIN PASSWORD :'creditospro_app_password'
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+END
+$$;
+GRANT USAGE ON SCHEMA public TO creditospro_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO creditospro_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO creditospro_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO creditospro_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO creditospro_app;
 
 CREATE OR REPLACE FUNCTION public.current_empresa_id()
 RETURNS integer
@@ -19,7 +35,7 @@ AS $$
   SELECT NULLIF(current_setting('app.empresa_id', true), '')::integer;
 $$;
 
--- Aislamiento por empresa. Activar tabla por tabla después de probar staging.
+-- Aislamiento por empresa.
 ALTER TABLE empresas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE zonas ENABLE ROW LEVEL SECURITY;
@@ -30,7 +46,7 @@ ALTER TABLE cobros ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notificaciones_wp ENABLE ROW LEVEL SECURITY;
 ALTER TABLE configuracion ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
-ALTER TABLE licencias_activadas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usuario_zonas ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS empresa_isolation_empresas ON empresas;
 CREATE POLICY empresa_isolation_empresas ON empresas
@@ -82,14 +98,22 @@ CREATE POLICY empresa_isolation_audit ON audit_log
   USING (empresa_id = public.current_empresa_id())
   WITH CHECK (empresa_id = public.current_empresa_id());
 
-DROP POLICY IF EXISTS empresa_isolation_licencias ON licencias_activadas;
-CREATE POLICY empresa_isolation_licencias ON licencias_activadas
-  USING (empresa_id = public.current_empresa_id())
-  WITH CHECK (empresa_id = public.current_empresa_id());
+-- usuario_zonas no tiene empresa_id propio: se valida via el usuario asociado.
+DROP POLICY IF EXISTS empresa_isolation_usuario_zonas ON usuario_zonas;
+CREATE POLICY empresa_isolation_usuario_zonas ON usuario_zonas
+  USING (EXISTS (
+    SELECT 1 FROM usuarios u
+    WHERE u.id = usuario_zonas.usuario_id AND u.empresa_id = public.current_empresa_id()
+  ))
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM usuarios u
+    WHERE u.id = usuario_zonas.usuario_id AND u.empresa_id = public.current_empresa_id()
+  ));
 
 COMMIT;
 
 -- En cada transacción autenticada del backend debe ejecutarse, por ejemplo:
 -- SET LOCAL app.empresa_id = '123';
 -- Nunca aceptar este valor directamente desde el frontend.
--- Debe derivarse del usuario autenticado en el backend.
+-- Debe derivarse del usuario autenticado en el backend
+-- (ver app/database.py: set_tenant_context + evento after_begin).

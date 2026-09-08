@@ -1,18 +1,19 @@
 """
-WhatsApp Service v3.0 - CallMeBot por zona
-- Cada zona puede tener su propio número y apikey de CallMeBot
+WhatsApp Service v4.0 - Green API por zona
+- Cada zona puede tener su propia instancia de Green API
 - Fallback a configuración global de la empresa
 - Sin dependencia de Meta/WhatsApp Business API
 """
 import datetime
 import logging
-import urllib.parse
 import httpx
 from sqlalchemy.orm import Session
 from app.database import NotificacionWP, ConfiguracionApp, Cuota, Zona
 from app.services.prestamo_service import get_cuotas_proximas_vencer, get_cuotas_vencidas_hoy
 
 logger = logging.getLogger(__name__)
+
+GREEN_API_BASE_URL = "https://api.green-api.com"
 
 
 def get_config_by_empresa(db: Session, empresa_id: int) -> ConfiguracionApp:
@@ -41,18 +42,22 @@ def construir_mensaje(plantilla: str, datos: dict, empresa: str) -> str:
     )
 
 
-async def _callmebot(telefono: str, mensaje: str, apikey: str) -> bool:
-    """Envía mensaje vía CallMeBot"""
-    url = f"https://api.callmebot.com/whatsapp.php?phone={telefono}&text={urllib.parse.quote(mensaje)}&apikey={apikey}"
+async def _green_api(telefono: str, mensaje: str, instance_id: str, token: str) -> bool:
+    """Envía mensaje vía Green API (https://green-api.com)."""
+    url = f"{GREEN_API_BASE_URL}/waInstance{instance_id}/sendMessage/{token}"
+    payload = {"chatId": f"{telefono}@c.us", "message": mensaje}
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(url)
-            return r.status_code == 200
+            r = await client.post(url, json=payload)
+            if r.status_code == 200 and r.json().get("idMessage"):
+                return True
+            logger.warning("Green API respuesta inesperada para %s: %s %s", telefono, r.status_code, r.text[:200])
+            return False
     except httpx.HTTPError as e:
-        logger.warning("CallMeBot HTTP error para %s: %s", telefono, e)
+        logger.warning("Green API HTTP error para %s: %s", telefono, e)
         return False
     except Exception:
-        logger.exception("CallMeBot error inesperado para %s", telefono)
+        logger.exception("Green API error inesperado para %s", telefono)
         return False
 
 
@@ -79,12 +84,13 @@ async def enviar_a_zona(
 
     ok = False
     try:
-        # Prioridad 1: bot propio de la zona
+        # Prioridad 1: instancia Green API propia de la zona
+        # (bot_phone/bot_apikey se reutilizan como instance_id/token de Green API)
         if zona and zona.bot_activo and zona.bot_phone and zona.bot_apikey:
-            ok = await _callmebot(tel_fmt, mensaje, zona.bot_apikey)
-        # Prioridad 2: config global callmebot
-        elif config.wp_activo and config.wp_api_key:
-            ok = await _callmebot(tel_fmt, mensaje, config.wp_api_key)
+            ok = await _green_api(tel_fmt, mensaje, zona.bot_phone, zona.bot_apikey)
+        # Prioridad 2: instancia Green API global de la empresa
+        elif config.wp_activo and config.wp_phone_id and config.wp_token:
+            ok = await _green_api(tel_fmt, mensaje, config.wp_phone_id, config.wp_token)
         else:
             ok = True  # simulación sin bot configurado
 

@@ -5,16 +5,40 @@ import datetime
 import time
 import logging
 
-from app.database import SessionLocal, Cuota, Empresa
-from sqlalchemy import and_
+from app.database import SessionLocal, Cuota, Empresa, IS_SQLITE
+from sqlalchemy import and_, text
 
 logger = logging.getLogger(__name__)
+
+# Claves arbitrarias para pg_try_advisory_lock: evitan que dos workers/replicas
+# corran el mismo job a la vez si algun dia se sube --workers por encima de 1.
+# No tienen efecto en SQLite (dev), donde solo corre un proceso de todos modos.
+_LOCK_KEY_ESTADOS = 987001
+_LOCK_KEY_RECORDATORIOS = 987002
+
+
+def _con_advisory_lock(db, key: int, nombre: str, fn) -> bool:
+    """Ejecuta fn() solo si se obtiene el lock; si no, otro worker ya lo tiene.
+    Devuelve True si se ejecuto, False si se salto por lock ocupado."""
+    if IS_SQLITE:
+        fn()
+        return True
+    got = db.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": key}).scalar()
+    if not got:
+        logger.debug(f"Scheduler: {nombre} ya lo esta corriendo otro worker, se salta")
+        return False
+    try:
+        fn()
+        return True
+    finally:
+        db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
 
 
 def actualizar_estados_cuotas():
     """Tarea síncrona: marca cuotas vencidas."""
     db = SessionLocal()
-    try:
+
+    def _run():
         hoy = datetime.date.today()
         cuotas = db.query(Cuota).filter(
             and_(Cuota.estado == "Pendiente", Cuota.fecha_vencimiento < hoy)
@@ -26,6 +50,9 @@ def actualizar_estados_cuotas():
             logger.info(f"Scheduler: {len(cuotas)} cuotas vencidas actualizadas")
         else:
             logger.debug("Scheduler: 0 cuotas vencidas hoy")
+
+    try:
+        _con_advisory_lock(db, _LOCK_KEY_ESTADOS, "actualizar_estados_cuotas", _run)
     except Exception as e:
         logger.error(f"Scheduler error estados: {e}", exc_info=True)
     finally:
@@ -36,6 +63,12 @@ async def _recordatorios_async():
     """Envía recordatorios WhatsApp de forma asíncrona."""
     from app.services.whatsapp_service import ejecutar_recordatorios
     db = SessionLocal()
+    if not IS_SQLITE:
+        got = db.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _LOCK_KEY_RECORDATORIOS}).scalar()
+        if not got:
+            logger.debug("Scheduler: recordatorios ya los esta enviando otro worker, se salta")
+            db.close()
+            return
     try:
         empresas = db.query(Empresa).filter(Empresa.activa == True).all()
         for empresa in empresas:
@@ -44,6 +77,8 @@ async def _recordatorios_async():
     except Exception as e:
         logger.error(f"Scheduler WP error: {e}", exc_info=True)
     finally:
+        if not IS_SQLITE:
+            db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _LOCK_KEY_RECORDATORIOS})
         db.close()
 
 

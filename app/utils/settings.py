@@ -28,11 +28,7 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_HOURS: int = 12
     ENABLE_DATABASE_RLS: bool = False
 
-    # ── Licencia ───────────────────────────────────────────────
-    LICENSE_MASTER_KEY: str = ""
-
-    # ── WhatsApp ────────────────────────────────────────────────
-    WP_API_KEY: str = ""
+    # ── WhatsApp (Green API) ──────────────────────────────────────
     WP_PHONE_ID: str = ""
     WP_TOKEN: str = ""
     WP_ACTIVO: bool = False
@@ -84,8 +80,6 @@ def get_settings() -> Settings:
     settings.DATABASE_URL = os.getenv("DATABASE_URL", "")
     settings.SECRET_KEY = os.getenv("SECRET_KEY", "")
     settings.SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", settings.SECRET_KEY)
-    settings.LICENSE_MASTER_KEY = os.getenv("LICENSE_MASTER_KEY", "")
-    settings.WP_API_KEY = os.getenv("WP_API_KEY", "")
     settings.WP_PHONE_ID = os.getenv("WP_PHONE_ID", "")
     settings.WP_TOKEN = os.getenv("WP_TOKEN", "")
     settings.WP_ACTIVO = env_bool("WP_ACTIVO", False)

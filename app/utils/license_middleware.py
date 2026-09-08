@@ -1,68 +1,22 @@
-"""Middleware que bloquea el sistema si la licencia es inválida.
+"""Middleware que bloquea el acceso hasta que la empresa active su clave comercial.
 
-Verifica en 3 niveles:
-1. app.state.license_valid (cache en memoria)
-2. license.key archivo local
-3. CREDITOSPRO_LICENSE_KEY env var
-4. Tabla licencias_activadas en DB
+Unica capa de activacion: una clave por-empresa (ver app/utils/company_activation.py
+y app/routers/license_router.py) que el usuario ingresa en /license/activar y que
+marca `activated_empresa_id` en su sesion de navegador. No hay licencia por-maquina.
 """
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-RUTAS_LIBRES_EXACTAS = {"/", "/inicio", "/license/activar", "/license/machine-id",
-                        "/license/activate", "/license/status", "/favicon.ico", "/health"}
+RUTAS_LIBRES_EXACTAS = {"/", "/inicio", "/license/activar", "/license/activate",
+                        "/license/status", "/favicon.ico", "/health"}
 RUTAS_LIBRES_PREFIJOS = {"/static"}
 
 
 class LicenseMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, license_valid: bool = False):
-        super().__init__(app)
-        self._default_valid = license_valid
-
     async def dispatch(self, request: Request, call_next):
-        license_valid = getattr(request.app.state, "license_valid", self._default_valid)
-        if license_valid:
+        if request.session.get("activated_empresa_id"):
             return await call_next(request)
-
-        # Una clave comercial valida habilita el acceso al login de esa empresa.
-        # Los endpoints protegidos siguen requiriendo sesion de usuario.
-        activated_empresa_id = request.session.get("activated_empresa_id")
-        if activated_empresa_id:
-            return await call_next(request)
-
-        # Re-verificar en DB (puede haber cambiado tras activacion o restart)
-        try:
-            import sys
-            from pathlib import Path
-            root_dir = Path(__file__).resolve().parents[2]
-            if str(root_dir) not in sys.path:
-                sys.path.insert(0, str(root_dir))
-            import license_manager as lm
-            _lic = lm.check_license()
-            if _lic.get("valid"):
-                request.app.state.license_valid = True
-                request.app.state.license_info = _lic
-                return await call_next(request)
-            # Intentar DB
-            from app.database import SessionLocal, LicenciaActivada
-            db = SessionLocal()
-            try:
-                fp = lm.get_fingerprint()
-                db_lic = db.query(LicenciaActivada).filter(
-                    LicenciaActivada.machine_id == fp,
-                    LicenciaActivada.activa == True,
-                ).first()
-                if db_lic:
-                    _lic = lm.validate_license(db_lic.license_key)
-                    if _lic.get("valid"):
-                        request.app.state.license_valid = True
-                        request.app.state.license_info = _lic
-                        return await call_next(request)
-            finally:
-                db.close()
-        except Exception:
-            pass
 
         path = request.url.path
         if path in RUTAS_LIBRES_EXACTAS or path == "/auth/login" or any(path.startswith(r) for r in RUTAS_LIBRES_PREFIJOS):
@@ -71,6 +25,6 @@ class LicenseMiddleware(BaseHTTPMiddleware):
         accept = request.headers.get("accept", "")
         if "application/json" in accept:
             from starlette.responses import JSONResponse
-            return JSONResponse({"error": "Software no activado", "redirect": "/license/activar"}, status_code=403)
+            return JSONResponse({"error": "Empresa no activada", "redirect": "/license/activar"}, status_code=403)
 
         return RedirectResponse("/license/activar", status_code=302)

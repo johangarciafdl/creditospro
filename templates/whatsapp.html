@@ -99,26 +99,21 @@
 <div class="card">
   <div class="card-header">
     <div class="card-title">⚙ Configuración del Bot</div>
-    <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank" class="btn btn-ghost btn-sm">📖 Guía Meta API</a>
+    <a href="https://green-api.com/en/docs/" target="_blank" class="btn btn-ghost btn-sm">📖 Guía Green API</a>
   </div>
   <div class="card-body">
     <div class="alert alert-info" style="margin-bottom:16px;">
-      💡 Usa la <strong>Meta WhatsApp Cloud API</strong> (gratuita hasta 1,000 mensajes/mes). Crea una app en <strong>developers.facebook.com</strong>, activa WhatsApp Business y obtén tu Token + Phone ID.
-      <br>Alternativa fácil: <strong>CallMeBot</strong> — envía un mensaje de WhatsApp a +34 644 38 91 07 con "I allow callmebot to send me messages" para obtener tu API key gratuita.
+      💡 Usa <strong>Green API</strong> (green-api.com). Crea una cuenta, vincula tu WhatsApp escaneando el QR y copia el <strong>ID de instancia</strong> y el <strong>Token de instancia</strong> desde tu panel.
     </div>
     <form id="form-wp" onsubmit="guardarConfigWP(event)">
       <div class="form-grid-3 mb-2">
         <div class="form-group">
-          <label>Token de acceso (Meta)</label>
-          <input type="password" name="wp_token" value="{{ config.wp_token or '' }}" placeholder="EAAxxxx...">
+          <label>ID de instancia (Green API)</label>
+          <input type="text" name="wp_phone_id" value="{{ config.wp_phone_id or '' }}" placeholder="1101234567">
         </div>
         <div class="form-group">
-          <label>Phone Number ID (Meta)</label>
-          <input type="text" name="wp_phone_id" value="{{ config.wp_phone_id or '' }}" placeholder="123456789">
-        </div>
-        <div class="form-group">
-          <label>API Key (CallMeBot alternativa)</label>
-          <input type="text" name="wp_api_key" value="{{ config.wp_api_key or '' }}" placeholder="123456">
+          <label>Token de instancia (Green API)</label>
+          <input type="password" name="wp_token" value="{{ config.wp_token or '' }}" placeholder="d1a2b3c4...">
         </div>
         <div class="form-group">
           <label>Días de aviso antes de vencimiento</label>

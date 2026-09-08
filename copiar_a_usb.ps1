@@ -82,7 +82,7 @@ if (-not (Test-Path $ORIGEN_HTML)) {
 
 # 2. limpiar_elruso_duplicado.py
 Write-Host "  [2/2] Copiando limpiar_elruso_duplicado.py..." -ForegroundColor White
-$ORIGEN_PY = Join-Path $ORIGEN "limpiar_elruso_duplicado.py"
+$ORIGEN_PY = Join-Path $ORIGEN "scripts\limpiar_elruso_duplicado.py"
 $DESTINO_PY = "$USB_DRIVE\limpiar_elruso_duplicado.py"
 
 if (-not (Test-Path $ORIGEN_PY)) {

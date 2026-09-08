@@ -82,7 +82,7 @@ async def panel_whatsapp(request: Request, db: Session = Depends(get_db)):
 @router.post("/configurar")
 async def configurar_wp(
     request: Request,
-    wp_api_key: str = Form(""), wp_phone_id: str = Form(""),
+    wp_phone_id: str = Form(""),
     wp_token: str = Form(""), wp_activo: bool = Form(False),
     dias_aviso: int = Form(2),
     wp_mensaje_recordatorio: str = Form(""),
@@ -94,7 +94,6 @@ async def configurar_wp(
         return JSONResponse({"error": "Sin permisos"}, status_code=403)
 
     config = get_config_by_empresa(db, user.empresa_id)
-    config.wp_api_key = wp_api_key or None
     config.wp_phone_id = wp_phone_id or None
     config.wp_token = wp_token or None
     config.wp_activo = wp_activo

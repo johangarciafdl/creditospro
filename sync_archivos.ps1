@@ -77,7 +77,7 @@ $ARCHIVOS = @(
         descripcion = "HTML mejorado (Interfaz visible)"
     },
     @{
-        origen = "limpiar_elruso_duplicado.py"
+        origen = "scripts\limpiar_elruso_duplicado.py"
         destino = "$RUTA_RED\limpiar_elruso_duplicado.py"
         descripcion = "Script limpieza BD"
     }
@@ -112,8 +112,7 @@ $DOCS = Read-Host "¿Copiar también archivos de documentación? (s/n)"
 
 if ($DOCS -eq "s") {
     $DOCS_ARCHIVOS = @(
-        @{origen = "GUIA_SINCRONIZACION_OTRO_PC.md"; destino = "$RUTA_RED\GUIA_SINCRONIZACION_OTRO_PC.md"; desc = "Guía de sincronización" },
-        @{origen = "RESUMEN_CAMBIOS_v3_0.md"; destino = "$RUTA_RED\RESUMEN_CAMBIOS_v3_0.md"; desc = "Resumen técnico" }
+        @{origen = "README.md"; destino = "$RUTA_RED\README.md"; desc = "Documentación" }
     )
     
     foreach ($doc in $DOCS_ARCHIVOS) {

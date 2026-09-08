@@ -27,34 +27,6 @@ def client():
     os.environ["ENVIRONMENT"] = "development"
     os.environ["AUTO_CREATE_TABLES"] = "1"
     os.environ["ALLOW_PUBLIC_REGISTRATION"] = "0"
-    master_key = "integration-test-master-key-not-real"
-    os.environ["LICENSE_MASTER_KEY"] = master_key
-
-    # Crear un archivo de licencia valido para que LicenseMiddleware no
-    # bloquee las requests. La licencia es para el fingerprint de este equipo.
-    import base64
-    import hashlib
-    import json
-    from cryptography.fernet import Fernet
-    from license_manager import get_fingerprint
-
-    key = base64.urlsafe_b64encode(hashlib.sha256(master_key.encode()).digest())
-    f = Fernet(key)
-    fp = get_fingerprint()
-    payload = json.dumps({
-        "empresa_id": 1,
-        "empresa": "TestCo",
-        "machine_id": fp,
-        "expires_at": "2099-12-31T23:59:59",
-    }).encode()
-    token = f.encrypt(payload)
-    license_str = "CPRO-" + base64.urlsafe_b64encode(token).decode()
-
-    license_file = Path(tempfile.gettempdir()) / "license.key.test"
-    license_file.write_text(license_str, encoding="utf-8")
-    # Apuntar la app al archivo de licencia
-    import license_manager
-    license_manager.LICENSE_FILE = license_file
 
     # Importar app y crear tablas
     # Si otros tests ya importaron app.database, hay que recargar para que
@@ -124,10 +96,6 @@ def client():
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
     except Exception:
-        pass
-    try:
-        license_file.unlink()
-    except (FileNotFoundError, PermissionError):
         pass
 
 

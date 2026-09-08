@@ -17,7 +17,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.database import get_db, Usuario, Zona, Empresa, ConfiguracionApp, SessionLocal, set_tenant_context
+from app.database import get_db, get_db_system, Usuario, Zona, Empresa, ConfiguracionApp, SessionLocal, set_tenant_context
 from app.repositories.usuario_repository import UsuarioRepository
 
 logger = logging.getLogger(__name__)
@@ -124,6 +124,7 @@ async def login_page(request: Request, next: str = "/dashboard",
         return RedirectResponse(url=next, status_code=302)
     empresa_nombre = None
     if empresa_id:
+        set_tenant_context(db, empresa_id)
         from app.database import Empresa
         emp = db.query(Empresa).filter(Empresa.id == empresa_id).first()
         empresa_nombre = emp.nombre if emp else None
@@ -145,9 +146,21 @@ async def login_submit(
     activated_empresa_id = request.session.get("activated_empresa_id")
     if not activated_empresa_id:
         return JSONResponse({"error": "Activa primero el software"}, status_code=403)
+    set_tenant_context(db, int(activated_empresa_id))
+
+    username_clean = username.strip().lower()
+    # Segunda capa ademas del limite por IP: protege una cuenta puntual contra
+    # fuerza bruta distribuida (muchas IPs, un mismo usuario). Umbral holgado
+    # para no permitir que alguien bloquee la cuenta de otro a proposito.
+    if is_rate_limited(request, "/auth/login-usuario", 20, 900,
+                       key_suffix=f":{activated_empresa_id}:{username_clean}"):
+        return JSONResponse(
+            {"error": "Demasiados intentos para este usuario. Intenta mas tarde."},
+            status_code=429,
+        )
 
     q = db.query(Usuario).filter(
-        Usuario.username == username.strip().lower(),
+        Usuario.username == username_clean,
         Usuario.activo == True,
         Usuario.empresa_id == int(activated_empresa_id),
     )
@@ -236,7 +249,16 @@ async def two_factor_submit(
         request.session.pop("two_factor_pending_at", None)
         return RedirectResponse(url="/license/activar", status_code=302)
 
-    user = db.query(Usuario).filter(Usuario.id == int(pending_id), Usuario.activo == True).first()
+    activated_empresa_id = request.session.get("activated_empresa_id")
+    if not activated_empresa_id:
+        return RedirectResponse(url="/license/activar", status_code=302)
+    set_tenant_context(db, int(activated_empresa_id))
+
+    user = db.query(Usuario).filter(
+        Usuario.id == int(pending_id),
+        Usuario.empresa_id == int(activated_empresa_id),
+        Usuario.activo == True,
+    ).first()
     secret = decrypt_secret(user.two_factor_secret) if user else None
     valid = bool(user and secret and verify_totp(secret, code))
     if not valid and user:
@@ -269,14 +291,36 @@ async def two_factor_submit(
     return response
 
 
-@router.get("/2fa/setup")
-async def two_factor_setup(request: Request, db: Session = Depends(get_db)):
+@router.post("/2fa/setup")
+async def two_factor_setup(
+    request: Request,
+    password: str = Form(...),
+    code: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Genera un secreto 2FA nuevo. Exige la contrasena actual, y ademas un
+    codigo TOTP/backup valido si el usuario ya tenia 2FA activo, para que una
+    sesion robada no baste para reconfigurar el segundo factor."""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not verify_password_with_timing_safety(password, user.password_hash):
+        return JSONResponse({"error": "Contrasena incorrecta"}, status_code=403)
+
+    if user.two_factor_enabled:
+        secret_actual = decrypt_secret(user.two_factor_secret) if user.two_factor_secret else None
+        valido = bool(secret_actual and verify_totp(secret_actual, code))
+        if not valido:
+            valido, updated_hashes = consume_backup_code(code, user.two_factor_backup_hashes)
+            if valido:
+                user.two_factor_backup_hashes = updated_hashes
+        if not valido:
+            return JSONResponse({"error": "Codigo 2FA actual requerido para reconfigurar"}, status_code=403)
+
     secret = generate_secret()
     user.two_factor_secret = encrypt_secret(secret)
     db.commit()
+    log_action(db, user, "2fa_setup_requested", "auth", f"username={user.username}")
     return JSONResponse({"secret": secret, "otpauth_uri": provisioning_uri(secret, user.username)})
 
 
@@ -366,6 +410,8 @@ async def crear_usuario(
         rol = normalize_role(rol)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
+    if rol == "superadmin" and current_user.rol != "superadmin":
+        return JSONResponse({"error": "Solo un superadmin puede asignar el rol superadmin"}, status_code=403)
 
     username_clean = username.strip().lower()
     if not username_clean or len(username_clean) > 100:
@@ -437,6 +483,10 @@ async def editar_usuario(
         rol = normalize_role(rol)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
+    if user_id == current_user.id and rol != current_user.rol:
+        return JSONResponse({"error": "No puedes cambiar tu propio rol"}, status_code=403)
+    if rol == "superadmin" and current_user.rol != "superadmin":
+        return JSONResponse({"error": "Solo un superadmin puede asignar el rol superadmin"}, status_code=403)
 
     nombre_clean = nombre.strip()
     if not nombre_clean or len(nombre_clean) > 200:
@@ -586,7 +636,7 @@ async def recovery_request(
     request: Request,
     username: str = Form(...),
     empresa_id: str = Form(""),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db_system)
 ):
     """Genera un token de recuperacion para un usuario. Lo ve el admin.
 
@@ -652,6 +702,7 @@ async def recovery_reset(
             {"error": "Token invalido, expirado o ya usado"},
             status_code=400,
         )
+    set_tenant_context(db, info["empresa_id"])
 
     user = db.query(Usuario).filter(
         Usuario.id == info["user_id"],

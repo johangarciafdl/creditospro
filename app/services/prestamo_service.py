@@ -87,9 +87,16 @@ def get_cuotas_proximas_vencer(db, empresa_id: int, dias: int = 2) -> List[dict]
 
 
 def get_cuotas_vencidas_hoy(db, empresa_id: int) -> List[dict]:
-    """FIX: filtra por empresa_id"""
-    from app.database import Cliente
+    """FIX: filtra por empresa_id y evita notificar dos veces el mismo dia
+    si el scheduler y un "enviar ahora" manual coinciden."""
+    from app.database import Cliente, NotificacionWP
     hoy = datetime.date.today()
+
+    ya_notificadas_hoy = db.query(NotificacionWP.cuota_id).filter(
+        NotificacionWP.empresa_id == empresa_id,
+        NotificacionWP.tipo == "Vencimiento",
+        NotificacionWP.creado >= hoy,
+    )
 
     cuotas = (
         db.query(Cuota).join(Prestamo).join(Cliente)
@@ -97,6 +104,7 @@ def get_cuotas_vencidas_hoy(db, empresa_id: int) -> List[dict]:
             Cuota.empresa_id == empresa_id,
             Cuota.estado == "Pendiente",
             Cuota.fecha_vencimiento < hoy,
+            Cuota.id.notin_(ya_notificadas_hoy),
         ).all()
     )
     return [{

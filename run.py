@@ -1,5 +1,5 @@
 """
-CreditosPro v3.0 - Entry point con verificacion de licencia
+CreditosPro v3.0 - Entry point
 """
 import sys, os, time, threading, webbrowser, socket
 from pathlib import Path
@@ -23,34 +23,6 @@ if _missing:
     sys.exit(1)
 
 
-def check_license_on_start() -> bool:
-    """Retorna True si puede continuar, False si debe ir a activacion"""
-    try:
-        import license_manager
-        result = license_manager.check_license()
-        if result.get("valid"):
-            empresa = result.get("empresa_nombre", "")
-            days_left = result.get("days_left", 0)
-            print(f"[CreditosPro] Licencia valida - {empresa} - {days_left} dias restantes")
-            return True
-        print(f"[CreditosPro] LICENCIA: {result.get('error')}")
-        print(f"[CreditosPro] Machine ID: {result.get('machine_id', '?')}")
-        return False
-    except ImportError:
-        env = os.getenv("ENVIRONMENT", "production").strip().lower()
-        if env == "development":
-            print("[CreditosPro] Modo desarrollo (sin verificacion de licencia)")
-            return True
-        print("[CreditosPro] ERROR: license_manager no disponible en produccion.")
-        return False
-    except Exception as e:
-        print(f"[CreditosPro] Error verificando licencia: {e}")
-        return False
-
-
-LICENSE_VALID = check_license_on_start()
-
-
 def puerto_libre(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('127.0.0.1', port)) != 0
@@ -58,18 +30,12 @@ def puerto_libre(port):
 
 def abrir_navegador():
     time.sleep(1.5)
-    url = f"http://127.0.0.1:{PORT}"
-    if not LICENSE_VALID:
-        url += "/license/activar"
-    webbrowser.open(url)
+    webbrowser.open(f"http://127.0.0.1:{PORT}")
 
 
 def main():
     if not puerto_libre(PORT):
-        url = f"http://127.0.0.1:{PORT}"
-        if not LICENSE_VALID:
-            url += "/license/activar"
-        webbrowser.open(url)
+        webbrowser.open(f"http://127.0.0.1:{PORT}")
         return
 
     if os.getenv("CREDITOSPRO_NO_BROWSER", "0") != "1":

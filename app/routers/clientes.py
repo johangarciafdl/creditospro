@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db, Cliente, Prestamo, Zona
 from app.routers.auth import get_current_user
@@ -266,7 +267,11 @@ async def crear_cliente(
         activo=True,
     )
     db.add(cliente)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return JSONResponse({"error": f"Ya existe un cliente con cédula {cedula}"}, status_code=400)
     db.refresh(cliente)
     return JSONResponse({"ok": True, "id": cliente.id, "mensaje": f"Cliente {nombre} creado"})
 

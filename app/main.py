@@ -36,7 +36,6 @@ from app.routers import (
     clientes,
     cobros,
     dashboard,
-    equipos_router,
     license_router,
     pwa,
     prestamos,
@@ -68,16 +67,6 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Inicialización segura de la aplicación con manejo de errores."""
-    try:
-        import license_manager as lm
-        _lic = lm.check_license()
-        app.state.license_valid = _lic.get("valid", False)
-        app.state.license_info = _lic
-    except Exception:
-        dev_mode = settings.ENVIRONMENT == "development"
-        app.state.license_valid = dev_mode
-        app.state.license_info = {"valid": dev_mode, "dev_mode": dev_mode}
-
     logger.info("Iniciando CreditosPro...")
 
     required_vars = ["DATABASE_URL", "SECRET_KEY"]
@@ -145,6 +134,8 @@ app.add_middleware(
 app.add_middleware(
     SessionMiddleware,
     secret_key=session_secret,
+    same_site="strict",
+    https_only=settings.IS_PRODUCTION,
 )
 app.add_middleware(AuditMiddleware)
 app.add_middleware(RequestIDMiddleware)
@@ -153,20 +144,10 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 templates = Jinja2Templates(directory="templates")
 
 
-def get_license_info() -> dict:
-    try:
-        import license_manager as lm
-        return lm.check_license()
-    except Exception:
-        dev_mode = settings.ENVIRONMENT == "development"
-        return {"valid": dev_mode, "dev_mode": dev_mode}
-
-
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(registro.router, prefix="/registro", tags=["Registro"])
 app.include_router(selector.router, tags=["Selector"])
 app.include_router(license_router.router, prefix="/license", tags=["License"])
-app.include_router(equipos_router.router, prefix="/equipos", tags=["Equipos"])
 app.include_router(dashboard.router, tags=["Dashboard"])
 app.include_router(clientes.router, prefix="/clientes", tags=["Clientes"])
 app.include_router(prestamos.router, prefix="/prestamos", tags=["Préstamos"])
@@ -179,10 +160,6 @@ app.include_router(pwa.router, tags=["PWA"])
 
 @app.get("/")
 async def root(request: Request):
-    license_info = getattr(request.app.state, "license_info", None) or get_license_info()
-    request.app.state.license_valid = license_info.get("valid", False)
-    request.app.state.license_info = license_info
-
     from app.database import SessionLocal
     from app.routers.auth import get_current_user
 
@@ -192,17 +169,17 @@ async def root(request: Request):
     finally:
         db.close()
 
-    if user and license_info.get("valid"):
+    empresa_activada = bool(request.session.get("activated_empresa_id"))
+    if user and empresa_activada:
         return RedirectResponse(url="/dashboard", status_code=302)
 
-    license_valid = bool(license_info.get("valid"))
     return templates.TemplateResponse(
         request,
         "inicio.html",
         {
             "software_name": settings.SOFTWARE_NAME,
             "software_owner": settings.SOFTWARE_OWNER,
-            "license_valid": license_valid,
+            "license_valid": empresa_activada,
             "start_url": "/license/activar",
             "start_label": "Iniciar",
         },

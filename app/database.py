@@ -38,27 +38,53 @@ if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
 # Detectar si es SQLite para desarrollo local
 IS_SQLITE = SQLALCHEMY_DATABASE_URL.startswith("sqlite://")
 
-# Configuración del engine según el tipo de base de datos
-connect_args = {}
-engine_kwargs = {"pool_pre_ping": True}
-if IS_SQLITE:
-    # SQLite necesita check_same_thread=False para usar en hilos
-    connect_args = {"check_same_thread": False}
-    logger.info("Usando SQLite (modo desarrollo)")
-else:
-    logger.info("Usando PostgreSQL (producción)")
-    engine_kwargs.update({
-        "pool_recycle": 300,
-        "pool_size": 5,
-        "max_overflow": 10,
-    })
+
+def _engine_kwargs_for(url: str) -> tuple[dict, dict]:
+    """connect_args/engine_kwargs correctos segun el dialecto de esa URL
+    especifica (DATABASE_URL y DATABASE_URL_APP pueden ser dialectos
+    distintos, p.ej. sqlite en tests + postgres real)."""
+    if url.startswith("sqlite://"):
+        # SQLite necesita check_same_thread=False para usar en hilos
+        return {"check_same_thread": False}, {"pool_pre_ping": True}
+    return {}, {"pool_pre_ping": True, "pool_recycle": 300, "pool_size": 5, "max_overflow": 10}
+
+
+connect_args, engine_kwargs = _engine_kwargs_for(SQLALCHEMY_DATABASE_URL)
+logger.info("Usando SQLite (modo desarrollo)" if IS_SQLITE else "Usando PostgreSQL (producción)")
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args=connect_args,
     **engine_kwargs,
 )
+# SessionLocal es la conexion "sistema": rol de BD privilegiado (hoy el owner),
+# usado por el scheduler, auditoria, licencias y los pocos endpoints que
+# legitimamente necesitan ver mas de una empresa antes de haber autenticado
+# a nadie (selector de empresa, activacion de licencia, registro de empresa
+# nueva). NO se expone via Depends(get_db) a las rutas normales.
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# ── Conexión de aplicación (RLS) ──────────────────────────────────────────────
+# DATABASE_URL_APP es opcional: un rol de Postgres restringido (sin BYPASSRLS)
+# para que las consultas por-empresa tengan un respaldo real de aislamiento a
+# nivel de base de datos, ademas del filtro por empresa_id en el codigo. Si no
+# esta configurada, get_db() usa la misma conexion privilegiada de siempre
+# (comportamiento identico al actual, sin romper despliegues existentes).
+APP_DATABASE_URL = os.getenv("DATABASE_URL_APP", "").strip()
+if APP_DATABASE_URL.startswith("postgres://"):
+    APP_DATABASE_URL = APP_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+if APP_DATABASE_URL and APP_DATABASE_URL != SQLALCHEMY_DATABASE_URL:
+    app_connect_args, app_engine_kwargs = _engine_kwargs_for(APP_DATABASE_URL)
+    app_engine = create_engine(
+        APP_DATABASE_URL,
+        connect_args=app_connect_args,
+        **app_engine_kwargs,
+    )
+    AppSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=app_engine)
+    logger.info("DATABASE_URL_APP configurada: consultas por-empresa usan el rol restringido")
+else:
+    AppSessionLocal = SessionLocal
 
 
 def set_tenant_context(db: Session, empresa_id: int) -> None:
@@ -153,7 +179,7 @@ class Zona(Base):
     cobrador_tel = Column(String(20))
     cobrador_moto = Column(String(50))
     activa = Column(Boolean, default=True)
-    # CallMeBot por zona
+    # Green API por zona: bot_phone = instance_id, bot_apikey = token (nombres heredados de CallMeBot)
     bot_phone = Column(String(20), nullable=True)
     bot_apikey = Column(String(100), nullable=True)
     bot_activo = Column(Boolean, default=False)
@@ -193,7 +219,10 @@ class Cliente(Base):
     empresa = relationship("Empresa", back_populates="clientes")
     zona_rel = relationship("Zona", back_populates="clientes")
     prestamos = relationship("Prestamo", back_populates="cliente")
-    __table_args__ = (UniqueConstraint("empresa_id", "cedula", name="uq_cliente_empresa"),)
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "cedula", name="uq_cliente_empresa"),
+        Index("ix_clientes_empresa_zona", "empresa_id", "zona_id"),
+    )
 
 
 class Prestamo(Base):
@@ -224,7 +253,7 @@ class Prestamo(Base):
         CheckConstraint("capital > 0", name="ck_prestamo_capital_pos"),
         CheckConstraint("num_cuotas > 0 AND num_cuotas <= 365", name="ck_prestamo_cuotas_rango"),
         CheckConstraint("tasa_interes >= 0 AND tasa_interes <= 100", name="ck_prestamo_tasa_rango"),
-        CheckConstraint("estado IN ('Activo','Pagado','Mora','Castigado','Cancelado')",
+        CheckConstraint("estado IN ('Activo','Pagado','Mora','Castigado','Cancelado','Atrasado')",
                         name="ck_prestamo_estado"),
     )
 
@@ -247,6 +276,7 @@ class Cuota(Base):
     __table_args__ = (
         Index("ix_cuotas_empresa_prestamo_estado", "empresa_id", "prestamo_id", "estado"),
         Index("ix_cuotas_empresa_estado_vencimiento", "empresa_id", "estado", "fecha_vencimiento"),
+        Index("ix_cuotas_prestamo_id", "prestamo_id"),
         CheckConstraint("valor > 0", name="ck_cuota_valor_pos"),
         CheckConstraint("valor_pagado >= 0", name="ck_cuota_pagado_no_neg"),
         CheckConstraint("valor_pagado <= valor", name="ck_cuota_pagado_no_excede"),
@@ -310,9 +340,9 @@ class ConfiguracionApp(Base):
     cuotas_default = Column(Integer, default=30)
     dias_aviso_vencimiento = Column(Integer, default=2)
     dias_mora = Column(Integer, default=1)
-    wp_api_key = Column(String(500), nullable=True)
-    wp_phone_id = Column(String(200), nullable=True)
-    wp_token = Column(String(500), nullable=True)
+    wp_api_key = Column(String(500), nullable=True)  # deprecado: apikey de CallMeBot, ya no se usa para enviar
+    wp_phone_id = Column(String(200), nullable=True)  # Green API: idInstance
+    wp_token = Column(String(500), nullable=True)  # Green API: apiTokenInstance
     wp_activo = Column(Boolean, default=False)
     wp_mensaje_recordatorio = Column(Text, default="Hola {nombre}, su cuota #{num_cuota} de ${valor} vence el {fecha}. — {empresa}")
     wp_mensaje_vencida = Column(Text, default="Hola {nombre}, su cuota #{num_cuota} de ${valor} venció el {fecha}. — {empresa}")
@@ -338,21 +368,6 @@ class AuditLog(Base):
     )
 
 
-class LicenciaActivada(Base):
-    """Licencias activadas por equipo. Cada equipo tiene UNA licencia para UNA empresa."""
-    __tablename__ = "licencias_activadas"
-    id = Column(Integer, primary_key=True, index=True)
-    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
-    machine_id = Column(String(64), nullable=False, index=True)
-    ip = Column(String(45), nullable=True)
-    license_key = Column(Text, nullable=False)
-    activa = Column(Boolean, default=True)
-    creado = Column(DateTime, default=func.now())
-    __table_args__ = (
-        UniqueConstraint("machine_id", name="uq_licencia_machine"),
-    )
-
-
 def init_db():
     """Inicializa las tablas en la base de datos. Idempotente."""
     auto_create = os.getenv("AUTO_CREATE_TABLES", "1").strip().lower() in {"1", "true", "yes", "on"}
@@ -368,6 +383,19 @@ def init_db():
 
 
 def get_db():
+    """Sesion para rutas normales: rol restringido si DATABASE_URL_APP esta
+    configurada (RLS real por empresa_id), o la conexion privilegiada si no."""
+    db = AppSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_db_system():
+    """Sesion privilegiada explicita, para los pocos endpoints que legitimamente
+    necesitan ver mas de una empresa antes de tener un usuario autenticado:
+    selector de empresa, activacion de licencia, registro de empresa nueva."""
     db = SessionLocal()
     try:
         yield db

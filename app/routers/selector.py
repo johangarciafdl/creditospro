@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.database import get_db, Empresa, Usuario
+from app.database import get_db_system, Empresa, Usuario
 from app.routers.auth import get_current_user
 from app.utils.settings import settings
 
@@ -14,7 +14,7 @@ templates = Jinja2Templates(directory="templates")
 
 
 @router.get("/seleccionar-empresa")
-async def selector_empresa(request: Request, db: Session = Depends(get_db)):
+async def selector_empresa(request: Request, db: Session = Depends(get_db_system)):
     user = get_current_user(request, db)
     if user:
         return RedirectResponse("/dashboard", 302)

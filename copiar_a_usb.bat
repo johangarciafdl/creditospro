@@ -61,7 +61,7 @@ if errorlevel 1 (
 
 REM 2. limpiar_elruso_duplicado.py
 echo [2/2] Copiando limpiar_elruso_duplicado.py...
-copy /Y "%CD%\limpiar_elruso_duplicado.py" "%USB_DRIVE%\limpiar_elruso_duplicado.py" >nul 2>&1
+copy /Y "%CD%\scripts\limpiar_elruso_duplicado.py" "%USB_DRIVE%\limpiar_elruso_duplicado.py" >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] No se pudo copiar limpiar_elruso_duplicado.py
     pause
