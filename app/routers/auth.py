@@ -467,6 +467,7 @@ async def crear_usuario(
 async def editar_usuario(
     request: Request,
     user_id: int,
+    username: str = Form(...),
     nombre: str = Form(...),
     rol: str = Form("cobrador"),
     zona_id: str = Form(""),
@@ -499,6 +500,17 @@ async def editar_usuario(
     if not nombre_clean or len(nombre_clean) > 200:
         return JSONResponse({"error": "Nombre invalido"}, status_code=400)
 
+    username_clean = username.strip().lower()
+    if not username_clean or len(username_clean) > 100:
+        return JSONResponse({"error": "Username invalido"}, status_code=400)
+    existente = db.query(Usuario).filter(
+        Usuario.empresa_id == current_user.empresa_id,
+        Usuario.username == username_clean,
+        Usuario.id != user_id,
+    ).first()
+    if existente:
+        return JSONResponse({"error": "Ese username ya existe en tu empresa"}, status_code=400)
+
     selected_zone_ids = [int(z) for z in zona_ids if str(z).strip().isdigit()]
     if not selected_zone_ids and zona_id.strip().isdigit():
         selected_zone_ids = [int(zona_id)]
@@ -509,6 +521,7 @@ async def editar_usuario(
     if rol in ("cobrador", "supervisor") and not zonas_asignadas:
         return JSONResponse({"error": "Asigna minimo 1 zona"}, status_code=400)
 
+    user.username = username_clean
     user.nombre = nombre_clean
     user.rol = rol
     user.zona_id = zonas_asignadas[0].id if zonas_asignadas else None

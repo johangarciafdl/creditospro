@@ -80,6 +80,8 @@ canvas#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0}
 #splash.show{display:flex}
 .splash-logo{width:70px;height:70px;border-radius:18px;background:linear-gradient(135deg,var(--gold),#7A5A18);display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(.7);box-shadow:0 0 40px rgba(200,169,90,.3)}
 .splash-logo svg{width:36px;height:36px;color:#0A0A0A}
+.splash-logo-img{background:transparent;border-radius:50%;overflow:hidden}
+.splash-logo-img img{width:100%;height:100%;object-fit:cover;border-radius:50%}
 .splash-ring{width:80px;height:80px;border-radius:50%;border:2px solid rgba(200,169,90,.2);border-top-color:var(--gold);position:absolute;animation:spin .8s linear infinite}
 .splash-wrap{position:relative;width:80px;height:80px;display:flex;align-items:center;justify-content:center}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -113,8 +115,12 @@ canvas#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0}
 <div id="splash">
   <div class="splash-wrap">
     <div class="splash-ring" id="splash-ring"></div>
-    <div class="splash-logo" id="splash-logo">
+    <div class="splash-logo{% if logo_url %} splash-logo-img{% endif %}" id="splash-logo">
+      {% if logo_url %}
+      <img src="{{ logo_url }}" alt="{{ empresa_nombre }}">
+      {% else %}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 6v12M9 9h4.5a1.5 1.5 0 0 1 0 3H10a1.5 1.5 0 0 0 0 3H15"/></svg>
+      {% endif %}
     </div>
   </div>
   <div class="splash-msg" id="splash-msg">Verificando credenciales...</div>

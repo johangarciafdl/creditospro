@@ -31,7 +31,7 @@
           <td class="fs-12 text-2">{{ u.ultimo_login.strftime('%d/%m/%y %H:%M') if u.ultimo_login else '—' }}</td>
           <td>{% if u.activo %}<span class="badge badge-green">Activo</span>{% else %}<span class="badge badge-gray">Inactivo</span>{% endif %}</td>
           <td>
-            <button class="btn btn-ghost btn-xs" data-uid="{{ u.id }}" data-nombre="{{ u.nombre }}" data-rol="{{ u.rol }}" data-zonas="{% if u.zonas_asignadas %}{% for z in u.zonas_asignadas %}{{ z.id }}{% if not loop.last %},{% endif %}{% endfor %}{% elif u.zona_id %}{{ u.zona_id }}{% endif %}" data-activo="{{ 'true' if u.activo else 'false' }}" onclick="editarUsuarioBtn(this)">Editar</button>
+            <button class="btn btn-ghost btn-xs" data-uid="{{ u.id }}" data-username="{{ u.username }}" data-nombre="{{ u.nombre }}" data-rol="{{ u.rol }}" data-zonas="{% if u.zonas_asignadas %}{% for z in u.zonas_asignadas %}{{ z.id }}{% if not loop.last %},{% endif %}{% endfor %}{% elif u.zona_id %}{{ u.zona_id }}{% endif %}" data-activo="{{ 'true' if u.activo else 'false' }}" onclick="editarUsuarioBtn(this)">Editar</button>
             {% if u.id != current_user.id %}
             <button class="btn btn-danger btn-xs" data-uid="{{ u.id }}" data-nombre="{{ u.nombre }}" onclick="eliminarUsuarioBtn(this)">✕</button>
             {% endif %}
@@ -96,6 +96,7 @@
     <form id="form-editar" onsubmit="guardarEdicion(event)">
       <input type="hidden" id="edit-id">
       <div class="form-grid">
+        <div class="form-group"><label>Username</label><input id="edit-username" name="username" required></div>
         <div class="form-group"><label>Nombre</label><input id="edit-nombre" name="nombre" required></div>
         <div class="form-group">
           <label>Rol</label>
@@ -106,7 +107,15 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Zonas asignadas (1 a 5)</label><select id="edit-zonas" name="zona_ids" multiple size="5">{% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}</select>
+          <label>Zonas asignadas (1 a 5)</label>
+          <div id="edit-zonas" style="max-height:140px;overflow-y:auto;border:1px solid var(--border-2);border-radius:var(--rsm);padding:6px 10px;background:var(--surface);">
+            {% for z in zonas %}
+            <label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;font-size:13px;font-weight:400;">
+              <input type="checkbox" name="zona_ids" value="{{ z.id }}" style="width:auto;accent-color:var(--gold);">
+              {{ z.nombre }}
+            </label>
+            {% endfor %}
+          </div>
         </div>
         <div class="form-group">
           <label>Nueva contraseña (dejar en blanco para no cambiar)</label>
@@ -131,12 +140,13 @@
 
 <script nonce="{{ csp_nonce }}">
 function editarUsuarioBtn(btn) {
-  var uid    = parseInt(btn.dataset.uid);
-  var nombre = btn.dataset.nombre;
-  var rol    = btn.dataset.rol;
-  var zonas  = btn.dataset.zonas ? btn.dataset.zonas.split(',').map(Number) : [];
-  var activo = btn.dataset.activo === 'true';
-  editarUsuario(uid, nombre, rol, zonas, activo);
+  var uid      = parseInt(btn.dataset.uid);
+  var username = btn.dataset.username;
+  var nombre   = btn.dataset.nombre;
+  var rol      = btn.dataset.rol;
+  var zonas    = btn.dataset.zonas ? btn.dataset.zonas.split(',').map(Number) : [];
+  var activo   = btn.dataset.activo === 'true';
+  editarUsuario(uid, username, nombre, rol, zonas, activo);
 }
 function eliminarUsuarioBtn(btn) {
   var uid    = parseInt(btn.dataset.uid);
@@ -166,11 +176,12 @@ async function crearUsuario(e){
   }
 }
 
-function editarUsuario(id, nombre, rol, zonas, activo){
+function editarUsuario(id, username, nombre, rol, zonas, activo){
   document.getElementById('edit-id').value = id;
+  document.getElementById('edit-username').value = username;
   document.getElementById('edit-nombre').value = nombre;
   document.getElementById('edit-rol').value = rol;
-  document.querySelectorAll('#edit-zonas option').forEach(o => { o.selected = zonas.includes(parseInt(o.value)); });
+  document.querySelectorAll('#edit-zonas input[type=checkbox]').forEach(cb => { cb.checked = zonas.includes(parseInt(cb.value)); });
   document.getElementById('edit-activo').value = activo ? 'true' : 'false';
   document.getElementById('edit-pass').value = '';
   toggleModal('modal-editar');
