@@ -39,8 +39,13 @@ def _validar_placa(placa: str) -> str | None:
 
 
 def _validar_telefono_cobrador(tel: str) -> str | None:
-    """Telefono del cobrador: solo digitos, 7 a 10 (celular colombiano = 10)."""
-    t = limpiar_texto(tel, 10)
+    """Telefono del cobrador: solo digitos, 7 a 10 (celular colombiano = 10).
+
+    OJO: el limite de longitud aqui debe ser mayor que el maximo valido (10)
+    -- si se trunca a 10 antes de aplicar la regex, un valor de 11+ digitos
+    se recorta a 10 y pasa la validacion en vez de ser rechazado.
+    """
+    t = limpiar_texto(tel, 20)
     if not t:
         return None
     if not _TEL_COBRADOR_RE.match(t):
