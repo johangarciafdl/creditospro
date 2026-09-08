@@ -112,7 +112,12 @@ app = FastAPI(
     description="Sistema de gestión de créditos y cobros",
     version="2.1.0",
     lifespan=lifespan,
-    docs_url="/api/docs",
+    # Swagger/OpenAPI solo en desarrollo: en produccion quedaban accesibles
+    # con solo tener una clave de activacion (sin login real), exponiendo el
+    # mapa completo de la API a cualquiera que la obtuviera.
+    docs_url="/api/docs" if not settings.IS_PRODUCTION else None,
+    redoc_url="/redoc" if not settings.IS_PRODUCTION else None,
+    openapi_url="/openapi.json" if not settings.IS_PRODUCTION else None,
 )
 
 app.add_middleware(LicenseMiddleware)

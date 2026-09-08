@@ -12,6 +12,7 @@ Sistema de gestión de créditos y cobros multi-empresa (FastAPI + PostgreSQL/Su
 - [Acceso sin la WiFi de la oficina](#acceso-sin-la-wifi-de-la-oficina)
 - [Trabajo offline](#trabajo-offline)
 - [Sincronizar entre dos equipos](#sincronizar-entre-dos-equipos)
+- [Agregar una empresa nueva](#agregar-una-empresa-nueva)
 - [Activar una empresa (licenciamiento)](#activar-una-empresa-licenciamiento)
 - [Scripts de mantenimiento](#scripts-de-mantenimiento)
 - [Backups](#backups)
@@ -99,6 +100,25 @@ Para propagar cambios puntuales (por ejemplo una plantilla actualizada) entre do
 
 Ambos métodos requieren que la carpeta compartida en el otro PC exista y tenga permisos de escritura (por red) o que tengas acceso físico al otro equipo (por USB).
 
+## Agregar una empresa nueva
+
+CreditosPro ya es multi-empresa por diseño: todas las empresas conviven en la **misma base de datos y el mismo despliegue**, aisladas entre sí por `empresa_id` (reforzado con Row-Level Security en Postgres — ver [Seguridad](#seguridad)). Para dar de alta una empresa nueva **no hace falta escribir ni una línea de código**:
+
+1. Activa temporalmente el registro público: en `.env` (o en las variables de entorno de Railway), pon `ALLOW_PUBLIC_REGISTRATION=1` y reinicia/redeploy.
+2. Entra a `/registro` y llena el formulario: nombre de la empresa, y los datos del primer usuario (queda como `admin` de esa empresa). Esto crea automáticamente la empresa, su configuración por defecto, una "Zona Principal" y el usuario admin — todo en un solo paso, vía formulario web.
+3. Vuelve a poner `ALLOW_PUBLIC_REGISTRATION=0` (o quita la variable) y reinicia — así nadie más puede autoregistrarse sin que tú lo decidas.
+4. Genera su clave comercial (ver [Activar una empresa](#activar-una-empresa-licenciamiento) abajo) y entrégasela.
+
+Desde el panel de esa empresa, el admin puede crear sus propias zonas, cobradores y clientes — no necesita que tú hagas nada más.
+
+**Alternativa avanzada — instalación separada:** si un cliente necesita su **propia base de datos aislada** (no compartir instancia con las demás empresas), usa en cambio:
+
+```powershell
+python scripts\crear_empresa.py --fuente "C:\ruta\al\proyecto" --empresa "Nombre Empresa" --id <id>
+```
+
+Esto scaffoldea una carpeta y `.env` completos para un despliegue 100% independiente (su propia base de datos, su propio proceso). Es más trabajo de infraestructura — solo úsalo si de verdad necesitas esa separación física, no para el caso normal de "una empresa más" en el mismo sistema.
+
 ## Activar una empresa (licenciamiento)
 
 La activación es **por empresa**, no por equipo — no hay licencias atadas a un hardware específico.
@@ -108,12 +128,6 @@ python scripts\crear_clave_empresa.py --empresa-id <id>
 ```
 
 Esto genera una clave (se muestra una sola vez; la base solo guarda su hash) que el cliente ingresa en `/license/activar`. Para rotar una clave ya entregada: agrega `--rotar`.
-
-Para dar de alta una instalación nueva desde cero para otra empresa:
-
-```powershell
-python scripts\crear_empresa.py --fuente "C:\ruta\al\proyecto" --empresa "Nombre Empresa" --id <id>
-```
 
 ## Scripts de mantenimiento
 
