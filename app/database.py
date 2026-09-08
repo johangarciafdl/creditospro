@@ -74,19 +74,6 @@ APP_DATABASE_URL = os.getenv("DATABASE_URL_APP", "").strip()
 if APP_DATABASE_URL.startswith("postgres://"):
     APP_DATABASE_URL = APP_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Diagnostico temporal: por que get_db() sigue usando el rol privilegiado
-# aunque DATABASE_URL_APP este configurada en Railway. Se quita una vez
-# resuelto. No expone contraseñas (corta antes de donde empieza el ":pass@").
-logger.info(
-    "DIAGNOSTICO RLS: DATABASE_URL_APP=%s longitud=%d | DATABASE_URL longitud=%d | son_iguales=%s | preview_app=%r preview_sys=%r",
-    "presente" if APP_DATABASE_URL else "VACIA/AUSENTE",
-    len(APP_DATABASE_URL),
-    len(SQLALCHEMY_DATABASE_URL),
-    APP_DATABASE_URL == SQLALCHEMY_DATABASE_URL,
-    APP_DATABASE_URL[:35],
-    SQLALCHEMY_DATABASE_URL[:35],
-)
-
 if APP_DATABASE_URL and APP_DATABASE_URL != SQLALCHEMY_DATABASE_URL:
     app_connect_args, app_engine_kwargs = _engine_kwargs_for(APP_DATABASE_URL)
     app_engine = create_engine(
