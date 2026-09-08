@@ -73,7 +73,11 @@ h1 strong{color:var(--gold);font-weight:800}
       <div class="item"><b>Licencia</b><span>Activacion por equipo</span></div>
     </div>
     <div class="license {{ 'ok' if license_valid else 'warn' }}">
-      Presiona Iniciar para activar tu empresa y continuar al acceso de usuario.
+      {% if license_valid %}
+      Empresa activada. Presiona {{ start_label }} para acceder.
+      {% else %}
+      Presiona {{ start_label }} para activar tu empresa y continuar al acceso de usuario.
+      {% endif %}
     </div>
   </main>
 </div>

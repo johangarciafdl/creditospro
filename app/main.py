@@ -178,6 +178,11 @@ async def root(request: Request):
     if user and empresa_activada:
         return RedirectResponse(url="/dashboard", status_code=302)
 
+    if empresa_activada:
+        start_url, start_label = "/auth/login", "Iniciar sesión"
+    else:
+        start_url, start_label = "/license/activar", "Iniciar"
+
     return templates.TemplateResponse(
         request,
         "inicio.html",
@@ -185,8 +190,8 @@ async def root(request: Request):
             "software_name": settings.SOFTWARE_NAME,
             "software_owner": settings.SOFTWARE_OWNER,
             "license_valid": empresa_activada,
-            "start_url": "/license/activar",
-            "start_label": "Iniciar",
+            "start_url": start_url,
+            "start_label": start_label,
         },
     )
 
