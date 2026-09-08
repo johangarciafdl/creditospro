@@ -192,8 +192,8 @@ async def inicio(request: Request):
 
 
 @app.get("/comprar")
-async def comprar():
-    return RedirectResponse(url=os.getenv("PURCHASE_URL", "/license/activar"), status_code=302)
+async def comprar(request: Request):
+    return templates.TemplateResponse(request, "comprar.html", {})
 
 
 @app.get("/uploads/fotos/{filename}")
@@ -211,6 +211,17 @@ async def foto_cliente(filename: str, request: Request, db=Depends(get_db)):
         raise HTTPException(status_code=404)
 
     base = (BASE_DIR / "uploads" / "fotos").resolve()
+    ruta = (base / filename).resolve()
+    if base not in ruta.parents or not ruta.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(str(ruta))
+
+
+@app.get("/uploads/logos/{filename}")
+async def logo_empresa(filename: str):
+    # Publico a proposito: se muestra en la pantalla de login, antes de
+    # autenticar a nadie. No expone nada sensible, solo el logo subido.
+    base = (BASE_DIR / "uploads" / "logos").resolve()
     ruta = (base / filename).resolve()
     if base not in ruta.parents or not ruta.is_file():
         raise HTTPException(status_code=404)

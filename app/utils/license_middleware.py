@@ -8,7 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-RUTAS_LIBRES_EXACTAS = {"/", "/inicio", "/license/activar", "/license/activate",
+RUTAS_LIBRES_EXACTAS = {"/", "/inicio", "/comprar", "/license/activar", "/license/activate",
                         "/license/status", "/favicon.ico", "/health"}
 RUTAS_LIBRES_PREFIJOS = {"/static"}
 

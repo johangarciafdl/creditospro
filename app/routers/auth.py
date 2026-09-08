@@ -123,14 +123,18 @@ async def login_page(request: Request, next: str = "/dashboard",
     if token and decode_token(token):
         return RedirectResponse(url=next, status_code=302)
     empresa_nombre = None
+    logo_url = None
     if empresa_id:
         set_tenant_context(db, empresa_id)
         from app.database import Empresa
         emp = db.query(Empresa).filter(Empresa.id == empresa_id).first()
-        empresa_nombre = emp.nombre if emp else None
+        if emp:
+            empresa_nombre = emp.nombre
+            if emp.logo_path:
+                logo_url = f"/uploads/logos/{emp.logo_path}"
     return templates.TemplateResponse(request, "auth/login.html", {
         "next": next, "error": None,
-        "empresa_id": empresa_id, "empresa_nombre": empresa_nombre
+        "empresa_id": empresa_id, "empresa_nombre": empresa_nombre, "logo_url": logo_url,
     })
 
 

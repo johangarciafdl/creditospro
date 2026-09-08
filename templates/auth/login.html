@@ -28,7 +28,9 @@ canvas#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0}
 .left{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:60px}
 .brand-icon{width:80px;height:80px;border-radius:22px;background:linear-gradient(135deg,var(--gold) 0%,#7A5A18 100%);display:flex;align-items:center;justify-content:center;margin-bottom:28px;box-shadow:0 0 60px rgba(200,169,90,.35),0 8px 32px rgba(0,0,0,.5)}
 .brand-icon svg{width:42px;height:42px;color:#0A0A0A}
-.brand-title{font-size:58px;font-weight:800;color:#fff;letter-spacing:-2.5px;line-height:1;margin-bottom:14px;text-align:center}
+.brand-icon-logo{background:#fff;padding:12px;box-shadow:0 0 60px rgba(200,169,90,.25),0 8px 32px rgba(0,0,0,.5)}
+.brand-icon-logo img{width:100%;height:100%;object-fit:contain}
+.brand-title{font-size:clamp(30px,4.8vw,58px);font-weight:800;color:#fff;letter-spacing:-2px;line-height:1.08;margin-bottom:14px;text-align:center;max-width:480px}
 .brand-title span{color:var(--gold)}
 .brand-sub{font-size:15px;color:rgba(255,255,255,.3);text-align:center;max-width:320px;line-height:1.65;margin-bottom:44px}
 .stats-row{display:flex;gap:36px}
@@ -122,10 +124,14 @@ canvas#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0}
 <div class="wrap">
   <!-- LEFT -->
   <div class="left" id="left">
+    {% if logo_url %}
+    <div class="brand-icon brand-icon-logo" id="brand-icon"><img src="{{ logo_url }}" alt="{{ empresa_nombre }}"></div>
+    {% else %}
     <div class="brand-icon" id="brand-icon">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 6v12M9 9h4.5a1.5 1.5 0 0 1 0 3H10a1.5 1.5 0 0 0 0 3H15"/></svg>
     </div>
-    <div class="brand-title" id="brand-title">Creditos<span>Pro</span></div>
+    {% endif %}
+    <div class="brand-title" id="brand-title">{{ empresa_nombre or "CreditosPro" }}</div>
     <div class="brand-sub" id="brand-sub">Gestion inteligente de creditos gota a gota. Rapido, seguro y confiable.</div>
     <div class="stats-row" id="stats-row">
       <div class="stat"><div class="stat-val" id="c-clientes">—</div><div class="stat-label">Clientes</div></div>
