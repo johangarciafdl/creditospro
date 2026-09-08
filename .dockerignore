@@ -26,8 +26,16 @@ license.key
 license_*.txt
 .lic_data
 
-# Datos generados en runtime (se montan como volumenes)
-uploads/
+# Datos generados en runtime (se montan como volumenes).
+# OJO: uploads/logos/ es la excepcion -- son logos versionados en git
+# (ver .gitignore), no contenido subido en runtime, y deben viajar en la
+# imagen. No usar un patron "uploads/" en bloque: Docker tampoco permite
+# des-excluir archivos dentro de un directorio ya excluido asi.
+uploads/fotos/
+uploads/*.jpg
+uploads/*.jpeg
+uploads/*.png
+uploads/*.webp
 backups/
 reports/
 *.db
