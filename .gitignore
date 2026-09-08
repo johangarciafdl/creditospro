@@ -25,12 +25,16 @@ backups/
 *.bak
 *.backup
 
-# Uploads de usuarios
-uploads/
+# Uploads de usuarios (contenido subido en tiempo de ejecucion, no versionado).
+# OJO: no usar un patron "uploads/" que excluya todo el directorio -- git no
+# permite des-excluir archivos dentro de un directorio ya excluido en bloque,
+# y uploads/logos/ (mas abajo) SI debe versionarse: el filesystem de Railway
+# es efimero, y si el logo no viaja en el repo se pierde en cada deploy.
 uploads/fotos/
 uploads/*.jpg
 uploads/*.jpeg
 uploads/*.png
+uploads/*.webp
 
 # Variables de entorno
 .env
