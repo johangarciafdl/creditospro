@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import webbrowser
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -25,9 +26,9 @@ if _dotenv_path.exists():
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import BASE_DIR, Cliente, IS_SQLITE, get_db, init_db
@@ -146,7 +147,6 @@ app.add_middleware(AuditMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-templates = Jinja2Templates(directory="templates")
 
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
@@ -199,6 +199,42 @@ async def root(request: Request):
 @app.get("/inicio")
 async def inicio(request: Request):
     return RedirectResponse(url="/", status_code=302)
+
+
+# ── CSP Report-Only: recolecta violaciones sin bloquear nada, para migrar
+# a CSP estricto de forma segura (ver app/utils/security_headers.py) ──────────
+_csp_violations = deque(maxlen=200)
+
+
+@app.post("/csp-report")
+async def csp_report(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({}, status_code=204)
+    report = body.get("csp-report") or body
+    entry = {
+        "hora": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "pagina": report.get("document-uri") or report.get("url") or "",
+        "directiva": report.get("violated-directive") or report.get("effectiveDirective") or "",
+        "bloqueado": report.get("blocked-uri") or report.get("blockedURL") or "",
+        "archivo": report.get("source-file") or report.get("sourceFile") or "",
+        "linea": report.get("line-number") or report.get("lineNumber") or "",
+        "muestra": (report.get("script-sample") or report.get("sample") or "")[:200],
+    }
+    _csp_violations.append(entry)
+    logger.info("CSP-REPORT: %s", entry)
+    return JSONResponse({}, status_code=204)
+
+
+@app.get("/csp-report/reciente")
+async def csp_report_reciente(request: Request, db=Depends(get_db)):
+    from app.routers.auth import get_current_user
+
+    user = get_current_user(request, db)
+    if not user or user.rol not in ("admin", "superadmin"):
+        raise HTTPException(status_code=404)
+    return JSONResponse({"total": len(_csp_violations), "reportes": list(_csp_violations)[::-1]})
 
 
 @app.get("/comprar")

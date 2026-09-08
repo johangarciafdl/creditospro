@@ -145,7 +145,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Fecha hoy por defecto
 document.getElementById('np-fecha').value = new Date().toISOString().split('T')[0];
 

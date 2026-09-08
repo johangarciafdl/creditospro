@@ -74,7 +74,7 @@
       <div class="card-body" style="padding:0;">
         {% if cliente.lat and cliente.lng %}
         <div id="mapa" style="height:180px;background:rgba(212, 175, 55, 0.05);border-radius:0 0 10px 10px;overflow:hidden;"></div>
-        <script>
+        <script nonce="{{ csp_nonce }}">
           document.addEventListener('DOMContentLoaded', () => {
             // Limitar a rangos validos de coordenadas; defensivo contra datos sucios
             const lat = Math.max(-90, Math.min(90, Number({{ cliente.lat|tojson }})));
@@ -289,7 +289,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 const fechaInicioPrest = document.getElementById('fecha-inicio-prest');
 if (fechaInicioPrest) {
   fechaInicioPrest.value = new Date().toISOString().split('T')[0];

@@ -13,7 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
@@ -30,7 +30,6 @@ from app.utils.validators import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 
 
 # ── GET / — Carga instantanea ────────────────────────────────────────────────

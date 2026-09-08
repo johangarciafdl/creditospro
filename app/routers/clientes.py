@@ -15,7 +15,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Request, Depends, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -30,7 +30,6 @@ from app.utils.validators import (
 
 BASE_DIR = Path(__file__).parent.parent.parent
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 UPLOAD_DIR = BASE_DIR / "uploads" / "fotos"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -13,6 +13,7 @@ EXEMPT_PATHS = {
     "/auth/logout",
     "/health",
     "/license/activate",
+    "/csp-report",  # el navegador lo envia solo, sin nuestro header CSRF
 }
 # Endpoints que cambian el "nivel de confianza" (login, cambiar password, etc.).
 # Despues de ejecutarse, el token CSRF se rota para que un atacante que ya

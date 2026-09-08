@@ -41,7 +41,7 @@ h1 strong{color:var(--gold);font-weight:800}
 .license.ok{color:rgba(134,239,172,.76)}.license.warn{color:rgba(252,211,77,.82)}
 @media(max-width:640px){.wrap{padding:22px}.status{grid-template-columns:1fr}.btn{width:100%}h1{letter-spacing:-1px}}
 </style>
-<script>document.documentElement.classList.add('js-ready');</script>
+<script nonce="{{ csp_nonce }}">document.documentElement.classList.add('js-ready');</script>
 <style>
 .js-ready .mark,.js-ready .eyebrow,.js-ready h1,.js-ready .sub,.js-ready .owner,.js-ready .actions,.js-ready .status,.js-ready .license{opacity:0;transform:translateY(16px)}
 </style>
@@ -82,7 +82,7 @@ h1 strong{color:var(--gold);font-weight:800}
   </main>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 if(!window.anime){window.anime=(opts)=>{const raw=opts.targets;const targets=typeof raw==='string'?document.querySelectorAll(raw):raw&&raw.length!==undefined?raw:[raw];Array.from(targets||[]).forEach(el=>{if(el&&el.style){el.style.opacity='1';el.style.transform='none';}});return {add(){return this}}};anime.stagger=()=>0;}
 const cv=document.getElementById('bg'),ctx=cv.getContext('2d');
 function resize(){cv.width=innerWidth;cv.height=innerHeight}resize();addEventListener('resize',resize);

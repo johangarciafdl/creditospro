@@ -103,7 +103,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 async function guardarZona() {
   const fd = new FormData(document.getElementById('form-zona'));
   const r = await window.fetch('/zonas/nueva', { method:'POST', body: fd });

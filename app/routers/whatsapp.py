@@ -2,7 +2,7 @@
 import datetime
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db, NotificacionWP, ConfiguracionApp, Cliente, Cuota, Prestamo
@@ -11,7 +11,6 @@ from app.services.whatsapp_service import ejecutar_recordatorios, enviar_notific
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 
 
 @router.get("")

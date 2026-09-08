@@ -71,7 +71,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 let _deb = null, _zona = {{ current_user.zona_id or 'null' }};
 
 async function cargarRuta() {

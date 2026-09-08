@@ -1,7 +1,7 @@
 """Selector de empresa - landing page multi-tenant"""
 from fastapi import APIRouter, Request, Depends, Response
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -10,7 +10,6 @@ from app.routers.auth import get_current_user
 from app.utils.settings import settings
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 
 
 @router.get("/seleccionar-empresa")

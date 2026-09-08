@@ -229,7 +229,7 @@ tbody tr:hover{background:var(--surface-2)}
 @keyframes fadeInLeft{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
 @keyframes fadeInUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 </style>
-<script>
+<script nonce="{{ csp_nonce }}">
 // ── MEJORADO: Anime.js con fallback robusto ──
 if(!window.anime){
   window.anime=function(opts){
@@ -375,7 +375,7 @@ window.attr = window.esc;
   <button style="background:none;border:none;color:rgba(255,255,255,.35);cursor:pointer;font-size:18px;padding:2px 6px;" onclick="document.getElementById('pwa-banner').classList.remove('show');localStorage.setItem('pwa_d','1')">x</button>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 if(!window.anime){window.anime=(opts)=>{const raw=opts.targets;const targets=typeof raw==='string'?document.querySelectorAll(raw):raw&&raw.length!==undefined?raw:[raw];Array.from(targets||[]).forEach(el=>{if(el&&el.style){el.style.opacity='1';el.style.transform='none';}});if(opts.complete)opts.complete();return {add(){return this}}};anime.stagger=()=>0;}
 // ── SIDEBAR ──
 function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('backdrop').classList.toggle('open')}

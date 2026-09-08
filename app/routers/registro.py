@@ -6,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db_system, Empresa, Usuario, ConfiguracionApp, Zona
@@ -16,7 +16,6 @@ from app.utils.settings import settings
 from app.utils.csrf import ensure_csrf_token
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger(__name__)
 
 

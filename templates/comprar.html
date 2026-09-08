@@ -213,7 +213,7 @@ h1 span{color:var(--gold)}
 
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 if(!window.anime){window.anime=(opts)=>{const raw=opts.targets;const targets=typeof raw==='string'?document.querySelectorAll(raw):raw&&raw.length!==undefined?raw:[raw];Array.from(targets||[]).forEach(el=>{if(el&&el.style){el.style.opacity='1';el.style.transform='none';}});if(opts.complete)opts.complete();return {add(){return this}}};anime.timeline=()=>({add(opts){anime(opts);return this}});}
 
 // Background nebula (same as login)

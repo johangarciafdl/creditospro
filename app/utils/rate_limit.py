@@ -22,6 +22,7 @@ DEFAULT_RULES = {
     "/cobros/registrar": (60, 60),
     "/whatsapp/enviar-ahora": (5, 300),
     "/whatsapp/enviar-manual": (30, 60),
+    "/csp-report": (100, 60),
 }
 
 # Reglas para rutas con parametro (ej. /zonas/{id}/editar) -- el dict de

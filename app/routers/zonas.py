@@ -1,7 +1,7 @@
 """Zonas router v2.1 - multi-tenant"""
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db, Zona, Cliente, Prestamo, Cobro
@@ -10,7 +10,6 @@ from app.utils.validators import validar_nombre, validar_telefono, limpiar_texto
 from app.utils.zone_permissions import get_allowed_zone_ids
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 
 
 def _sin_html(texto: str, campo: str, max_len: int = 100) -> str:

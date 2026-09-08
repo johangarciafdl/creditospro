@@ -36,7 +36,7 @@ h1{color:#fff;font-size:24px;font-weight:700;letter-spacing:-.5px;margin-bottom:
 .footer a{color:rgba(200,169,90,.7);font-size:12px;text-decoration:none;font-weight:500}
 .footer a:hover{color:#C8A95A}
 </style>
-<script>document.documentElement.classList.add('js-ready');</script>
+<script nonce="{{ csp_nonce }}">document.documentElement.classList.add('js-ready');</script>
 <style>
 .js-ready .header{opacity:0;transform:translateY(-20px)}
 .js-ready .search-wrap{opacity:0}
@@ -86,7 +86,7 @@ h1{color:#fff;font-size:24px;font-weight:700;letter-spacing:-.5px;margin-bottom:
   {% endif %}
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 if(!window.anime){window.anime=(opts)=>{const targets=typeof opts.targets==='string'?document.querySelectorAll(opts.targets):[opts.targets].flat().filter(Boolean);targets.forEach(el=>{if(el&&el.style){el.style.opacity='1';el.style.transform='none';}});return {add(){return this}}};anime.timeline=()=>({add(opts){anime(opts);return this}});anime.stagger=()=>0;}
 // Canvas bg
 const cv=document.getElementById('bg'), ctx=cv.getContext('2d');

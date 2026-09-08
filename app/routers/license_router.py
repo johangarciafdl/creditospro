@@ -3,7 +3,7 @@ import logging
 
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db_system, Empresa
@@ -17,7 +17,6 @@ from app.utils.company_activation import (
 from app.utils.security import activation_key_hash
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger(__name__)
 
 

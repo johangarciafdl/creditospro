@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Depends, Form, UploadFile, File
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func, update
 from decimal import Decimal
@@ -17,7 +17,6 @@ from app.utils.validators import sanitizar_imagen_subida
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent.parent.parent

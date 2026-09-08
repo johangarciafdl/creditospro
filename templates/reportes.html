@@ -88,7 +88,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function descargar(tipo, usarFiltros=false) {
   let url = `/reportes/${tipo}`;
   if (usarFiltros) {

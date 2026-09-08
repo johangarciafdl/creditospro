@@ -95,7 +95,7 @@ canvas#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0}
 
 @media(max-width:768px){.left{display:none}.right{width:100%;border-left:none;background:transparent}}
 </style>
-<script>document.documentElement.classList.add('js-ready');</script>
+<script nonce="{{ csp_nonce }}">document.documentElement.classList.add('js-ready');</script>
 <style>
 .js-ready .left{opacity:0}
 .js-ready .brand-icon,.js-ready .brand-title,.js-ready .brand-sub,.js-ready .stats-row{opacity:0;transform:translateY(20px)}
@@ -193,7 +193,7 @@ canvas#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0}
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 if(!window.anime){window.anime=(opts)=>{const raw=opts.targets;const targets=typeof raw==='string'?document.querySelectorAll(raw):raw&&raw.length!==undefined?raw:[raw];Array.from(targets||[]).forEach(el=>{if(el&&el.style){el.style.opacity='1';el.style.transform='none';}});if(opts.update)opts.update({animatables:[{target:{v:opts.v||0}}]});if(opts.complete)opts.complete();return {add(){return this}}};anime.timeline=()=>({add(opts){anime(opts);return this}});anime.stagger=()=>0;}
 // ── CANVAS NEBULA ──
 const canvas=document.getElementById('bg');

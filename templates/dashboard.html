@@ -122,7 +122,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 const chartData = {{ chart_data | safe }};
 const bars = document.getElementById('chart-bars');
 const labels = document.getElementById('chart-labels');

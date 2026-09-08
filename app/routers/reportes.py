@@ -2,7 +2,7 @@
 import datetime, io
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db, Zona
@@ -17,7 +17,6 @@ from app.utils.zone_permissions import get_allowed_zone_ids
 _MAX_RANGO_DIAS = 366
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 
 
 def _excel_response(data: bytes, filename: str) -> StreamingResponse:

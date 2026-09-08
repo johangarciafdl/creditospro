@@ -147,7 +147,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 async function enviarAhora() {
   const btn = document.getElementById('btn-enviar');
   btn.textContent = '⏳ Enviando...'; btn.disabled = true;

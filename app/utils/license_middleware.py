@@ -9,7 +9,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
 RUTAS_LIBRES_EXACTAS = {"/", "/inicio", "/comprar", "/license/activar", "/license/activate",
-                        "/license/status", "/favicon.ico", "/health"}
+                        "/license/status", "/favicon.ico", "/health", "/csp-report"}
 RUTAS_LIBRES_PREFIJOS = {"/static"}
 
 

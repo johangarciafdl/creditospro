@@ -14,7 +14,7 @@ from typing import Optional, List
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from app.templates import templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db, get_db_system, Usuario, Zona, Empresa, ConfiguracionApp, SessionLocal, set_tenant_context
@@ -48,7 +48,6 @@ from app.utils.roles import normalize_role
 from app.utils.zone_permissions import validate_user_zones
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 SESSION_COOKIE = "cp_session"
 
 # Determinar si estamos en producción
