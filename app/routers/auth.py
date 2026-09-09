@@ -128,6 +128,12 @@ def _redirect_if_no_session(request: Request, db: Session, next_url: str):
 @router.get("/login")
 async def login_page(request: Request, next: str = "/dashboard",
                      empresa_id: int = None, db: Session = Depends(get_db)):
+    # Limite generoso pensado para un humano navegando, no para frenar uso
+    # normal -- existe para cortar en seco un bucle de redirects (p.ej. una
+    # cookie de sesion que no calza con la empresa activada rebotando entre
+    # aqui y /dashboard) en vez de dejarlo pegarle al servidor sin limite.
+    if is_rate_limited(request, "/auth/login", 30, 60):
+        return JSONResponse({"error": "Demasiadas solicitudes. Espera un momento."}, status_code=429)
     activated_empresa_id = request.session.get("activated_empresa_id")
     if not activated_empresa_id:
         return RedirectResponse(url="/license/activar", status_code=302)
@@ -138,9 +144,16 @@ async def login_page(request: Request, next: str = "/dashboard",
     # sin esto un enlace "/auth/login?next=https://evil.example" redirige a
     # una sesion ya autenticada hacia un sitio externo (phishing).
     next_seguro = next if next.startswith("/") and not next.startswith("//") else "/dashboard"
-    token = request.cookies.get(SESSION_COOKIE)
-    if token and decode_token(token):
+    # IMPORTANTE: no basta con que la cookie tenga una firma valida -- hay que
+    # confirmar que es una sesion de ESTA empresa activada. Sin esto, una
+    # cookie vieja de otra empresa (o del superadmin, que no tiene empresa)
+    # salta el formulario de login y manda a /dashboard, que la rechaza y
+    # redirige de vuelta aqui -- bucle infinito de redirects.
+    sesion_previa = get_current_user(request, db)
+    if sesion_previa and sesion_previa.empresa_id == empresa_id:
         return RedirectResponse(url=next_seguro, status_code=302)
+    cookie_ajena = request.cookies.get(SESSION_COOKIE) is not None
+
     empresa_nombre = None
     logo_url = None
     if empresa_id:
@@ -151,10 +164,16 @@ async def login_page(request: Request, next: str = "/dashboard",
             empresa_nombre = emp.nombre
             if emp.logo_path:
                 logo_url = f"/uploads/logos/{emp.logo_path}"
-    return templates.TemplateResponse(request, "auth/login.html", {
+    response = templates.TemplateResponse(request, "auth/login.html", {
         "next": next, "error": None,
         "empresa_id": empresa_id, "empresa_nombre": empresa_nombre, "logo_url": logo_url,
     })
+    if cookie_ajena:
+        # Cookie de otra empresa/sesion (o del superadmin) -- limpiarla para
+        # que no la vuelva a arrastrar un siguiente intento.
+        response.delete_cookie(SESSION_COOKIE)
+        response.delete_cookie(CSRF_COOKIE)
+    return response
 
 
 @router.post("/login")
