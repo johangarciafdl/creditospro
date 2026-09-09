@@ -95,7 +95,7 @@ async def registro_submit(
             nombre=empresa_nombre.strip(),
             nit=empresa_nit.strip() or None,
             pais=pais,
-            plan="free",
+            plan="basico",
             activa=True,
         )
         db.add(empresa)

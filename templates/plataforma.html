@@ -1,33 +1,44 @@
 {% extends "base.html" %}
 {% block title %}Plataforma{% endblock %}
-{% block topbar_title %}Plan comercial por empresa{% endblock %}
+{% block topbar_title %}Administración de empresas{% endblock %}
 {% block topbar_sub %}Solo super admin{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-primary" onclick="document.getElementById('modal-nueva-empresa').classList.add('open')">+ Nueva Empresa</button>
+{% endblock %}
 
 {% block content %}
 <div class="card">
   <div class="card-header">
-    <div class="card-title">Empresas</div>
+    <div class="card-title">Empresas ({{ empresas|length }})</div>
     <span class="badge badge-red">Cambios aplican de inmediato</span>
   </div>
   <div class="card-body-flush table-wrap">
     <table>
       <thead>
-        <tr><th>Empresa</th><th>Plan</th><th>Cobradores activos</th><th>WhatsApp</th><th>Límite cobradores</th><th>Acciones</th></tr>
+        <tr><th>Empresa</th><th>Estado</th><th>Plan</th><th>Cobradores</th><th>WhatsApp</th><th>Límite excepción</th><th>Acciones</th></tr>
       </thead>
       <tbody>
         {% for e in empresas %}
         <tr>
-          <td class="fw-600 fs-13">{{ e.nombre }}{% if not e.activa %} <span class="badge badge-gray">Inactiva</span>{% endif %}</td>
+          <td class="fw-600 fs-13">{{ e.nombre }}</td>
+          <td>
+            <form onsubmit="cambiarActiva(event, {{ e.id }})" style="display:inline;">
+              <input type="hidden" name="activa" value="{{ 'false' if e.activa else 'true' }}">
+              <button type="submit" class="btn btn-xs {% if e.activa %}btn-ghost{% else %}btn-danger{% endif %}">
+                {% if e.activa %}Activa — inhabilitar{% else %}Inactiva — habilitar{% endif %}
+              </button>
+            </form>
+          </td>
           <td>
             <form onsubmit="cambiarPlan(event, {{ e.id }})" style="display:flex;gap:6px;align-items:center;">
-              <select name="plan" style="width:120px;">
+              <select name="plan" style="width:110px;">
                 {% for p in planes_validos %}
                 <option value="{{ p }}" {% if e.plan == p %}selected{% endif %}>{{ p|capitalize }}</option>
                 {% endfor %}
               </select>
               <button type="submit" class="btn btn-ghost btn-xs">Guardar</button>
             </form>
-            {% if e.plan not in planes_validos %}<div class="fs-11 text-2" style="margin-top:4px;">Valor actual: "{{ e.plan }}" (heredado, sin restricción)</div>{% endif %}
+            {% if e.plan not in planes_validos %}<div class="fs-11 text-2" style="margin-top:4px;">Actual: "{{ e.plan }}" (sin restricción)</div>{% endif %}
           </td>
           <td class="fs-13">{{ e.cobradores_activos }}</td>
           <td class="fs-12 text-2">
@@ -35,17 +46,22 @@
             {% elif e.override_whatsapp == false %}<span class="badge badge-red">Forzado OFF</span>
             {% else %}Según plan{% endif %}
           </td>
-          <td class="fs-12 text-2">{% if e.override_max_cobradores %}{{ e.override_max_cobradores }} (excepción){% else %}Según plan{% endif %}</td>
+          <td class="fs-12 text-2">{% if e.override_max_cobradores %}{{ e.override_max_cobradores }}{% else %}—{% endif %}</td>
           <td>
-            <form onsubmit="cambiarOverrides(event, {{ e.id }})" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-              <select name="whatsapp" style="width:130px;">
-                <option value="">WhatsApp: según plan</option>
-                <option value="activar" {% if e.override_whatsapp == true %}selected{% endif %}>Forzar activado</option>
-                <option value="desactivar" {% if e.override_whatsapp == false %}selected{% endif %}>Forzar desactivado</option>
-              </select>
-              <input type="number" name="max_cobradores" min="0" placeholder="Límite excepción" value="{{ e.override_max_cobradores or '' }}" style="width:110px;">
-              <button type="submit" class="btn btn-ghost btn-xs">Aplicar</button>
-            </form>
+            <div class="flex gap-1" style="flex-wrap:wrap;">
+              <form onsubmit="cambiarOverrides(event, {{ e.id }})" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <select name="whatsapp" style="width:120px;">
+                  <option value="">WhatsApp: plan</option>
+                  <option value="activar" {% if e.override_whatsapp == true %}selected{% endif %}>Forzar ON</option>
+                  <option value="desactivar" {% if e.override_whatsapp == false %}selected{% endif %}>Forzar OFF</option>
+                </select>
+                <input type="number" name="max_cobradores" min="0" placeholder="Límite" value="{{ e.override_max_cobradores or '' }}" style="width:80px;">
+                <button type="submit" class="btn btn-ghost btn-xs">Aplicar</button>
+              </form>
+              <button type="button" class="btn btn-ghost btn-xs" onclick="generarClave({{ e.id }}, {{ (e.tiene_clave)|tojson }}, {{ e.nombre|tojson }})">
+                {% if e.tiene_clave %}Rotar clave{% else %}Generar clave{% endif %}
+              </button>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -61,6 +77,58 @@
     <b>Alto:</b> sin límite de cobradores, con WhatsApp.
     Un plan distinto a estos tres (ej. "trial", el valor histórico de empresas creadas antes de este sistema) no aplica ninguna restricción hasta que le asignes uno de los tres.
   </div>
+</div>
+
+<!-- MODAL NUEVA EMPRESA -->
+<div class="modal-overlay" id="modal-nueva-empresa" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Nueva Empresa</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-nueva-empresa').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <form id="form-nueva-empresa">
+      <div class="form-grid">
+        <div class="form-group full"><label>Nombre de la empresa *</label><input name="empresa_nombre" required></div>
+        <div class="form-group"><label>NIT</label><input name="empresa_nit"></div>
+        <div class="form-group"><label>País</label><input name="pais" value="Colombia"></div>
+      </div>
+      <div style="height:1px;background:var(--border);margin:14px 0;"></div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--gold);margin-bottom:8px;">Primer usuario (administrador de la empresa)</div>
+      <div class="form-grid">
+        <div class="form-group"><label>Nombre completo *</label><input name="admin_nombre" required></div>
+        <div class="form-group"><label>Username *</label><input name="admin_username" required></div>
+        <div class="form-group full"><label>Contraseña *</label><input type="password" name="admin_password" required minlength="8"></div>
+      </div>
+      <p class="fs-11 text-2" style="margin-top:6px;">Se crea con plan Básico y una zona inicial ("Zona Principal"). Al guardar se genera de una vez la clave de activación.</p>
+    </form>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-nueva-empresa').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-primary" onclick="crearEmpresa()">Crear Empresa</button>
+  </div>
+</div>
+</div>
+
+<!-- MODAL MOSTRAR CLAVE -->
+<div class="modal-overlay" id="modal-clave" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Clave de activación</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-clave').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <p class="fs-12 text-2" id="clave-empresa-nombre"></p>
+    <p class="fs-12" style="color:var(--red);">Se muestra una sola vez — el sistema solo guarda su hash. Cópiala y entrégasela al cliente ahora.</p>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input id="clave-valor" readonly style="font-family:var(--mono);font-size:13px;flex:1;">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="copiarClave()">Copiar</button>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-primary" onclick="location.reload()">Listo, ya la copié</button>
+  </div>
+</div>
 </div>
 {% endblock %}
 
@@ -82,6 +150,53 @@ async function cambiarOverrides(e, empresaId) {
   const d = await r.json();
   if (d.ok) { toast(d.mensaje); setTimeout(() => location.reload(), 700); }
   else toast(d.error || 'Error', 'error');
+}
+
+async function cambiarActiva(e, empresaId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const activaNueva = fd.get('activa') === 'true';
+  if (!activaNueva && !confirm('¿Inhabilitar esta empresa? Sus usuarios no podrán activar ni iniciar sesión hasta que la vuelvas a habilitar.')) return;
+  const r = await window.fetch(`/plataforma/empresas/${empresaId}/activa`, { method: 'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) { toast(d.mensaje); setTimeout(() => location.reload(), 700); }
+  else toast(d.error || 'Error', 'error');
+}
+
+async function generarClave(empresaId, tieneClave, nombre) {
+  if (tieneClave && !confirm(`${nombre} ya tiene una clave activa. ¿Rotarla? La clave anterior deja de funcionar de inmediato.`)) return;
+  const fd = new FormData();
+  fd.append('rotar', tieneClave ? 'true' : 'false');
+  const r = await window.fetch(`/plataforma/empresas/${empresaId}/clave`, { method: 'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) {
+    document.getElementById('clave-empresa-nombre').textContent = nombre;
+    document.getElementById('clave-valor').value = d.clave;
+    document.getElementById('modal-clave').classList.add('open');
+  } else {
+    toast(d.error || 'Error', 'error');
+  }
+}
+
+function copiarClave() {
+  const inp = document.getElementById('clave-valor');
+  inp.select();
+  navigator.clipboard.writeText(inp.value).then(() => toast('Clave copiada')).catch(() => {});
+}
+
+async function crearEmpresa() {
+  const form = document.getElementById('form-nueva-empresa');
+  const fd = new FormData(form);
+  const r = await window.fetch('/plataforma/empresas/nueva', { method: 'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) {
+    document.getElementById('modal-nueva-empresa').classList.remove('open');
+    document.getElementById('clave-empresa-nombre').textContent = fd.get('empresa_nombre');
+    document.getElementById('clave-valor').value = d.clave;
+    document.getElementById('modal-clave').classList.add('open');
+  } else {
+    toast(d.error || 'Error', 'error');
+  }
 }
 </script>
 {% endblock %}

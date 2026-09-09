@@ -6,15 +6,18 @@ por definicion necesita ver TODAS las empresas, no solo la del usuario
 actual -- el unico caso legitimo de acceso cross-empresa junto con el
 scheduler, la activacion de licencia y el selector de empresa.
 """
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db_system, Empresa, Usuario
+from app.database import get_db_system, Empresa, Usuario, ConfiguracionApp, Zona
 from app.routers.auth import get_current_user
 from app.templates import templates
 from app.utils.audit import log_action
+from app.utils.company_activation import assign_company_key
+from app.utils.password_policy import validar_password
 from app.utils.plan_limits import PLANES_VALIDOS
+from app.utils.security import get_password_hash
 
 router = APIRouter()
 
@@ -45,6 +48,7 @@ async def panel_plataforma(request: Request, db: Session = Depends(get_db_system
         data.append({
             "id": e.id, "nombre": e.nombre, "plan": e.plan or "basico",
             "activa": e.activa, "cobradores_activos": cobradores_activos,
+            "tiene_clave": bool(e.activation_key_hash),
             "override_whatsapp": overrides.get("whatsapp"),
             "override_max_cobradores": overrides.get("max_cobradores"),
         })
@@ -113,3 +117,136 @@ async def cambiar_overrides(
     db.commit()
     log_action(db, user, "plan_override_change", "empresas", f"empresa_id={empresa_id} overrides={overrides}")
     return JSONResponse({"ok": True, "mensaje": f"Excepciones de {empresa.nombre} actualizadas"})
+
+
+@router.post("/empresas/{empresa_id}/activa")
+async def cambiar_activa(
+    request: Request, empresa_id: int,
+    activa: str = Form(...),
+    db: Session = Depends(get_db_system)
+):
+    user = _requiere_superadmin(request, db)
+    if not user:
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    empresa = db.query(Empresa).filter(Empresa.id == empresa_id).first()
+    if not empresa:
+        return JSONResponse({"error": "Empresa no encontrada"}, status_code=404)
+
+    empresa.activa = activa.lower() in ("true", "1", "on")
+    db.commit()
+    log_action(db, user, "empresa_activa_change", "empresas", f"empresa_id={empresa_id} activa={empresa.activa}")
+    verbo = "habilitada" if empresa.activa else "inhabilitada"
+    return JSONResponse({"ok": True, "mensaje": f"{empresa.nombre} {verbo}"})
+
+
+@router.post("/empresas/{empresa_id}/clave")
+async def generar_clave(
+    request: Request, empresa_id: int,
+    rotar: str = Form("false"),
+    db: Session = Depends(get_db_system)
+):
+    user = _requiere_superadmin(request, db)
+    if not user:
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    empresa = db.query(Empresa).filter(Empresa.id == empresa_id).first()
+    if not empresa:
+        return JSONResponse({"error": "Empresa no encontrada"}, status_code=404)
+
+    rotar_bool = rotar.lower() in ("true", "1", "on")
+    if empresa.activation_key_hash and not rotar_bool:
+        return JSONResponse(
+            {"error": "Esta empresa ya tiene una clave activa. Confirma para rotarla (invalida la anterior)."},
+            status_code=409,
+        )
+
+    clave = assign_company_key(db, empresa)
+    db.commit()
+    log_action(db, user, "empresa_clave_change", "empresas", f"empresa_id={empresa_id} rotada={rotar_bool}")
+    return JSONResponse({"ok": True, "clave": clave, "hint": empresa.activation_key_hint})
+
+
+@router.post("/empresas/nueva")
+async def crear_empresa(
+    request: Request,
+    empresa_nombre: str = Form(...),
+    empresa_nit: str = Form(""),
+    pais: str = Form("Colombia"),
+    admin_nombre: str = Form(...),
+    admin_username: str = Form(...),
+    admin_password: str = Form(...),
+    db: Session = Depends(get_db_system)
+):
+    user = _requiere_superadmin(request, db)
+    if not user:
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    empresa_nombre_clean = empresa_nombre.strip()
+    if not empresa_nombre_clean or len(empresa_nombre_clean) > 200:
+        return JSONResponse({"error": "Nombre de empresa invalido"}, status_code=400)
+
+    username_clean = admin_username.strip().lower()
+    if not username_clean or len(username_clean) > 100:
+        return JSONResponse({"error": "Username invalido"}, status_code=400)
+    admin_nombre_clean = admin_nombre.strip()
+    if not admin_nombre_clean or len(admin_nombre_clean) > 200:
+        return JSONResponse({"error": "Nombre de administrador invalido"}, status_code=400)
+
+    # Mismo chequeo que usa el registro publico (/registro): username unico
+    # en toda la plataforma, no solo dentro de la empresa nueva.
+    existente = db.query(Usuario).filter(Usuario.username == username_clean).first()
+    if existente:
+        return JSONResponse({"error": "Ese username ya existe en otra empresa"}, status_code=400)
+
+    try:
+        validar_password(admin_password)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    try:
+        empresa = Empresa(
+            nombre=empresa_nombre_clean,
+            nit=empresa_nit.strip() or None,
+            pais=pais,
+            plan="basico",
+            activa=True,
+        )
+        db.add(empresa)
+        db.flush()
+
+        config = ConfiguracionApp(
+            empresa_id=empresa.id,
+            empresa_nombre=empresa_nombre_clean,
+            pais=pais,
+            moneda="COP" if pais == "Colombia" else "USD",
+        )
+        db.add(config)
+
+        zona = Zona(empresa_id=empresa.id, codigo="Z001", nombre="Zona Principal", activa=True)
+        db.add(zona)
+
+        admin = Usuario(
+            empresa_id=empresa.id,
+            username=username_clean,
+            nombre=admin_nombre_clean,
+            password_hash=get_password_hash(admin_password),
+            rol="admin",
+            activo=True,
+        )
+        db.add(admin)
+        db.flush()
+
+        clave = assign_company_key(db, empresa)
+        db.commit()
+        log_action(db, user, "empresa_create", "empresas", f"empresa_id={empresa.id} nombre={empresa_nombre_clean}")
+
+        return JSONResponse({
+            "ok": True,
+            "empresa_id": empresa.id,
+            "clave": clave,
+            "mensaje": f"Empresa {empresa_nombre_clean} creada, con zona inicial y usuario administrador",
+        })
+    except Exception:
+        db.rollback()
+        return JSONResponse({"error": "No se pudo crear la empresa. Intenta de nuevo."}, status_code=500)
