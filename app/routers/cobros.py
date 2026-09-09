@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends, Form, UploadFile, File
+from fastapi import APIRouter, Request, Depends, Form, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from app.templates import templates
 from sqlalchemy.orm import Session
@@ -13,7 +13,7 @@ from app.database import get_db, Cobro, Cuota, Prestamo, Cliente, Zona, IS_SQLIT
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import get_estado_prestamo
 from app.utils.money import money
-from app.utils.validators import sanitizar_imagen_subida
+from app.utils.validators import sanitizar_imagen_subida, validar_metodo_pago
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 
 router = APIRouter()
@@ -182,6 +182,10 @@ async def registrar_cobro(
     # llega si el form envia "nan"/"NaN"); "not (> 0)" si lo rechaza.
     if not (valor_cobrado > 0):
         return JSONResponse({"error": "Valor invalido"}, 400)
+    try:
+        metodo_pago = validar_metodo_pago(metodo_pago)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
 
     cuota = _lock_for_update(
         db.query(Cuota).filter(Cuota.id == cuota_id, Cuota.empresa_id == user.empresa_id)
@@ -251,7 +255,7 @@ async def registrar_cobro(
             fecha=datetime.date.today(),
             hora=datetime.datetime.now(),
             cobrador=user.nombre or user.username,
-            metodo_pago=(metodo_pago or "Efectivo")[:50],
+            metodo_pago=metodo_pago,
             observaciones=observaciones[:500] or None,
             usuario_id=user.id,
             lat_cobro=lat_val,
@@ -289,6 +293,10 @@ async def registrar_cobro_cliente_rapido(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
+    try:
+        metodo_pago = validar_metodo_pago(metodo_pago)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
 
     hoy = datetime.date.today()
     base_query = (
@@ -335,7 +343,7 @@ async def registrar_cobro_cliente_rapido(
             fecha=hoy,
             hora=datetime.datetime.now(),
             cobrador=user.nombre or user.username,
-            metodo_pago=(metodo_pago or "Efectivo")[:50],
+            metodo_pago=metodo_pago,
             observaciones="Cobro rapido desde lista de clientes",
             usuario_id=user.id,
         )

@@ -46,6 +46,17 @@ def validar_telefono(tel: str, requerido: bool = True) -> Optional[str]:
     return t
 
 
+METODOS_PAGO_VALIDOS = ("Efectivo", "Nequi", "Daviplata", "Transferencia")
+
+
+def validar_metodo_pago(metodo: str) -> str:
+    """Metodo de pago: lista blanca fija (botones/select del frontend), no texto libre."""
+    m = limpiar_texto(metodo, 50) or "Efectivo"
+    if m not in METODOS_PAGO_VALIDOS:
+        raise HTTPException(400, f"Metodo de pago invalido. Usa: {', '.join(METODOS_PAGO_VALIDOS)}")
+    return m
+
+
 def validar_numero_positivo(valor, nombre: str = "valor", minimo: float = 0.01, maximo: float = 100_000_000) -> float:
     """Valida que un valor numérico esté dentro de un rango.
 

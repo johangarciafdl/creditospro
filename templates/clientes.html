@@ -259,8 +259,6 @@ async function confirmarCobroR() {
       method: 'POST',
       body: fd
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-
     const d = await r.json();
     if (d.ok) {
       document.getElementById('modal-cobro-r').classList.remove('open');
@@ -268,7 +266,7 @@ async function confirmarCobroR() {
       else alert(d.mensaje || 'Cobro registrado');
       setTimeout(buscar, 500);
     } else {
-      alert(d.error || 'Error al registrar cobro');
+      alert(d.error || d.detail || 'Error al registrar cobro');
     }
   } catch(e) {
     console.error('[Cobros] Error registrar:', e);
@@ -308,8 +306,6 @@ async function guardarCliente() {
 
   try {
     const r = await window.fetch('/clientes/nuevo', { method:'POST', body: fd });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    
     const d = await r.json();
     if (d.ok) {
       document.getElementById('modal-cliente').classList.remove('open');
@@ -317,7 +313,7 @@ async function guardarCliente() {
       else alert('Cliente creado exitosamente');
       buscar(); // refrescar resultados
     } else {
-      alert(d.error || 'Error al guardar cliente');
+      alert(d.error || d.detail || 'Error al guardar cliente');
     }
   } catch(e) {
     console.error('[Clientes] Error guardar:', e);

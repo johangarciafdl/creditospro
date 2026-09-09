@@ -146,10 +146,13 @@ async def calcular_preview(
     cuotas: int,
     plazo: int = 1
 ):
-    capital = validar_numero_positivo(capital, "capital")
-    tasa = validar_numero_positivo(tasa, "tasa", minimo=0, maximo=200)
-    cuotas = validar_entero_positivo(cuotas, "cuotas", minimo=1, maximo=365)
-    plazo = validar_entero_positivo(plazo, "plazo", minimo=1, maximo=365)
+    try:
+        capital = validar_numero_positivo(capital, "capital")
+        tasa = validar_numero_positivo(tasa, "tasa", minimo=0, maximo=200)
+        cuotas = validar_entero_positivo(cuotas, "cuotas", minimo=1, maximo=365)
+        plazo = validar_entero_positivo(plazo, "plazo", minimo=1, maximo=365)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
     calc = calcular_cuotas(capital, tasa, cuotas, datetime.date.today(), plazo)
     return {
         "interes_total": float(calc.get("interes_total") or 0),
@@ -176,15 +179,16 @@ async def crear_prestamo(
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
 
-    # Validar IDs
-    cliente_id_int = validar_entero_positivo(cliente_id, "Cliente")
-    zona_id_int = validar_entero_positivo(zona_id, "Zona")
-
-    # Validar rangos
-    capital = validar_numero_positivo(capital, "capital", maximo=100_000_000)
-    tasa_interes = validar_numero_positivo(tasa_interes, "tasa de interés", minimo=0, maximo=200)
-    num_cuotas = validar_entero_positivo(num_cuotas, "cuotas", minimo=1, maximo=365)
-    plazo_dias = validar_entero_positivo(plazo_dias, "plazo", minimo=1, maximo=365)
+    # Validar IDs y rangos
+    try:
+        cliente_id_int = validar_entero_positivo(cliente_id, "Cliente")
+        zona_id_int = validar_entero_positivo(zona_id, "Zona")
+        capital = validar_numero_positivo(capital, "capital", maximo=100_000_000)
+        tasa_interes = validar_numero_positivo(tasa_interes, "tasa de interés", minimo=0, maximo=200)
+        num_cuotas = validar_entero_positivo(num_cuotas, "cuotas", minimo=1, maximo=365)
+        plazo_dias = validar_entero_positivo(plazo_dias, "plazo", minimo=1, maximo=365)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
 
     # Verificar cliente pertenece a empresa (aislamiento multi-tenant)
     cliente = db.query(Cliente).filter(

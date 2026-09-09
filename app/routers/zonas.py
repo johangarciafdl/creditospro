@@ -16,6 +16,14 @@ router = APIRouter()
 
 _PLACA_RE = re.compile(r"^[A-Za-z0-9]{6}$")
 _TEL_COBRADOR_RE = re.compile(r"^[0-9]{7,10}$")
+_CODIGO_ZONA_RE = re.compile(r"^[A-Za-z0-9_-]{2,20}$")
+
+
+def _validar_codigo_zona(codigo: str) -> str:
+    c = limpiar_texto(codigo, 20).upper()
+    if not _CODIGO_ZONA_RE.match(c):
+        raise HTTPException(400, "El codigo de zona debe ser alfanumerico, entre 2 y 20 caracteres")
+    return c
 
 
 def _sin_html(texto: str, campo: str, max_len: int = 100) -> str:
@@ -137,23 +145,32 @@ async def crear_zona(
     if not user or user.rol not in ("admin", "superadmin"):
         return JSONResponse({"error": "Sin permisos"}, status_code=403)
 
+    try:
+        codigo_limpio = _validar_codigo_zona(codigo)
+        nombre = _sin_html(nombre, "Nombre de zona")
+        ciudad = _sin_html(ciudad, "Ciudad", 100) or "Medellín"
+        departamento = _sin_html(departamento, "Departamento", 100) or "Antioquia"
+        pais = _sin_html(pais, "País", 100) or "Colombia"
+        cobrador_nombre_limpio = _validar_cobrador(db, user.empresa_id, cobrador_nombre)
+        cobrador_moto_limpio = _validar_placa(cobrador_moto)
+        cobrador_tel_limpio = _validar_telefono_cobrador(cobrador_tel)
+        # Si se asigna un cobrador, su telefono y placa dejan de ser opcionales
+        # -- un cobrador sin como contactarlo ni identificar su moto no sirve
+        # para operar la zona en campo.
+        if cobrador_nombre_limpio and not (cobrador_tel_limpio and cobrador_moto_limpio):
+            raise HTTPException(400, "Si asignas un cobrador, su telefono y placa/moto son obligatorios")
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
     existente = db.query(Zona).filter(
-        Zona.empresa_id == user.empresa_id, Zona.codigo == codigo.upper()
+        Zona.empresa_id == user.empresa_id, Zona.codigo == codigo_limpio
     ).first()
     if existente:
         return JSONResponse({"error": "Código de zona ya existe"}, status_code=400)
 
-    try:
-        nombre = _sin_html(nombre, "Nombre de zona")
-        cobrador_nombre_limpio = _validar_cobrador(db, user.empresa_id, cobrador_nombre)
-        cobrador_moto_limpio = _validar_placa(cobrador_moto)
-        cobrador_tel_limpio = _validar_telefono_cobrador(cobrador_tel)
-    except HTTPException as e:
-        return JSONResponse({"error": e.detail}, status_code=e.status_code)
-
     zona = Zona(
         empresa_id=user.empresa_id,
-        codigo=codigo.upper(), nombre=nombre,
+        codigo=codigo_limpio, nombre=nombre,
         ciudad=ciudad, departamento=departamento, pais=pais,
         cobrador_nombre=cobrador_nombre_limpio,
         cobrador_tel=cobrador_tel_limpio,
@@ -186,12 +203,18 @@ async def editar_zona(
         return JSONResponse({"error": "No encontrado"}, status_code=404)
 
     try:
-        zona.nombre = _sin_html(nombre, "Nombre de zona")
-        zona.cobrador_nombre = _validar_cobrador(db, user.empresa_id, cobrador_nombre)
-        zona.cobrador_moto = _validar_placa(cobrador_moto)
-        zona.cobrador_tel = _validar_telefono_cobrador(cobrador_tel)
+        nombre_limpio = _sin_html(nombre, "Nombre de zona")
+        cobrador_nombre_limpio = _validar_cobrador(db, user.empresa_id, cobrador_nombre)
+        cobrador_moto_limpio = _validar_placa(cobrador_moto)
+        cobrador_tel_limpio = _validar_telefono_cobrador(cobrador_tel)
+        if cobrador_nombre_limpio and not (cobrador_tel_limpio and cobrador_moto_limpio):
+            raise HTTPException(400, "Si asignas un cobrador, su telefono y placa/moto son obligatorios")
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
+    zona.nombre = nombre_limpio
+    zona.cobrador_nombre = cobrador_nombre_limpio
+    zona.cobrador_moto = cobrador_moto_limpio
+    zona.cobrador_tel = cobrador_tel_limpio
     zona.activa = activa.lower() in ("true", "1", "on")
     zona.bot_phone = bot_phone.strip() or None
     zona.bot_apikey = bot_apikey.strip() or None

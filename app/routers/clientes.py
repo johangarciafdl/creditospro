@@ -213,10 +213,13 @@ async def crear_cliente(
         return JSONResponse({"error": "No autorizado"}, status_code=401)
 
     # Validar inputs
-    cedula = validar_cedula(cedula)
-    nombre = validar_nombre(nombre)
-    telefono = validar_telefono(telefono, requerido=True)
-    whatsapp = validar_telefono(whatsapp, requerido=False)
+    try:
+        cedula = validar_cedula(cedula)
+        nombre = validar_nombre(nombre)
+        telefono = validar_telefono(telefono, requerido=True)
+        whatsapp = validar_telefono(whatsapp, requerido=False)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
     direccion = limpiar_texto(direccion, 300)
     barrio = limpiar_texto(barrio, 100)
 
@@ -306,9 +309,12 @@ async def editar_cliente(
     if not require_zone_access(db, user, cliente.zona_id):
         return JSONResponse({"error": "No tienes permisos para este cliente"}, status_code=403)
 
-    nombre = validar_nombre(nombre)
-    telefono = validar_telefono(telefono, requerido=True)
-    whatsapp = validar_telefono(whatsapp, requerido=False)
+    try:
+        nombre = validar_nombre(nombre)
+        telefono = validar_telefono(telefono, requerido=True)
+        whatsapp = validar_telefono(whatsapp, requerido=False)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
     direccion = limpiar_texto(direccion, 300)
     barrio = limpiar_texto(barrio, 100)
     if tipo_cliente not in ("Regular", "Bueno", "Riesgo"):

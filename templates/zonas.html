@@ -116,6 +116,10 @@ const EMPLEADOS_ZONA = {{ empleados|tojson }};
 
 async function guardarZona() {
   const fd = new FormData(document.getElementById('form-zona'));
+  if (fd.get('cobrador_nombre') && (!fd.get('cobrador_tel') || !fd.get('cobrador_moto'))) {
+    toast('Si asignas un cobrador, su teléfono y placa/moto son obligatorios', 'error');
+    return;
+  }
   const r = await window.fetch('/zonas/nueva', { method:'POST', body: fd });
   const d = await r.json();
   if (d.ok) { toast('Zona creada ✓'); setTimeout(() => location.reload(), 800); }
@@ -152,9 +156,14 @@ function editarZona(id, nombre, cobrador, tel, moto) {
 async function actualizarZona(id) {
   const fd = new FormData(document.getElementById('fe-zona'));
   fd.append('activa', 'true');
+  if (fd.get('cobrador_nombre') && (!fd.get('cobrador_tel') || !fd.get('cobrador_moto'))) {
+    toast('Si asignas un cobrador, su teléfono y placa/moto son obligatorios', 'error');
+    return;
+  }
   const r = await window.fetch(`/zonas/${id}/editar`, { method:'POST', body: fd });
   const d = await r.json();
   if (d.ok) { toast('Zona actualizada ✓'); cerrarModal(); setTimeout(() => location.reload(), 800); }
+  else { toast(d.error || 'Error al actualizar zona', 'error'); }
 }
 </script>
 {% endblock %}
