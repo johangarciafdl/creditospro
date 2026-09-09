@@ -14,6 +14,7 @@ Sistema de gestión de créditos y cobros multi-empresa (FastAPI + PostgreSQL/Su
 - [Sincronizar entre dos equipos](#sincronizar-entre-dos-equipos)
 - [Agregar una empresa nueva](#agregar-una-empresa-nueva)
 - [Activar una empresa (licenciamiento)](#activar-una-empresa-licenciamiento)
+- [Planes comerciales y control de funciones](#planes-comerciales-y-control-de-funciones)
 - [Scripts de mantenimiento](#scripts-de-mantenimiento)
 - [Backups](#backups)
 - [Despliegue](#despliegue)
@@ -131,6 +132,42 @@ python scripts\crear_clave_empresa.py --empresa-id <id>
 
 Esto genera una clave (se muestra una sola vez; la base solo guarda su hash) que el cliente ingresa en `/license/activar`. Para rotar una clave ya entregada: agrega `--rotar`.
 
+## Planes comerciales y control de funciones
+
+Cada empresa tiene un plan (`basico`, `medio` o `alto`) que limita cuántos cobradores/supervisores puede tener activos a la vez y si tiene acceso a WhatsApp automático:
+
+| Plan | Cobradores/supervisores activos | WhatsApp automático |
+|---|---|---|
+| Básico | Máximo 2 | No |
+| Medio | Máximo 6 | Sí |
+| Alto | Sin límite | Sí |
+
+Una empresa con un plan distinto a estos tres (por ejemplo `trial`, el valor que tenían las empresas creadas antes de que este sistema existiera) no tiene ninguna restricción — así una instalación previa no pierde acceso de golpe.
+
+### Cambiar el plan de una empresa
+
+Es un panel web (`/plataforma`), no un script — solo lo puede ver y usar un usuario con rol `superadmin` (ni siquiera un `admin` de una empresa lo alcanza):
+
+1. Entra a `/plataforma` con tu cuenta de superadmin.
+2. Elige el plan en el desplegable de la fila de esa empresa y da clic en "Guardar".
+
+### Activar/desactivar una función puntual (sin cambiar el plan completo)
+
+En la misma pantalla, cada empresa tiene un segundo formulario de "excepciones":
+
+- **WhatsApp**: "Forzar activado" le da acceso aunque su plan no lo incluya (por ejemplo, para que lo pruebe antes de decidir subir de plan); "Forzar desactivado" se lo quita aunque su plan sí lo incluya.
+- **Límite de cobradores**: escribe un número para reemplazar el límite del plan solo para esa empresa; deja el campo vacío para volver a usar el límite del plan.
+
+Los cambios aplican de inmediato — no hace falta que la empresa cierre sesión ni que reinicies nada. El bloqueo real de WhatsApp está en el punto donde la app llama a Green API (no solo en los formularios de configuración), así que no se puede saltar activando el bot por otro lado.
+
+### Asignarte el rol de superadmin
+
+No existe forma de hacerlo desde la web — es deliberado, evita que un admin de cualquier empresa se lo asigne a sí mismo. Es un script de una sola vez, y debes correrlo tú directamente contra la base de datos:
+
+```powershell
+python scripts\promover_superadmin.py --empresa-id <id> --username <usuario>
+```
+
 ## Scripts de mantenimiento
 
 Viven en [`scripts/`](scripts/) — se ejecutan con `python scripts\<nombre>.py` desde la raíz del proyecto:
@@ -139,6 +176,8 @@ Viven en [`scripts/`](scripts/) — se ejecutan con `python scripts\<nombre>.py`
 |---|---|
 | `crear_clave_empresa.py` | Genera/rota la clave de activación de una empresa |
 | `crear_empresa.py` | Scaffolding de una instalación nueva para otra empresa |
+| `promover_superadmin.py` | Asigna el rol `superadmin` (control de planes en `/plataforma`) a un usuario existente |
+| `set_logo_empresa.py` | Asigna el logo de una empresa (se ve en su pantalla de login) |
 | `crear_indices.py` / `crear_indices.sql` | Crea índices de rendimiento en la base de datos |
 | `diagnostico_supabase.py` | Verifica conexión e integridad de datos en Supabase |
 | `backup_supabase.py` | Backup lógico (JSON + CSV + manifiesto verificado) de todas las tablas |
