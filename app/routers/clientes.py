@@ -25,7 +25,7 @@ from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
     validar_cedula, validar_nombre, validar_telefono, limpiar_texto,
-    sanitizar_imagen_subida
+    sanitizar_imagen_subida, sin_html
 )
 
 BASE_DIR = Path(__file__).parent.parent.parent
@@ -218,10 +218,10 @@ async def crear_cliente(
         nombre = validar_nombre(nombre)
         telefono = validar_telefono(telefono, requerido=True)
         whatsapp = validar_telefono(whatsapp, requerido=False)
+        direccion = sin_html(direccion, "Dirección", 300)
+        barrio = sin_html(barrio, "Barrio", 100)
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
-    direccion = limpiar_texto(direccion, 300)
-    barrio = limpiar_texto(barrio, 100)
 
     if tipo_cliente not in ("Regular", "Bueno", "Riesgo"):
         tipo_cliente = "Regular"
@@ -313,10 +313,10 @@ async def editar_cliente(
         nombre = validar_nombre(nombre)
         telefono = validar_telefono(telefono, requerido=True)
         whatsapp = validar_telefono(whatsapp, requerido=False)
+        direccion = sin_html(direccion, "Dirección", 300)
+        barrio = sin_html(barrio, "Barrio", 100)
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
-    direccion = limpiar_texto(direccion, 300)
-    barrio = limpiar_texto(barrio, 100)
     if tipo_cliente not in ("Regular", "Bueno", "Riesgo"):
         tipo_cliente = "Regular"
 

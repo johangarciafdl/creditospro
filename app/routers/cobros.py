@@ -13,7 +13,7 @@ from app.database import get_db, Cobro, Cuota, Prestamo, Cliente, Zona, IS_SQLIT
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import get_estado_prestamo
 from app.utils.money import money
-from app.utils.validators import sanitizar_imagen_subida, validar_metodo_pago
+from app.utils.validators import sanitizar_imagen_subida, validar_metodo_pago, sin_html
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 
 router = APIRouter()
@@ -184,6 +184,7 @@ async def registrar_cobro(
         return JSONResponse({"error": "Valor invalido"}, 400)
     try:
         metodo_pago = validar_metodo_pago(metodo_pago)
+        observaciones = sin_html(observaciones, "Observaciones", 500)
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
 
@@ -256,7 +257,7 @@ async def registrar_cobro(
             hora=datetime.datetime.now(),
             cobrador=user.nombre or user.username,
             metodo_pago=metodo_pago,
-            observaciones=observaciones[:500] or None,
+            observaciones=observaciones or None,
             usuario_id=user.id,
             lat_cobro=lat_val,
             lng_cobro=lng_val,

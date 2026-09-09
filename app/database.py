@@ -144,6 +144,11 @@ class Empresa(Base):
     overrides = Column(JSON, nullable=True)
     activation_key_hash = Column(String(64), nullable=True, unique=True, index=True)
     activation_key_hint = Column(String(24), nullable=True)
+    # Copia cifrada (reversible, Fernet sobre SECRET_KEY) de la clave activa --
+    # permite que el superadmin la vuelva a ver desde /plataforma sin tener
+    # que rotarla. El hash de arriba sigue siendo lo que valida /license/activate;
+    # esta columna es solo para mostrarla, nunca se usa para autenticar.
+    activation_key_encrypted = Column(Text, nullable=True)
     activation_enabled = Column(Boolean, default=True, nullable=False)
     creado = Column(DateTime, default=func.now())
 

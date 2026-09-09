@@ -14,11 +14,22 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 CEDULA_RE = re.compile(r'^[0-9A-Za-z\-]{3,20}$')
 NOMBRE_RE = re.compile(r'^[A-Za-záéíóúÁÉÍÓÚñÑüÜ\s\.\-]{2,200}$')
 TEL_RE = re.compile(r'^[\d\+\-\s\(\)]{7,20}$')
+USERNAME_RE = re.compile(r'^[a-z0-9_.\-]{3,100}$')
 
 
 def limpiar_texto(s: str, max_len: int = 200) -> str:
     """Strip y limitar longitud — previene payloads gigantes."""
     return (s or "").strip()[:max_len]
+
+
+def sin_html(texto: str, campo: str, max_len: int = 200) -> str:
+    """Limpia y rechaza '<'/'>' -- para texto libre sin formato fijo (direcciones,
+    mensajes, nombres de zona) que se muestra en el frontend: en vez de una lista
+    blanca estricta, bloquea solo lo que permitiria inyectar HTML/JS."""
+    t = limpiar_texto(texto, max_len)
+    if "<" in t or ">" in t:
+        raise HTTPException(400, f"{campo} no puede contener '<' o '>'")
+    return t
 
 
 def validar_cedula(cedula: str) -> str:
@@ -33,6 +44,15 @@ def validar_nombre(nombre: str) -> str:
     if not NOMBRE_RE.match(n):
         raise HTTPException(400, "Nombre contiene caracteres no permitidos")
     return n
+
+
+def validar_username(username: str) -> str:
+    """Username: minusculas, digitos, punto/guion/guion bajo. Sin espacios ni
+    simbolos raros -- es un identificador de login, no texto libre."""
+    u = limpiar_texto(username, 100).lower()
+    if not USERNAME_RE.match(u):
+        raise HTTPException(400, "Username invalido: usa minusculas, numeros, '.', '_' o '-' (3-100 caracteres)")
+    return u
 
 
 def validar_telefono(tel: str, requerido: bool = True) -> Optional[str]:

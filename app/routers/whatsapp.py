@@ -1,6 +1,7 @@
 """WhatsApp Bot router v2.1 - multi-tenant + auth"""
 import datetime
-from fastapi import APIRouter, Request, Depends, Form
+import re
+from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from app.templates import templates
 from sqlalchemy.orm import Session
@@ -9,9 +10,31 @@ from app.database import get_db, Empresa, NotificacionWP, ConfiguracionApp, Clie
 from app.routers.auth import get_current_user
 from app.services.whatsapp_service import ejecutar_recordatorios, enviar_notificacion, get_config_by_empresa
 from app.utils.plan_limits import tiene_funcion
+from app.utils.validators import sin_html, validar_entero_positivo
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access
 
 router = APIRouter()
+
+_WP_PHONE_ID_RE = re.compile(r"^[0-9]{5,20}$")
+_WP_TOKEN_RE = re.compile(r"^[A-Za-z0-9]{10,100}$")
+
+
+def _validar_wp_phone_id(v: str) -> str | None:
+    v = (v or "").strip()
+    if not v:
+        return None
+    if not _WP_PHONE_ID_RE.match(v):
+        raise HTTPException(400, "ID de instancia invalido: solo digitos (5-20)")
+    return v
+
+
+def _validar_wp_token(v: str) -> str | None:
+    v = (v or "").strip()
+    if not v:
+        return None
+    if not _WP_TOKEN_RE.match(v):
+        raise HTTPException(400, "Token de instancia invalido: solo letras y numeros (10-100 caracteres)")
+    return v
 
 
 @router.get("")
@@ -101,9 +124,20 @@ async def configurar_wp(
                 status_code=403,
             )
 
+    try:
+        wp_phone_id = _validar_wp_phone_id(wp_phone_id)
+        wp_token = _validar_wp_token(wp_token)
+        dias_aviso = int(validar_entero_positivo(dias_aviso, "Días de aviso", minimo=0, maximo=30))
+        if wp_mensaje_recordatorio:
+            wp_mensaje_recordatorio = sin_html(wp_mensaje_recordatorio, "Mensaje de recordatorio", 500)
+        if wp_mensaje_vencida:
+            wp_mensaje_vencida = sin_html(wp_mensaje_vencida, "Mensaje de cuota vencida", 500)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
     config = get_config_by_empresa(db, user.empresa_id)
-    config.wp_phone_id = wp_phone_id or None
-    config.wp_token = wp_token or None
+    config.wp_phone_id = wp_phone_id
+    config.wp_token = wp_token
     config.wp_activo = wp_activo
     config.dias_aviso_vencimiento = dias_aviso
     if wp_mensaje_recordatorio:

@@ -58,6 +58,9 @@
                 <input type="number" name="max_cobradores" min="0" placeholder="Límite" value="{{ e.override_max_cobradores or '' }}" style="width:80px;">
                 <button type="submit" class="btn btn-ghost btn-xs">Aplicar</button>
               </form>
+              {% if e.clave_visible %}
+              <button type="button" class="btn btn-ghost btn-xs" onclick="verClave({{ e.id }}, {{ e.nombre|tojson }})">Ver clave</button>
+              {% endif %}
               <button type="button" class="btn btn-ghost btn-xs" onclick="generarClave({{ e.id }}, {{ (e.tiene_clave)|tojson }}, {{ e.nombre|tojson }})">
                 {% if e.tiene_clave %}Rotar clave{% else %}Generar clave{% endif %}
               </button>
@@ -119,14 +122,14 @@
   </div>
   <div class="modal-body">
     <p class="fs-12 text-2" id="clave-empresa-nombre"></p>
-    <p class="fs-12" style="color:var(--red);">Se muestra una sola vez — el sistema solo guarda su hash. Cópiala y entrégasela al cliente ahora.</p>
+    <p class="fs-12" style="color:var(--red);" id="clave-aviso">Se muestra una sola vez — el sistema solo guarda su hash. Cópiala y entrégasela al cliente ahora.</p>
     <div style="display:flex;gap:8px;align-items:center;">
       <input id="clave-valor" readonly style="font-family:var(--mono);font-size:13px;flex:1;">
       <button type="button" class="btn btn-ghost btn-sm" onclick="copiarClave()">Copiar</button>
     </div>
   </div>
   <div class="modal-footer">
-    <button class="btn btn-primary" onclick="location.reload()">Listo, ya la copié</button>
+    <button class="btn btn-primary" id="clave-btn-cerrar" onclick="location.reload()">Listo, ya la copié</button>
   </div>
 </div>
 </div>
@@ -163,19 +166,39 @@ async function cambiarActiva(e, empresaId) {
   else toast(d.error || 'Error', 'error');
 }
 
+function _abrirModalClave(nombre, clave, { unaVezSola }) {
+  document.getElementById('clave-empresa-nombre').textContent = nombre;
+  document.getElementById('clave-valor').value = clave;
+  const aviso = document.getElementById('clave-aviso');
+  const btnCerrar = document.getElementById('clave-btn-cerrar');
+  if (unaVezSola) {
+    aviso.style.display = '';
+    aviso.textContent = 'Se muestra una sola vez — el sistema solo guarda su hash. Cópiala y entrégasela al cliente ahora.';
+    btnCerrar.textContent = 'Listo, ya la copié';
+    btnCerrar.onclick = () => location.reload();
+  } else {
+    aviso.style.display = 'none';
+    btnCerrar.textContent = 'Cerrar';
+    btnCerrar.onclick = () => document.getElementById('modal-clave').classList.remove('open');
+  }
+  document.getElementById('modal-clave').classList.add('open');
+}
+
 async function generarClave(empresaId, tieneClave, nombre) {
   if (tieneClave && !confirm(`${nombre} ya tiene una clave activa. ¿Rotarla? La clave anterior deja de funcionar de inmediato.`)) return;
   const fd = new FormData();
   fd.append('rotar', tieneClave ? 'true' : 'false');
   const r = await window.fetch(`/plataforma/empresas/${empresaId}/clave`, { method: 'POST', body: fd });
   const d = await r.json();
-  if (d.ok) {
-    document.getElementById('clave-empresa-nombre').textContent = nombre;
-    document.getElementById('clave-valor').value = d.clave;
-    document.getElementById('modal-clave').classList.add('open');
-  } else {
-    toast(d.error || 'Error', 'error');
-  }
+  if (d.ok) _abrirModalClave(nombre, d.clave, { unaVezSola: true });
+  else toast(d.error || 'Error', 'error');
+}
+
+async function verClave(empresaId, nombre) {
+  const r = await window.fetch(`/plataforma/empresas/${empresaId}/clave`);
+  const d = await r.json();
+  if (d.ok) _abrirModalClave(nombre, d.clave, { unaVezSola: false });
+  else toast(d.error || 'Error', 'error');
 }
 
 function copiarClave() {
@@ -191,9 +214,7 @@ async function crearEmpresa() {
   const d = await r.json();
   if (d.ok) {
     document.getElementById('modal-nueva-empresa').classList.remove('open');
-    document.getElementById('clave-empresa-nombre').textContent = fd.get('empresa_nombre');
-    document.getElementById('clave-valor').value = d.clave;
-    document.getElementById('modal-clave').classList.add('open');
+    _abrirModalClave(fd.get('empresa_nombre'), d.clave, { unaVezSola: true });
   } else {
     toast(d.error || 'Error', 'error');
   }

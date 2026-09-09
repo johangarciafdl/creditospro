@@ -21,6 +21,7 @@ from app.utils.plan_limits import PLANES_VALIDOS
 from app.utils.rate_limit import is_rate_limited
 from app.utils.security import (
     create_access_token,
+    decrypt_secret,
     get_password_hash,
     verify_password_with_timing_safety,
 )
@@ -108,6 +109,7 @@ async def panel_plataforma(request: Request, db: Session = Depends(get_db_system
             "id": e.id, "nombre": e.nombre, "plan": e.plan or "basico",
             "activa": e.activa, "cobradores_activos": cobradores_activos,
             "tiene_clave": bool(e.activation_key_hash),
+            "clave_visible": bool(e.activation_key_encrypted),
             "override_whatsapp": overrides.get("whatsapp"),
             "override_max_cobradores": overrides.get("max_cobradores"),
         })
@@ -197,6 +199,29 @@ async def cambiar_activa(
     log_action(db, user, "empresa_activa_change", "empresas", f"empresa_id={empresa_id} activa={empresa.activa}")
     verbo = "habilitada" if empresa.activa else "inhabilitada"
     return JSONResponse({"ok": True, "mensaje": f"{empresa.nombre} {verbo}"})
+
+
+@router.get("/empresas/{empresa_id}/clave")
+async def ver_clave(
+    request: Request, empresa_id: int,
+    db: Session = Depends(get_db_system)
+):
+    user = _requiere_superadmin(request, db)
+    if not user:
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    empresa = db.query(Empresa).filter(Empresa.id == empresa_id).first()
+    if not empresa:
+        return JSONResponse({"error": "Empresa no encontrada"}, status_code=404)
+    if not empresa.activation_key_encrypted:
+        return JSONResponse({"error": "Esta empresa no tiene una clave para mostrar"}, status_code=404)
+
+    clave = decrypt_secret(empresa.activation_key_encrypted)
+    if not clave:
+        return JSONResponse({"error": "No se pudo recuperar la clave. Genera una nueva."}, status_code=500)
+
+    log_action(db, user, "empresa_clave_ver", "empresas", f"empresa_id={empresa_id}")
+    return JSONResponse({"ok": True, "clave": clave})
 
 
 @router.post("/empresas/{empresa_id}/clave")

@@ -9,7 +9,7 @@ import re
 from app.database import get_db, Empresa, Zona, Cliente, Prestamo, Cobro, Usuario
 from app.routers.auth import get_current_user
 from app.utils.plan_limits import tiene_funcion
-from app.utils.validators import validar_nombre, limpiar_texto
+from app.utils.validators import validar_nombre, limpiar_texto, sin_html
 from app.utils.zone_permissions import get_allowed_zone_ids
 
 router = APIRouter()
@@ -24,17 +24,6 @@ def _validar_codigo_zona(codigo: str) -> str:
     if not _CODIGO_ZONA_RE.match(c):
         raise HTTPException(400, "El codigo de zona debe ser alfanumerico, entre 2 y 20 caracteres")
     return c
-
-
-def _sin_html(texto: str, campo: str, max_len: int = 100) -> str:
-    """Limpia y rechaza '<'/'>' -- estos campos se muestran en varios lugares
-    del frontend y no tienen un formato fijo (a diferencia de cedula/telefono),
-    asi que en vez de una lista blanca estricta solo bloqueamos lo que
-    permitiria inyectar HTML/JS."""
-    t = limpiar_texto(texto, max_len)
-    if "<" in t or ">" in t:
-        raise HTTPException(400, f"{campo} no puede contener '<' o '>'")
-    return t
 
 
 def _validar_placa(placa: str) -> str | None:
@@ -147,10 +136,10 @@ async def crear_zona(
 
     try:
         codigo_limpio = _validar_codigo_zona(codigo)
-        nombre = _sin_html(nombre, "Nombre de zona")
-        ciudad = _sin_html(ciudad, "Ciudad", 100) or "Medellín"
-        departamento = _sin_html(departamento, "Departamento", 100) or "Antioquia"
-        pais = _sin_html(pais, "País", 100) or "Colombia"
+        nombre = sin_html(nombre, "Nombre de zona")
+        ciudad = sin_html(ciudad, "Ciudad", 100) or "Medellín"
+        departamento = sin_html(departamento, "Departamento", 100) or "Antioquia"
+        pais = sin_html(pais, "País", 100) or "Colombia"
         cobrador_nombre_limpio = _validar_cobrador(db, user.empresa_id, cobrador_nombre)
         cobrador_moto_limpio = _validar_placa(cobrador_moto)
         cobrador_tel_limpio = _validar_telefono_cobrador(cobrador_tel)
@@ -203,7 +192,7 @@ async def editar_zona(
         return JSONResponse({"error": "No encontrado"}, status_code=404)
 
     try:
-        nombre_limpio = _sin_html(nombre, "Nombre de zona")
+        nombre_limpio = sin_html(nombre, "Nombre de zona")
         cobrador_nombre_limpio = _validar_cobrador(db, user.empresa_id, cobrador_nombre)
         cobrador_moto_limpio = _validar_placa(cobrador_moto)
         cobrador_tel_limpio = _validar_telefono_cobrador(cobrador_tel)

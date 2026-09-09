@@ -130,7 +130,7 @@ La activación es **por empresa**, no por equipo — no hay licencias atadas a u
 python scripts\crear_clave_empresa.py --empresa-id <id>
 ```
 
-Esto genera una clave (se muestra una sola vez; la base solo guarda su hash) que el cliente ingresa en `/license/activar`. Para rotar una clave ya entregada: agrega `--rotar`.
+Esto genera una clave que el cliente ingresa en `/license/activar`. Al mostrarla aquí solo se ve en esta terminal, pero el superadmin puede volver a verla despues desde `/plataforma` ("Ver clave") — la base guarda tanto su hash (lo que valida la activación) como una copia cifrada, solo para eso. Para rotar una clave ya entregada: agrega `--rotar`.
 
 ## Planes comerciales y control de funciones
 
@@ -166,8 +166,9 @@ Los cambios aplican de inmediato — no hace falta que la empresa cierre sesión
 
 El mismo panel (solo superadmin) reemplaza los pasos manuales de [Agregar una empresa nueva](#agregar-una-empresa-nueva) y [Activar una empresa](#activar-una-empresa-licenciamiento) con una interfaz gráfica, sin tocar `.env` ni correr scripts:
 
-- **"+ Nueva Empresa"**: llena el nombre de la empresa y los datos del primer usuario (queda como `admin` de esa empresa). Crea en un solo paso la empresa (plan `basico`), su configuración, una "Zona Principal" y el usuario admin, y genera de una vez su clave de activación — se muestra una sola vez en pantalla, cópiala y entrégasela al cliente ahí mismo. Tú sigues en tu propia sesión de superadmin; no te loguea como la empresa nueva.
+- **"+ Nueva Empresa"**: llena el nombre de la empresa y los datos del primer usuario (queda como `admin` de esa empresa). Crea en un solo paso la empresa (plan `basico`), su configuración, una "Zona Principal" y el usuario admin, y genera de una vez su clave de activación. Tú sigues en tu propia sesión de superadmin; no te loguea como la empresa nueva.
 - **Columna "Estado"**: botón para habilitar/inhabilitar una empresa. Inhabilitada, sus usuarios no pueden activar la licencia ni iniciar sesión hasta que la vuelvas a habilitar — útil para suspender por falta de pago sin borrar nada.
+- **"Ver clave"**: muestra de nuevo la clave de activación ya entregada a esa empresa (se guarda una copia cifrada además del hash, solo para esto — ver [Seguridad](#seguridad)).
 - **"Generar/Rotar clave"**: genera la primera clave de una empresa que no tenía, o rota la existente (invalida la anterior de inmediato). Si ya existe una, pide confirmación antes de rotarla.
 
 ### Crear tu cuenta de superadmin
@@ -221,6 +222,7 @@ En producción, CreditosPro corre contra PostgreSQL (Supabase). El contenedor Do
 
 - El aislamiento entre empresas usa Row-Level Security de PostgreSQL además del filtrado por `empresa_id` en el código — ver `rls_policies.sql` y `DATABASE_URL_APP` en `.env.example`.
 - Autenticación con JWT en cookie HttpOnly, 2FA opcional (TOTP + códigos de respaldo), rate limiting por IP y por usuario en el login.
+- Contraseñas de usuario: solo hash (bcrypt), nunca recuperables. Claves de activación de empresa: se validan por hash igual que una contraseña, pero además se guarda una copia cifrada (reversible, con `SECRET_KEY`) para que el superadmin pueda volver a verlas desde `/plataforma` sin rotarlas — es una decisión deliberada de conveniencia sobre seguridad máxima: si `SECRET_KEY` y la base de datos se filtran juntas, esas claves (no las contraseñas) podrían recuperarse. Cada vista de una clave queda en el audit log (`empresa_clave_ver`).
 - **Pendiente de tu parte:** varios documentos antiguos (ya eliminados de este repo) tenían contraseñas reales de usuarios en texto plano. Si `julian` o `marcos` siguen usando las contraseñas que aparecían en esos archivos, cámbialas desde el panel de usuarios lo antes posible.
 - Para detalles de arquitectura de seguridad (RLS, roles, auditoría), ver [CLAUDE.md](CLAUDE.md).
 

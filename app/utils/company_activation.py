@@ -5,7 +5,7 @@ import time
 from threading import Lock
 
 from app.database import Empresa
-from app.utils.security import activation_key_hash
+from app.utils.security import activation_key_hash, encrypt_secret
 
 _KEY_RE = re.compile(r"^[A-Z0-9][A-Z0-9-]{11,119}$")
 _lock = Lock()
@@ -50,11 +50,14 @@ def clear_failed_activation(client_key: str) -> None:
 
 
 def assign_company_key(db, empresa: Empresa, plain_key: str | None = None) -> str:
-    """Asigna una clave nueva y guarda solo su hash."""
+    """Asigna una clave nueva. Guarda su hash (lo unico que usa /license/activate
+    para validar) y ademas una copia cifrada y reversible, para que el
+    superadmin pueda volver a verla desde /plataforma sin rotarla."""
     key = normalize_company_key(plain_key) if plain_key else generate_company_key(empresa.nombre)
     if not is_valid_key_format(key):
         raise ValueError("Formato de clave de activacion invalido")
     empresa.activation_key_hash = activation_key_hash(key)
     empresa.activation_key_hint = f"...{key[-8:]}"
+    empresa.activation_key_encrypted = encrypt_secret(key)
     empresa.activation_enabled = True
     return key

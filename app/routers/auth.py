@@ -47,6 +47,7 @@ from app.utils.rate_limit import is_rate_limited
 from app.utils.roles import normalize_role
 from app.utils.zone_permissions import validate_user_zones
 from app.utils.plan_limits import limite_cobradores, tiene_funcion
+from app.utils.validators import validar_nombre, validar_username
 
 router = APIRouter()
 SESSION_COOKIE = "cp_session"
@@ -462,12 +463,11 @@ async def crear_usuario(
     if rol == "superadmin" and current_user.rol != "superadmin":
         return JSONResponse({"error": "Solo un superadmin puede asignar el rol superadmin"}, status_code=403)
 
-    username_clean = username.strip().lower()
-    if not username_clean or len(username_clean) > 100:
-        return JSONResponse({"error": "Username invalido"}, status_code=400)
-    nombre_clean = nombre.strip()
-    if not nombre_clean or len(nombre_clean) > 200:
-        return JSONResponse({"error": "Nombre invalido"}, status_code=400)
+    try:
+        username_clean = validar_username(username)
+        nombre_clean = validar_nombre(nombre)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
     existente = db.query(Usuario).filter(
         Usuario.empresa_id == current_user.empresa_id,
         Usuario.username == username_clean
@@ -553,13 +553,23 @@ async def editar_usuario(
     if rol == "superadmin" and current_user.rol != "superadmin":
         return JSONResponse({"error": "Solo un superadmin puede asignar el rol superadmin"}, status_code=403)
 
+    # Datos legados (usuarios creados antes de que este formato existiera,
+    # p.ej. un username con espacio) no se rompen si el admin los reenvia
+    # sin cambiarlos -- solo se exige el formato nuevo cuando de verdad se
+    # esta cambiando el valor.
     nombre_clean = nombre.strip()
-    if not nombre_clean or len(nombre_clean) > 200:
-        return JSONResponse({"error": "Nombre invalido"}, status_code=400)
+    if nombre_clean != user.nombre:
+        try:
+            nombre_clean = validar_nombre(nombre)
+        except HTTPException as e:
+            return JSONResponse({"error": e.detail}, status_code=e.status_code)
 
     username_clean = username.strip().lower()
-    if not username_clean or len(username_clean) > 100:
-        return JSONResponse({"error": "Username invalido"}, status_code=400)
+    if username_clean != user.username:
+        try:
+            username_clean = validar_username(username)
+        except HTTPException as e:
+            return JSONResponse({"error": e.detail}, status_code=e.status_code)
     existente = db.query(Usuario).filter(
         Usuario.empresa_id == current_user.empresa_id,
         Usuario.username == username_clean,
