@@ -134,7 +134,9 @@ Esto genera una clave (se muestra una sola vez; la base solo guarda su hash) que
 
 ## Planes comerciales y control de funciones
 
-Cada empresa tiene un plan (`basico`, `medio` o `alto`) que limita cuántos cobradores/supervisores puede tener activos a la vez y si tiene acceso a WhatsApp automático:
+El superadmin (dueño de la plataforma) administra **todas** las empresas desde `/plataforma`, pero **no es un usuario de ninguna empresa** — no tiene `empresa_id`, no consume cupo de cobradores de nadie, y no necesita activar ninguna clave comercial (esa clave es para tus clientes, no para ti). Entra por una puerta separada, **`/plataforma/login`**, con su propio usuario y contraseña — no por `/auth/login` ni por `/license/activar`.
+
+Cada empresa (cliente) tiene un plan (`basico`, `medio` o `alto`) que limita cuántos cobradores/supervisores puede tener activos a la vez y si tiene acceso a WhatsApp automático:
 
 | Plan | Cobradores/supervisores activos | WhatsApp automático |
 |---|---|---|
@@ -168,13 +170,15 @@ El mismo panel (solo superadmin) reemplaza los pasos manuales de [Agregar una em
 - **Columna "Estado"**: botón para habilitar/inhabilitar una empresa. Inhabilitada, sus usuarios no pueden activar la licencia ni iniciar sesión hasta que la vuelvas a habilitar — útil para suspender por falta de pago sin borrar nada.
 - **"Generar/Rotar clave"**: genera la primera clave de una empresa que no tenía, o rota la existente (invalida la anterior de inmediato). Si ya existe una, pide confirmación antes de rotarla.
 
-### Asignarte el rol de superadmin
+### Crear tu cuenta de superadmin
 
 No existe forma de hacerlo desde la web — es deliberado, evita que un admin de cualquier empresa se lo asigne a sí mismo. Es un script de una sola vez, y debes correrlo tú directamente contra la base de datos:
 
 ```powershell
-python scripts\promover_superadmin.py --empresa-id <id> --username <usuario>
+python scripts\crear_superadmin.py --username <tu_usuario> --nombre "Tu Nombre"
 ```
+
+Pide la contraseña de forma oculta (o pásala con `--password` si lo corres sin terminal interactiva). Crea el usuario con `empresa_id = NULL` — no pertenece a ninguna empresa. Entra en **`/plataforma/login`** con ese usuario y contraseña.
 
 ## Scripts de mantenimiento
 
@@ -184,7 +188,7 @@ Viven en [`scripts/`](scripts/) — se ejecutan con `python scripts\<nombre>.py`
 |---|---|
 | `crear_clave_empresa.py` | Genera/rota la clave de activación de una empresa |
 | `crear_empresa.py` | Scaffolding de una instalación nueva para otra empresa |
-| `promover_superadmin.py` | Asigna el rol `superadmin` (control de planes en `/plataforma`) a un usuario existente |
+| `crear_superadmin.py` | Crea el usuario superadmin (dueño de la plataforma, sin empresa asociada) que entra por `/plataforma/login` |
 | `set_logo_empresa.py` | Asigna el logo de una empresa (se ve en su pantalla de login) |
 | `crear_indices.py` / `crear_indices.sql` | Crea índices de rendimiento en la base de datos |
 | `diagnostico_supabase.py` | Verifica conexión e integridad de datos en Supabase |

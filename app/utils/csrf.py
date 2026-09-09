@@ -13,6 +13,7 @@ EXEMPT_PATHS = {
     "/auth/logout",
     "/health",
     "/license/activate",
+    "/plataforma/login",  # login de superadmin, sin cookie CSRF previa (no hay empresa activada)
     "/csp-report",  # el navegador lo envia solo, sin nuestro header CSRF
 }
 # Endpoints que cambian el "nivel de confianza" (login, cambiar password, etc.).
@@ -20,6 +21,7 @@ EXEMPT_PATHS = {
 # robó el token anterior no pueda continuar haciendo acciones sensibles.
 ROTATION_TRIGGER_PATHS = {
     "/auth/login",
+    "/plataforma/login",
     "/auth/cambiar-password",
     "/auth/recovery/reset",
 }

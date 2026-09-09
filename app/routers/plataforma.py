@@ -11,13 +11,19 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db_system, Empresa, Usuario, ConfiguracionApp, Zona
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, SESSION_COOKIE, IS_PRODUCTION
 from app.templates import templates
 from app.utils.audit import log_action
 from app.utils.company_activation import assign_company_key
+from app.utils.csrf import CSRF_COOKIE, generate_csrf_token
 from app.utils.password_policy import validar_password
 from app.utils.plan_limits import PLANES_VALIDOS
-from app.utils.security import get_password_hash
+from app.utils.rate_limit import is_rate_limited
+from app.utils.security import (
+    create_access_token,
+    get_password_hash,
+    verify_password_with_timing_safety,
+)
 
 router = APIRouter()
 
@@ -29,12 +35,65 @@ def _requiere_superadmin(request: Request, db: Session):
     return user
 
 
+@router.get("/login")
+async def plataforma_login_page(request: Request, db: Session = Depends(get_db_system)):
+    if _requiere_superadmin(request, db):
+        return RedirectResponse(url="/plataforma", status_code=302)
+    return templates.TemplateResponse(request, "plataforma_login.html", {"error": None})
+
+
+@router.post("/login")
+async def plataforma_login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db_system),
+):
+    username_clean = username.strip().lower()
+    if is_rate_limited(request, "/plataforma/login", 10, 900, key_suffix=f":{username_clean}"):
+        return templates.TemplateResponse(
+            request, "plataforma_login.html",
+            {"error": "Demasiados intentos. Intenta mas tarde."}, status_code=429,
+        )
+
+    user = db.query(Usuario).filter(
+        Usuario.username == username_clean,
+        Usuario.rol == "superadmin",
+        Usuario.empresa_id.is_(None),
+        Usuario.activo == True,
+    ).first()
+
+    # Timing-safe incluso si el usuario no existe -- ver login_submit en auth.py.
+    password_ok = verify_password_with_timing_safety(password, user.password_hash if user else None)
+    if not user or not password_ok:
+        return templates.TemplateResponse(
+            request, "plataforma_login.html",
+            {"error": "Usuario o contraseña incorrectos"}, status_code=401,
+        )
+
+    token = create_access_token({
+        "sub": str(user.id), "rol": user.rol, "nombre": user.nombre, "empresa_id": None,
+    })
+    response = RedirectResponse(url="/plataforma", status_code=302)
+    response.set_cookie(
+        key=SESSION_COOKIE, value=token, httponly=True, samesite="strict",
+        max_age=60 * 60 * 12, secure=IS_PRODUCTION,
+    )
+    response.set_cookie(
+        key=CSRF_COOKIE, value=generate_csrf_token(), httponly=False, samesite="strict",
+        max_age=60 * 60 * 12, secure=IS_PRODUCTION,
+    )
+    log_action(db, user, "login", "plataforma", f"username={user.username}")
+    return response
+
+
 @router.get("")
 @router.get("/")
 async def panel_plataforma(request: Request, db: Session = Depends(get_db_system)):
     user = _requiere_superadmin(request, db)
     if not user:
-        return RedirectResponse(url="/dashboard", status_code=302)
+        destino = "/plataforma/login" if not get_current_user(request, db) else "/dashboard"
+        return RedirectResponse(url=destino, status_code=302)
 
     empresas = db.query(Empresa).order_by(Empresa.nombre).all()
     data = []

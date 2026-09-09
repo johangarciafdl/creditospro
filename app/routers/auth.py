@@ -70,18 +70,33 @@ def get_current_user(request: Request, db: Session) -> Optional[Usuario]:
         logger.info("Token con jti revocado: %s", jti[:8])
         return None
     uid = payload.get("sub")
+    if not uid:
+        return None
     token_empresa_id = payload.get("empresa_id")
-    if not uid or not isinstance(token_empresa_id, int):
+    if token_empresa_id is None:
+        # Superadmin de plataforma: no pertenece a ninguna empresa, no hay
+        # tenant que fijar para RLS. Solo valido si el propio token ya
+        # afirma ese rol (payload viene firmado, no es dato de usuario).
+        if payload.get("rol") != "superadmin":
+            return None
+        user = db.query(Usuario).filter(
+            Usuario.id == int(uid),
+            Usuario.empresa_id.is_(None),
+            Usuario.rol == "superadmin",
+            Usuario.activo == True,
+        ).first()
+    elif isinstance(token_empresa_id, int):
+        try:
+            set_tenant_context(db, token_empresa_id)
+        except ValueError:
+            return None
+        user = db.query(Usuario).filter(
+            Usuario.id == int(uid),
+            Usuario.empresa_id == token_empresa_id,
+            Usuario.activo == True,
+        ).first()
+    else:
         return None
-    try:
-        set_tenant_context(db, token_empresa_id)
-    except ValueError:
-        return None
-    user = db.query(Usuario).filter(
-        Usuario.id == int(uid),
-        Usuario.empresa_id == token_empresa_id,
-        Usuario.activo == True,
-    ).first()
     if user and jti:
         # Registrar/refresh sesion activa para listado y revocacion
         from app.utils.token_blacklist import register_active_jti
@@ -354,7 +369,10 @@ async def two_factor_setup_confirm(
 
 @router.get("/logout")
 @router.post("/logout")
-async def logout(request: Request, db: Session = Depends(get_db)):
+async def logout(request: Request, db: Session = Depends(get_db_system)):
+    # get_db_system (no RLS): un superadmin no tiene empresa_id, asi que
+    # la conexion restringida normal nunca podria verlo para identificarlo
+    # aqui y decidir a donde redirigirlo despues de salir.
     # Revocar el jti del token actual para que no pueda reusarse
     token = request.cookies.get(SESSION_COOKIE)
     if token:
@@ -368,7 +386,8 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     if user:
         log_action(db, user, "logout", "auth", f"username={user.username}")
 
-    response = RedirectResponse(url="/auth/login", status_code=302)
+    destino = "/plataforma/login" if user and user.rol == "superadmin" else "/auth/login"
+    response = RedirectResponse(url=destino, status_code=302)
     response.delete_cookie(SESSION_COOKIE)
     response.delete_cookie(CSRF_COOKIE)
     return response

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>CreditosPro — Plataforma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--gold:#C8A95A;--gold-2:#D4B96A;--black:#0A0A0A;--font:'Inter',system-ui,sans-serif}
+html,body{min-height:100%;font-family:var(--font);background:var(--black);-webkit-font-smoothing:antialiased}
+body{display:flex;align-items:center;justify-content:center;padding:24px}
+.card{width:100%;max-width:380px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:36px;backdrop-filter:blur(20px)}
+.mark{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--gold) 0%,#7A5A18 100%);display:flex;align-items:center;justify-content:center;margin-bottom:22px;box-shadow:0 0 40px rgba(200,169,90,.25)}
+.mark svg{width:26px;height:26px;color:#0A0A0A}
+.eyebrow{font-size:10px;font-weight:600;color:var(--gold);letter-spacing:1.8px;text-transform:uppercase;margin-bottom:8px}
+.title{font-size:24px;font-weight:700;color:#fff;letter-spacing:-.5px;margin-bottom:6px}
+.sub{font-size:13px;color:rgba(255,255,255,.32);margin-bottom:28px;line-height:1.5}
+.error-box{display:{% if error %}flex{% else %}none{% endif %};background:rgba(220,38,38,.1);border:1px solid rgba(220,38,38,.2);border-radius:8px;padding:10px 14px;font-size:12px;color:#FCA5A5;margin-bottom:16px;align-items:center;gap:8px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:11px;font-weight:500;color:rgba(255,255,255,.35);margin-bottom:6px;letter-spacing:.3px}
+.field input{width:100%;padding:12px 14px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);border-radius:10px;font-size:14px;color:#fff;font-family:var(--font);outline:none;transition:border-color .2s,background .2s}
+.field input:focus{border-color:rgba(200,169,90,.5);background:rgba(255,255,255,.08)}
+.btn-submit{width:100%;padding:13px;background:linear-gradient(135deg,var(--gold) 0%,#9A7428 100%);border:none;border-radius:10px;font-size:14px;font-weight:600;color:#0A0A0A;font-family:var(--font);cursor:pointer;margin-top:8px;transition:transform .15s}
+.btn-submit:hover{transform:translateY(-1px)}
+.footer-note{text-align:center;font-size:10px;color:rgba(255,255,255,.15);margin-top:24px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></div>
+  <div class="eyebrow">Acceso restringido</div>
+  <div class="title">Plataforma CreditosPro</div>
+  <div class="sub">Administración de todas las empresas. Esta cuenta no pertenece a ninguna empresa cliente.</div>
+
+  <div class="error-box">{{ error or "" }}</div>
+
+  <form method="post" action="/plataforma/login">
+    <div class="field">
+      <label>Usuario</label>
+      <input type="text" name="username" autocomplete="username" required autofocus>
+    </div>
+    <div class="field">
+      <label>Contraseña</label>
+      <input type="password" name="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn-submit">Entrar</button>
+  </form>
+
+  <div class="footer-note">No requiere activar clave de empresa.<br>Solo para el administrador de la plataforma.</div>
+</div>
+</body>
+</html>

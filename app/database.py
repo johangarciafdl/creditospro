@@ -156,7 +156,10 @@ class Empresa(Base):
 class Usuario(Base):
     __tablename__ = "usuarios"
     id = Column(Integer, primary_key=True, index=True)
-    empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False, index=True)
+    # Nullable solo para el superadmin de la plataforma (rol='superadmin'):
+    # esa cuenta administra TODAS las empresas, no pertenece a ninguna --
+    # ver app/routers/plataforma.py y la nota en get_current_user().
+    empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=True, index=True)
     username = Column(String(100), nullable=False, index=True)
     nombre = Column(String(200), nullable=False)
     email = Column(String(200), nullable=True)
