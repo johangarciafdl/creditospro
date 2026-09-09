@@ -15,6 +15,8 @@ from app.utils.company_activation import (
     register_failed_activation,
 )
 from app.utils.security import activation_key_hash
+from app.utils.csrf import CSRF_COOKIE
+from app.routers.auth import SESSION_COOKIE
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -74,3 +76,19 @@ async def activar_page(request: Request):
     if request.session.get("activated_empresa_id"):
         return RedirectResponse("/", 302)
     return templates.TemplateResponse(request, "activacion.html", {})
+
+
+@router.get("/cambiar-empresa")
+@router.post("/cambiar-empresa")
+async def cambiar_empresa(request: Request):
+    """Sale de la empresa activada en esta sesion para poder activar otra.
+
+    No requiere estar logueado -- se usa desde la pantalla de login para
+    volver a /license/activar sin tener que borrar cookies a mano.
+    """
+    request.session.pop("activated_empresa_id", None)
+    request.session.pop("activated_at", None)
+    response = RedirectResponse(url="/license/activar", status_code=302)
+    response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie(CSRF_COOKIE)
+    return response

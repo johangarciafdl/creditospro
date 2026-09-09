@@ -160,6 +160,14 @@ En la misma pantalla, cada empresa tiene un segundo formulario de "excepciones":
 
 Los cambios aplican de inmediato — no hace falta que la empresa cierre sesión ni que reinicies nada. El bloqueo real de WhatsApp está en el punto donde la app llama a Green API (no solo en los formularios de configuración), así que no se puede saltar activando el bot por otro lado.
 
+### Crear, habilitar/inhabilitar y generar claves — todo desde `/plataforma`
+
+El mismo panel (solo superadmin) reemplaza los pasos manuales de [Agregar una empresa nueva](#agregar-una-empresa-nueva) y [Activar una empresa](#activar-una-empresa-licenciamiento) con una interfaz gráfica, sin tocar `.env` ni correr scripts:
+
+- **"+ Nueva Empresa"**: llena el nombre de la empresa y los datos del primer usuario (queda como `admin` de esa empresa). Crea en un solo paso la empresa (plan `basico`), su configuración, una "Zona Principal" y el usuario admin, y genera de una vez su clave de activación — se muestra una sola vez en pantalla, cópiala y entrégasela al cliente ahí mismo. Tú sigues en tu propia sesión de superadmin; no te loguea como la empresa nueva.
+- **Columna "Estado"**: botón para habilitar/inhabilitar una empresa. Inhabilitada, sus usuarios no pueden activar la licencia ni iniciar sesión hasta que la vuelvas a habilitar — útil para suspender por falta de pago sin borrar nada.
+- **"Generar/Rotar clave"**: genera la primera clave de una empresa que no tenía, o rota la existente (invalida la anterior de inmediato). Si ya existe una, pide confirmación antes de rotarla.
+
 ### Asignarte el rol de superadmin
 
 No existe forma de hacerlo desde la web — es deliberado, evita que un admin de cualquier empresa se lo asigne a sí mismo. Es un script de una sola vez, y debes correrlo tú directamente contra la base de datos:
