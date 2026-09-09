@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 import re
 
-from app.database import get_db, Zona, Cliente, Prestamo, Cobro, Usuario
+from app.database import get_db, Empresa, Zona, Cliente, Prestamo, Cobro, Usuario
 from app.routers.auth import get_current_user
+from app.utils.plan_limits import tiene_funcion
 from app.utils.validators import validar_nombre, limpiar_texto
 from app.utils.zone_permissions import get_allowed_zone_ids
 
@@ -194,6 +195,14 @@ async def editar_zona(
     zona.activa = activa.lower() in ("true", "1", "on")
     zona.bot_phone = bot_phone.strip() or None
     zona.bot_apikey = bot_apikey.strip() or None
-    zona.bot_activo = bot_activo.lower() in ("true", "1", "on")
+    bot_activo_nuevo = bot_activo.lower() in ("true", "1", "on")
+    if bot_activo_nuevo:
+        empresa_plan = db.query(Empresa).filter(Empresa.id == user.empresa_id).first()
+        if not empresa_plan or not tiene_funcion(empresa_plan, "whatsapp"):
+            return JSONResponse(
+                {"error": "Tu plan no incluye WhatsApp automatico. Contacta al proveedor para activarlo."},
+                status_code=403,
+            )
+    zona.bot_activo = bot_activo_nuevo
     db.commit()
     return JSONResponse({"ok": True})

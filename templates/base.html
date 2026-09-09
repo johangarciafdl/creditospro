@@ -329,6 +329,12 @@ window.attr = window.esc;
       Usuarios
     </a>
     {% endif %}
+    {% if current_user and current_user.rol == 'superadmin' %}
+    <a href="/plataforma" class="nav-item {% if page=='plataforma' %}active{% endif %}">
+      <svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Plataforma
+    </a>
+    {% endif %}
   </nav>
 
   <div class="sidebar-footer">

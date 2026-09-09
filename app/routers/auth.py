@@ -46,6 +46,7 @@ from app.utils.audit import log_action
 from app.utils.rate_limit import is_rate_limited
 from app.utils.roles import normalize_role
 from app.utils.zone_permissions import validate_user_zones
+from app.utils.plan_limits import limite_cobradores, tiene_funcion
 
 router = APIRouter()
 SESSION_COOKIE = "cp_session"
@@ -448,6 +449,21 @@ async def crear_usuario(
     if rol in ("cobrador", "supervisor") and not zonas_asignadas:
         return JSONResponse({"error": "Asigna minimo 1 zona"}, status_code=400)
 
+    if rol in ("cobrador", "supervisor"):
+        empresa_plan = db.query(Empresa).filter(Empresa.id == current_user.empresa_id).first()
+        limite = limite_cobradores(empresa_plan) if empresa_plan else None
+        if limite is not None:
+            actuales = db.query(Usuario).filter(
+                Usuario.empresa_id == current_user.empresa_id,
+                Usuario.rol.in_(("cobrador", "supervisor")),
+                Usuario.activo == True,
+            ).count()
+            if actuales >= limite:
+                return JSONResponse(
+                    {"error": f"Tu plan permite un maximo de {limite} cobradores/supervisores activos. Contacta al proveedor para subir de plan."},
+                    status_code=403,
+                )
+
     user = Usuario(
         empresa_id=current_user.empresa_id,
         username=username_clean,
@@ -521,12 +537,34 @@ async def editar_usuario(
     if rol in ("cobrador", "supervisor") and not zonas_asignadas:
         return JSONResponse({"error": "Asigna minimo 1 zona"}, status_code=400)
 
+    nuevo_activo = activo.lower() in ("true", "1", "on")
+    va_a_contar = rol in ("cobrador", "supervisor") and nuevo_activo
+    contaba_antes = user.rol in ("cobrador", "supervisor") and user.activo
+    if va_a_contar and not contaba_antes:
+        # Solo se valida el limite cuando este usuario ENTRA al conteo (se
+        # reactiva, o cambia a un rol que cuenta) -- editar a alguien que ya
+        # contaba (ej. solo cambiarle la contraseña) nunca debe bloquearse.
+        empresa_plan = db.query(Empresa).filter(Empresa.id == current_user.empresa_id).first()
+        limite = limite_cobradores(empresa_plan) if empresa_plan else None
+        if limite is not None:
+            actuales = db.query(Usuario).filter(
+                Usuario.empresa_id == current_user.empresa_id,
+                Usuario.rol.in_(("cobrador", "supervisor")),
+                Usuario.activo == True,
+                Usuario.id != user_id,
+            ).count()
+            if actuales >= limite:
+                return JSONResponse(
+                    {"error": f"Tu plan permite un maximo de {limite} cobradores/supervisores activos. Contacta al proveedor para subir de plan."},
+                    status_code=403,
+                )
+
     user.username = username_clean
     user.nombre = nombre_clean
     user.rol = rol
     user.zona_id = zonas_asignadas[0].id if zonas_asignadas else None
     user.zonas_asignadas = zonas_asignadas
-    user.activo = activo.lower() in ("true", "1", "on")
+    user.activo = nuevo_activo
     if password.strip():
         try:
             validar_password(password)

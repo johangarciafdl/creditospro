@@ -5,9 +5,10 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from app.templates import templates
 from sqlalchemy.orm import Session
 
-from app.database import get_db, NotificacionWP, ConfiguracionApp, Cliente, Cuota, Prestamo
+from app.database import get_db, Empresa, NotificacionWP, ConfiguracionApp, Cliente, Cuota, Prestamo
 from app.routers.auth import get_current_user
 from app.services.whatsapp_service import ejecutar_recordatorios, enviar_notificacion, get_config_by_empresa
+from app.utils.plan_limits import tiene_funcion
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access
 
 router = APIRouter()
@@ -91,6 +92,14 @@ async def configurar_wp(
     user = get_current_user(request, db)
     if not user or user.rol not in ("admin", "superadmin"):
         return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    if wp_activo:
+        empresa = db.query(Empresa).filter(Empresa.id == user.empresa_id).first()
+        if not empresa or not tiene_funcion(empresa, "whatsapp"):
+            return JSONResponse(
+                {"error": "Tu plan no incluye WhatsApp automatico. Contacta al proveedor para activarlo."},
+                status_code=403,
+            )
 
     config = get_config_by_empresa(db, user.empresa_id)
     config.wp_phone_id = wp_phone_id or None

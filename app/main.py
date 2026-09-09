@@ -38,6 +38,7 @@ from app.routers import (
     cobros,
     dashboard,
     license_router,
+    plataforma,
     pwa,
     prestamos,
     registro,
@@ -160,6 +161,7 @@ app.include_router(cobros.router, prefix="/cobros", tags=["Cobros"])
 app.include_router(zonas.router, prefix="/zonas", tags=["Zonas"])
 app.include_router(reportes.router, prefix="/reportes", tags=["Reportes"])
 app.include_router(whatsapp.router, prefix="/whatsapp", tags=["WhatsApp Bot"])
+app.include_router(plataforma.router, prefix="/plataforma", tags=["Plataforma"])
 app.include_router(pwa.router, tags=["PWA"])
 
 

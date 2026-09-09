@@ -10,7 +10,7 @@ from pathlib import Path
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Numeric, Date,
-    DateTime, Boolean, Text, ForeignKey, UniqueConstraint, Index, Table,
+    DateTime, Boolean, Text, JSON, ForeignKey, UniqueConstraint, Index, Table,
     CheckConstraint, event, text,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker, relationship
@@ -132,7 +132,16 @@ class Empresa(Base):
     moneda = Column(String(10), default="COP")
     logo_path = Column(String(300), nullable=True)
     activa = Column(Boolean, default=True)
+    # Plan comercial: "basico" | "medio" | "alto" (ver app/utils/plan_limits.py).
+    # Un valor fuera de esos tres (ej. "trial", el valor historico antes de
+    # este sistema) no aplica ninguna restriccion -- evita romper de golpe
+    # el acceso de una empresa que ya operaba antes de que el plan existiera.
     plan = Column(String(50), default="basico")
+    # Overrides puntuales por empresa (ej. {"whatsapp": true, "max_cobradores": 5}).
+    # Tienen prioridad sobre el default del plan; los pone el dueño de la
+    # plataforma (superadmin) para activar/desactivar una funcion especifica
+    # sin cambiarle el plan completo a la empresa.
+    overrides = Column(JSON, nullable=True)
     activation_key_hash = Column(String(64), nullable=True, unique=True, index=True)
     activation_key_hint = Column(String(24), nullable=True)
     activation_enabled = Column(Boolean, default=True, nullable=False)

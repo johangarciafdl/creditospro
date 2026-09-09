@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Plataforma{% endblock %}
+{% block topbar_title %}Plan comercial por empresa{% endblock %}
+{% block topbar_sub %}Solo super admin{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Empresas</div>
+    <span class="badge badge-red">Cambios aplican de inmediato</span>
+  </div>
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead>
+        <tr><th>Empresa</th><th>Plan</th><th>Cobradores activos</th><th>WhatsApp</th><th>Límite cobradores</th><th>Acciones</th></tr>
+      </thead>
+      <tbody>
+        {% for e in empresas %}
+        <tr>
+          <td class="fw-600 fs-13">{{ e.nombre }}{% if not e.activa %} <span class="badge badge-gray">Inactiva</span>{% endif %}</td>
+          <td>
+            <form onsubmit="cambiarPlan(event, {{ e.id }})" style="display:flex;gap:6px;align-items:center;">
+              <select name="plan" style="width:120px;">
+                {% for p in planes_validos %}
+                <option value="{{ p }}" {% if e.plan == p %}selected{% endif %}>{{ p|capitalize }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-ghost btn-xs">Guardar</button>
+            </form>
+            {% if e.plan not in planes_validos %}<div class="fs-11 text-2" style="margin-top:4px;">Valor actual: "{{ e.plan }}" (heredado, sin restricción)</div>{% endif %}
+          </td>
+          <td class="fs-13">{{ e.cobradores_activos }}</td>
+          <td class="fs-12 text-2">
+            {% if e.override_whatsapp == true %}<span class="badge badge-green">Forzado ON</span>
+            {% elif e.override_whatsapp == false %}<span class="badge badge-red">Forzado OFF</span>
+            {% else %}Según plan{% endif %}
+          </td>
+          <td class="fs-12 text-2">{% if e.override_max_cobradores %}{{ e.override_max_cobradores }} (excepción){% else %}Según plan{% endif %}</td>
+          <td>
+            <form onsubmit="cambiarOverrides(event, {{ e.id }})" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+              <select name="whatsapp" style="width:130px;">
+                <option value="">WhatsApp: según plan</option>
+                <option value="activar" {% if e.override_whatsapp == true %}selected{% endif %}>Forzar activado</option>
+                <option value="desactivar" {% if e.override_whatsapp == false %}selected{% endif %}>Forzar desactivado</option>
+              </select>
+              <input type="number" name="max_cobradores" min="0" placeholder="Límite excepción" value="{{ e.override_max_cobradores or '' }}" style="width:110px;">
+              <button type="submit" class="btn btn-ghost btn-xs">Aplicar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card mt-3">
+  <div class="card-body fs-12 text-2">
+    <b>Básico:</b> hasta 2 cobradores/supervisores activos, sin WhatsApp automático.
+    <b>Medio:</b> hasta 6, con WhatsApp.
+    <b>Alto:</b> sin límite de cobradores, con WhatsApp.
+    Un plan distinto a estos tres (ej. "trial", el valor histórico de empresas creadas antes de este sistema) no aplica ninguna restricción hasta que le asignes uno de los tres.
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+async function cambiarPlan(e, empresaId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const r = await window.fetch(`/plataforma/empresas/${empresaId}/plan`, { method: 'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) { toast(d.mensaje); setTimeout(() => location.reload(), 700); }
+  else toast(d.error || 'Error', 'error');
+}
+
+async function cambiarOverrides(e, empresaId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const r = await window.fetch(`/plataforma/empresas/${empresaId}/overrides`, { method: 'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) { toast(d.mensaje); setTimeout(() => location.reload(), 700); }
+  else toast(d.error || 'Error', 'error');
+}
+</script>
+{% endblock %}

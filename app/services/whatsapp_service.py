@@ -8,8 +8,9 @@ import datetime
 import logging
 import httpx
 from sqlalchemy.orm import Session
-from app.database import NotificacionWP, ConfiguracionApp, Cuota, Zona
+from app.database import Empresa, NotificacionWP, ConfiguracionApp, Cuota, Zona
 from app.services.prestamo_service import get_cuotas_proximas_vencer, get_cuotas_vencidas_hoy
+from app.utils.plan_limits import tiene_funcion
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,16 @@ async def enviar_a_zona(
         mensaje=mensaje, tipo=tipo, estado="Pendiente",
     )
     db.add(notif); db.flush()
+
+    # Punto unico de control por plan: cubre tanto el scheduler automatico
+    # como los envios manuales, sin importar por donde se haya llegado hasta
+    # aqui (ninguna otra ruta llama a Green API directamente).
+    empresa = db.query(Empresa).filter(Empresa.id == empresa_id).first()
+    if not empresa or not tiene_funcion(empresa, "whatsapp"):
+        notif.estado = "Bloqueado"
+        db.commit()
+        logger.info("WhatsApp bloqueado por plan para empresa_id=%s (cliente=%s)", empresa_id, cliente_id)
+        return False
 
     ok = False
     try:
