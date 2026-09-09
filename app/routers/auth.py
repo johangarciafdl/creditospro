@@ -373,6 +373,14 @@ async def logout(request: Request, db: Session = Depends(get_db_system)):
     # get_db_system (no RLS): un superadmin no tiene empresa_id, asi que
     # la conexion restringida normal nunca podria verlo para identificarlo
     # aqui y decidir a donde redirigirlo despues de salir.
+    #
+    # Identificar y auditar ANTES de revocar el jti -- get_current_user()
+    # trata un jti revocado como sesion invalida, asi que revocar primero
+    # dejaria esto ciego (nunca detecta al usuario ni escribe el audit log).
+    user = get_current_user(request, db)
+    if user:
+        log_action(db, user, "logout", "auth", f"username={user.username}")
+
     # Revocar el jti del token actual para que no pueda reusarse
     token = request.cookies.get(SESSION_COOKIE)
     if token:
@@ -380,11 +388,6 @@ async def logout(request: Request, db: Session = Depends(get_db_system)):
         if payload and payload.get("jti"):
             from app.utils.token_blacklist import revoke_jti
             revoke_jti(payload["jti"], int(payload.get("exp", 0)))
-
-    # Audit log
-    user = get_current_user(request, db)
-    if user:
-        log_action(db, user, "logout", "auth", f"username={user.username}")
 
     destino = "/plataforma/login" if user and user.rol == "superadmin" else "/auth/login"
     response = RedirectResponse(url=destino, status_code=302)
