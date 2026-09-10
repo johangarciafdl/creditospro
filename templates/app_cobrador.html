@@ -158,7 +158,7 @@ async function confirmarCobro() {
   const valor    = document.getElementById('mc-valor').value;
   const metodo   = document.getElementById('mc-metodo').value;
   const obs      = document.getElementById('mc-obs').value;
-  if (!valor || parseFloat(valor)<=0) { alert('Ingresa el valor'); return; }
+  if (!valor || parseFloat(valor)<=0) { toast('Ingresa el valor del cobro','error'); return; }
 
   const fd = new FormData();
   fd.append('cuota_id', cuota_id);
@@ -180,7 +180,7 @@ async function confirmarCobro() {
     toast(d.mensaje, 'success');
     setTimeout(cargarRuta, 600);
   } else {
-    alert(d.error || 'Error');
+    toast(d.error || d.detail || 'No se pudo registrar el cobro','error');
   }
 }
 

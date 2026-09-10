@@ -295,11 +295,16 @@ function captureGPS(){
   btn.disabled=true;
   if(!navigator.geolocation){status.textContent='GPS no disponible';btn.disabled=false;return;}
   navigator.geolocation.getCurrentPosition(
-    pos=>{
-      document.getElementById('mc-lat').value=pos.coords.latitude;
-      document.getElementById('mc-lng').value=pos.coords.longitude;
-      status.textContent=`Lat ${pos.coords.latitude.toFixed(5)}, Lng ${pos.coords.longitude.toFixed(5)}`;
+    async pos=>{
+      const lat=pos.coords.latitude, lng=pos.coords.longitude;
+      document.getElementById('mc-lat').value=lat;
+      document.getElementById('mc-lng').value=lng;
+      // Coordenadas como respaldo inmediato; un cobrador no puede validar
+      // "6.28521, -75.56153", asi que se traducen a una direccion legible.
+      status.textContent='Ubicacion capturada · buscando direccion...';
       status.style.color='var(--green)';btn.disabled=false;
+      const dir=await direccionDesdeCoords(lat,lng);
+      status.textContent = dir ? ('📍 '+dir) : `Ubicacion capturada (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
     },
     err=>{status.textContent='No se pudo obtener ubicacion';status.style.color='var(--amber)';btn.disabled=false;},
     {timeout:8000,enableHighAccuracy:true}
@@ -315,7 +320,7 @@ function tomarFoto(tipo){
 function previewFoto(input){
   const file=input.files[0];
   if(!file)return;
-  if(file.size>5*1024*1024){alert('La foto no puede superar 5MB');return;}
+  if(file.size>5*1024*1024){toast('La foto no puede superar 5MB','error');return;}
   const reader=new FileReader();
   reader.onload=e=>{
     document.getElementById('foto-img').src=e.target.result;
@@ -344,10 +349,13 @@ function setMetodo(m){
 async function confirmarCobro(){
   const cuota_id=document.getElementById('mc-cuota-id').value;
   const valor=document.getElementById('mc-valor').value;
-  if(!valor||parseFloat(valor)<=0){alert('Ingresa un valor valido');return;}
+  limpiarErroresCampos(document.getElementById('modal-cobro'));
+  if(!valor||parseFloat(valor)<=0){errorCampo('mc-valor','Ingresa un valor mayor a 0');return;}
 
   const btn=document.getElementById('btn-confirmar');
-  btn.disabled=true;btn.textContent='Registrando...';
+  if(btn.disabled) return;               // ya hay un cobro registrandose
+  const textoBtn=btn.innerHTML;
+  btn.disabled=true;btn.innerHTML='<span class="btn-spinner"></span>Registrando...';
 
   const metodo_pago=document.getElementById('mc-metodo').value;
   const observaciones=document.getElementById('mc-obs').value;
@@ -359,7 +367,7 @@ async function confirmarCobro(){
 
   if(!navigator.onLine&&window.pwa){
     await guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat,lng,fotoFile});
-    btn.disabled=false;btn.textContent='Registrar Cobro';
+    btn.disabled=false;btn.innerHTML=textoBtn;
     return;
   }
 
@@ -379,15 +387,15 @@ async function confirmarCobro(){
       document.getElementById('modal-cobro').classList.remove('open');
       toast(d.mensaje,'success');
       setTimeout(buscar,600);
-    }else{alert(d.error||'Error al registrar');}
+    }else{toast(d.error||d.detail||'No se pudo registrar el cobro','error');}
   }catch(e){
     if(window.pwa){
       await guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat,lng,fotoFile});
     }else{
-      alert('Error de conexion');
+      toast('Error de conexión. Intenta nuevamente.','error');
     }
   }
-  btn.disabled=false;btn.textContent='Registrar Cobro';
+  btn.disabled=false;btn.innerHTML=textoBtn;
 }
 
 async function guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat,lng,fotoFile}){
@@ -402,7 +410,7 @@ async function guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat
     setTimeout(buscar,600);
   }catch(err){
     console.error('[Cobros] Error guardando cobro offline:',err);
-    alert('No se pudo guardar el cobro ni siquiera localmente. Anotalo a mano por seguridad.');
+    toast('No se pudo guardar el cobro ni siquiera en el celular. Anótalo a mano por seguridad.','error',8000);
   }
 }
 

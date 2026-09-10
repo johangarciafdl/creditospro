@@ -351,57 +351,47 @@ function validarFormularioPrestamo() {
   const plazo = parseInt(document.getElementById('np-plazo').value) || 1;
   const fecha = document.getElementById('np-fecha').value.trim();
   
-  // Verificación 1: Cliente seleccionado
+  // Los errores se muestran debajo del campo que los causa, no en una
+  // ventana del navegador que bloquea la pantalla.
+  limpiarErroresCampos(document.getElementById('modal-prestamo'));
+
   if (!cliente_id || !cliente_nombre) {
-    alert('⚠️ Debes seleccionar un cliente de la lista desplegable');
+    errorCampo('np-cliente-q', 'Selecciona un cliente de la lista');
     document.getElementById('np-cliente-q').focus();
     return false;
   }
-  
-  // Verificación 2: Zona válida
   if (!zona_id || isNaN(parseInt(zona_id))) {
-    alert('⚠️ Selecciona una zona válida');
+    errorCampo('np-zona', 'Selecciona una zona válida');
     return false;
   }
-  
-  // Verificación 3: Capital válido
   if (!capital || isNaN(capital) || capital <= 0) {
-    alert('⚠️ El capital debe ser un número mayor a 0');
+    errorCampo('np-capital', 'El capital debe ser un número mayor a 0');
     document.getElementById('np-capital').focus();
     return false;
   }
   if (capital > 100000000) {
-    alert('⚠️ El capital no puede ser mayor a $100.000.000');
+    errorCampo('np-capital', 'El capital no puede ser mayor a $100.000.000');
+    document.getElementById('np-capital').focus();
     return false;
   }
-  
-  // Verificación 4: Cuotas válidas
   if (!cuotas || isNaN(cuotas) || cuotas < 1 || cuotas > 365) {
-    alert('⚠️ Las cuotas deben estar entre 1 y 365');
+    errorCampo('np-cuotas', 'Las cuotas deben estar entre 1 y 365');
     document.getElementById('np-cuotas').focus();
     return false;
   }
-  
-  // Verificación 5: Tasa válida
   if (tasa < 0 || tasa > 200) {
-    alert('⚠️ La tasa de interés debe estar entre 0% y 200%');
+    errorCampo('np-tasa', 'La tasa debe estar entre 0% y 200%');
     return false;
   }
-  
-  // Verificación 6: Plazo válido
   if (plazo < 1 || plazo > 365) {
-    alert('⚠️ El plazo debe estar entre 1 y 365 días');
+    errorCampo('np-plazo', 'El plazo debe estar entre 1 y 365 días');
     return false;
   }
-  
-  // Verificación 7: Fecha válida
   if (!fecha) {
-    alert('⚠️ Especifica una fecha de inicio válida');
+    errorCampo('np-fecha', 'Especifica una fecha de inicio');
     document.getElementById('np-fecha').focus();
     return false;
   }
-  
-  // Validación exitosa
   return true;
 }
 
@@ -435,57 +425,35 @@ async function guardarPrestamo() {
   fd.append('fecha_inicio', fecha);
   fd.append('observaciones', obs);
 
-  try {
-    // Mostrar spinner mientras se procesa
-    const btnGuardar = document.querySelector('[onclick="guardarPrestamo()"]');
-    if (!btnGuardar) {
-      alert('Error: No se encontró el botón de guardar. Recarga la página.');
-      return;
+  // conBoton bloquea el boton al primer clic: si el usuario le da 5 veces
+  // seguidas, los clics siguientes se ignoran en vez de crear 5 prestamos.
+  const btnGuardar = document.querySelector('[onclick="guardarPrestamo()"]');
+  await conBoton(btnGuardar, 'Guardando préstamo...', async () => {
+    try {
+      const r = await window.fetch('/prestamos/nuevo', { method:'POST', body: fd });
+      const d = await r.json();
+
+      if (r.ok && d.ok) {
+        document.getElementById('modal-prestamo').classList.remove('open');
+        document.getElementById('np-cliente-id').value = '';
+        document.getElementById('np-cliente-q').value = '';
+        document.getElementById('np-cliente-info').textContent = '';
+        document.getElementById('np-capital').value = '';
+        document.getElementById('np-cuotas').value = '';
+        document.getElementById('np-obs').value = '';
+        document.getElementById('np-preview').style.display = 'none';
+        if (d.duplicado) toast(d.mensaje, 'warn');
+        else toast('Préstamo #' + d.id + ' creado para ' + cliente_nombre);
+        if (typeof buscar === 'function') buscar();
+      } else {
+        toast(d.error || d.detail || 'No se pudo crear el préstamo', 'error');
+        console.error('Detalles del error:', d);
+      }
+    } catch(e) {
+      toast('Error de conexión. Revisa tu internet e intenta de nuevo.', 'error');
+      console.error('Error en guardarPrestamo:', e);
     }
-    const textoOriginal = btnGuardar.textContent;
-    btnGuardar.disabled = true;
-    btnGuardar.textContent = '⏳ Creando...';
-    
-    const r = await window.fetch('/prestamos/nuevo', { method:'POST', body: fd });
-    const d = await r.json();
-    
-    // Restaurar botón
-    btnGuardar.disabled = false;
-    btnGuardar.textContent = textoOriginal;
-    
-    if (r.ok) {
-      // Éxito: cerrar modal y limpiar
-      document.getElementById('modal-prestamo').classList.remove('open');
-      
-      // Limpiar formulario
-      document.getElementById('np-cliente-id').value = '';
-      document.getElementById('np-cliente-q').value = '';
-      document.getElementById('np-cliente-info').textContent = '';
-      document.getElementById('np-capital').value = '';
-      document.getElementById('np-cuotas').value = '';
-      document.getElementById('np-obs').value = '';
-      document.getElementById('np-preview').style.display = 'none';
-      
-      // Notificar usuario
-      alert('✅ Préstamo creado exitosamente\n\nPréstamo #' + d.id + ' para ' + cliente_nombre);
-      
-      // Recargar lista si estamos en la página
-      if (typeof buscar === 'function') buscar();
-    } else {
-      // Error del servidor
-      const mensajeError = d.error || d.detail || 'Error desconocido';
-      alert('❌ Error al crear préstamo:\n\n' + mensajeError);
-      console.error('Detalles del error:', d);
-    }
-  } catch(e) { 
-    alert('❌ Error de conexión:\n\n' + e.message);
-    console.error('Error en guardarPrestamo:', e);
-    
-    // Restaurar botón en caso de error
-    const btnGuardar = document.querySelector('[onclick="guardarPrestamo()"]');
-    btnGuardar.disabled = false;
-    btnGuardar.textContent = 'Crear Préstamo';
-  }
+  });
 }
 </script>
 {% endblock %}

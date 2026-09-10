@@ -114,16 +114,33 @@
 <script nonce="{{ csp_nonce }}">
 const EMPLEADOS_ZONA = {{ empleados|tojson }};
 
+// Marca en rojo, debajo del campo, lo que falta del cobrador. Antes solo salia
+// un aviso flotante y el usuario no sabia cual de los dos campos llenar.
+function _validarCobradorZona(form){
+  limpiarErroresCampos(form);
+  if(!form.querySelector('[name=cobrador_nombre]')?.value) return true;
+  const tel  = form.querySelector('[name=cobrador_tel]');
+  const moto = form.querySelector('[name=cobrador_moto]');
+  let ok = true;
+  if(tel && !tel.value.trim()){ errorCampo(tel, 'Obligatorio si asignas un cobrador'); ok = false; }
+  if(moto && !moto.value.trim()){ errorCampo(moto, 'Obligatorio si asignas un cobrador'); ok = false; }
+  if(!ok) toast('Faltan datos del cobrador', 'error');
+  return ok;
+}
+
 async function guardarZona() {
-  const fd = new FormData(document.getElementById('form-zona'));
-  if (fd.get('cobrador_nombre') && (!fd.get('cobrador_tel') || !fd.get('cobrador_moto'))) {
-    toast('Si asignas un cobrador, su teléfono y placa/moto son obligatorios', 'error');
-    return;
-  }
-  const r = await window.fetch('/zonas/nueva', { method:'POST', body: fd });
-  const d = await r.json();
-  if (d.ok) { toast('Zona creada ✓'); setTimeout(() => location.reload(), 800); }
-  else toast(d.error || 'Error', 'error');
+  const form = document.getElementById('form-zona');
+  if(!_validarCobradorZona(form)) return;
+  const fd = new FormData(form);
+  const btn = document.querySelector('[onclick="guardarZona()"]');
+  await conBoton(btn, 'Guardando zona...', async () => {
+    try{
+      const r = await window.fetch('/zonas/nueva', { method:'POST', body: fd });
+      const d = await r.json();
+      if (d.ok) { toast('Zona creada'); setTimeout(() => location.reload(), 800); }
+      else toast(d.error || d.detail || 'No se pudo crear la zona', 'error');
+    }catch(e){ toast('Error de conexión. Intenta nuevamente.', 'error'); }
+  });
 }
 
 function editarZona(id, nombre, cobrador, tel, moto) {
@@ -154,16 +171,19 @@ function editarZona(id, nombre, cobrador, tel, moto) {
 }
 
 async function actualizarZona(id) {
-  const fd = new FormData(document.getElementById('fe-zona'));
+  const form = document.getElementById('fe-zona');
+  if(!_validarCobradorZona(form)) return;
+  const fd = new FormData(form);
   fd.append('activa', 'true');
-  if (fd.get('cobrador_nombre') && (!fd.get('cobrador_tel') || !fd.get('cobrador_moto'))) {
-    toast('Si asignas un cobrador, su teléfono y placa/moto son obligatorios', 'error');
-    return;
-  }
-  const r = await window.fetch(`/zonas/${id}/editar`, { method:'POST', body: fd });
-  const d = await r.json();
-  if (d.ok) { toast('Zona actualizada ✓'); cerrarModal(); setTimeout(() => location.reload(), 800); }
-  else { toast(d.error || 'Error al actualizar zona', 'error'); }
+  const btn = document.querySelector(`[onclick="actualizarZona(${id})"]`);
+  await conBoton(btn, 'Guardando...', async () => {
+    try{
+      const r = await window.fetch(`/zonas/${id}/editar`, { method:'POST', body: fd });
+      const d = await r.json();
+      if (d.ok) { toast('Zona actualizada'); cerrarModal(); setTimeout(() => location.reload(), 800); }
+      else { toast(d.error || d.detail || 'No se pudo actualizar la zona', 'error'); }
+    }catch(e){ toast('Error de conexión. Intenta nuevamente.', 'error'); }
+  });
 }
 </script>
 {% endblock %}

@@ -26,6 +26,10 @@ from app.utils.validators import (
     validar_numero_positivo, validar_entero_positivo, limpiar_texto, sin_html
 )
 
+# Ventana para considerar dos prestamos identicos como la misma peticion
+# repetida (doble clic / reintento), no como dos prestamos distintos.
+VENTANA_DEDUP_SEGUNDOS = 25
+
 # Configurar logging
 logger = logging.getLogger(__name__)
 
@@ -234,6 +238,32 @@ async def crear_prestamo(
         observaciones = sin_html(observaciones, "Observaciones", 500)
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    # Idempotencia: red de seguridad contra el doble clic (y contra un reintento
+    # del navegador si la respuesta se perdio). Un prestamo identico al mismo
+    # cliente, por el mismo monto y el mismo dia, creado hace segundos, no es
+    # un prestamo nuevo -- es la misma peticion repetida. Se devuelve el que ya
+    # existe en vez de crear otro. El bloqueo del boton en el frontend es la
+    # primera linea; esto cubre a cualquier cliente que no sea el navegador.
+    hace_poco = datetime.datetime.now() - datetime.timedelta(seconds=VENTANA_DEDUP_SEGUNDOS)
+    duplicado = db.query(Prestamo).filter(
+        Prestamo.empresa_id == user.empresa_id,
+        Prestamo.cliente_id == cliente_id_int,
+        Prestamo.capital == capital,
+        Prestamo.num_cuotas == int(num_cuotas),
+        Prestamo.fecha_inicio == fecha,
+        Prestamo.creado >= hace_poco,
+    ).order_by(Prestamo.id.desc()).first()
+    if duplicado:
+        logger.warning(
+            "[PRESTAMO-CREAR] Peticion duplicada ignorada: ya existe el prestamo %s "
+            "(cliente=%s, capital=%s) creado hace menos de %ss",
+            duplicado.id, cliente_id_int, capital, VENTANA_DEDUP_SEGUNDOS,
+        )
+        return JSONResponse({
+            "ok": True, "id": duplicado.id, "duplicado": True,
+            "mensaje": f"Ese préstamo ya se había creado (#{duplicado.id}) — no se duplicó.",
+        })
 
     try:
         # Log: Inicio de creación

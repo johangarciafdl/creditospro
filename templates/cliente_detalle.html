@@ -85,6 +85,24 @@
               src="https://maps.google.com/maps?q=${lat},${lng}&z=16&output=embed"></iframe>`;
           });
         </script>
+        {% elif cliente.direccion %}
+        {# Sin GPS pero con direccion escrita: el mapa se arma con la direccion
+           en texto (Google la geocodifica solo). Antes decia "sin ubicacion"
+           aunque la direccion estuviera ahi escrita. #}
+        <div id="mapa" style="height:180px;background:rgba(212, 175, 55, 0.05);border-radius:0 0 10px 10px;overflow:hidden;"></div>
+        <div class="fs-11 text-2" style="padding:6px 14px;display:flex;justify-content:space-between;gap:8px;align-items:center;">
+          <span>Ubicación aproximada según la dirección escrita</span>
+          <button class="btn btn-ghost btn-xs" onclick="capturarUbicacion()">Fijar GPS exacto</button>
+        </div>
+        <script nonce="{{ csp_nonce }}">
+          document.addEventListener('DOMContentLoaded', () => {
+            const partes = [{{ cliente.direccion|tojson }}, {{ (cliente.barrio or '')|tojson }}, 'Colombia'];
+            const consulta = encodeURIComponent(partes.filter(Boolean).join(', '));
+            document.getElementById('mapa').innerHTML =
+              `<iframe width="100%" height="180" frameborder="0" style="border:0" loading="lazy"
+                src="https://maps.google.com/maps?q=${consulta}&z=16&output=embed"></iframe>`;
+          });
+        </script>
         {% else %}
         <div class="map-box" style="border-radius:0 0 10px 10px;height:180px;" onclick="capturarUbicacion()">
 
@@ -362,8 +380,12 @@ async function subirFoto(inp) {
 function abrirMaps() {
   {% if cliente.lat and cliente.lng %}
   window.open(`https://maps.google.com/?q={{ cliente.lat }},{{ cliente.lng }}`, '_blank');
+  {% elif cliente.direccion %}
+  // Sin GPS, pero la direccion escrita sirve igual para abrir Maps
+  const partes = [{{ cliente.direccion|tojson }}, {{ (cliente.barrio or '')|tojson }}, 'Colombia'];
+  window.open('https://maps.google.com/?q=' + encodeURIComponent(partes.filter(Boolean).join(', ')), '_blank');
   {% else %}
-  toast('Sin coordenadas registradas', 'error');
+  toast('Este cliente no tiene dirección ni ubicación GPS registrada', 'error');
   {% endif %}
 }
 

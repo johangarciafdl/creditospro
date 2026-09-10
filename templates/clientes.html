@@ -52,19 +52,21 @@
     <div class="grid-2 mb-2">
       <div class="form-group">
         <label>Cédula / CC *</label>
-        <input type="text" id="nc-cedula" placeholder="71525706">
+        <input type="text" id="nc-cedula" placeholder="71525706" maxlength="20" inputmode="numeric">
       </div>
       <div class="form-group">
         <label>Nombre completo *</label>
-        <input type="text" id="nc-nombre" placeholder="Luis Osorio">
+        <input type="text" id="nc-nombre" placeholder="Luis Osorio" maxlength="200">
       </div>
       <div class="form-group">
         <label>Teléfono *</label>
-        <input type="tel" id="nc-telefono" placeholder="3508845057">
+        <input type="tel" id="nc-telefono" placeholder="3508845057" maxlength="10" inputmode="numeric"
+               pattern="[0-9]{7,10}" title="7 dígitos (fijo) o 10 (celular), solo números">
       </div>
       <div class="form-group">
         <label>WhatsApp</label>
-        <input type="tel" id="nc-whatsapp" placeholder="3508845057">
+        <input type="tel" id="nc-whatsapp" placeholder="3508845057" maxlength="10" inputmode="numeric"
+               pattern="3[0-9]{9}" title="Celular colombiano: 10 dígitos empezando por 3">
       </div>
       <div class="form-group">
         <label>Zona *</label>
@@ -230,7 +232,7 @@ let _cobrarId = null;
 
 function cobrarCliente(clienteId) {
   if (!clienteId || isNaN(clienteId)) {
-    alert('Cliente inválido');
+    toast('Cliente inválido', 'error');
     return;
   }
   _cobrarId = clienteId;
@@ -244,55 +246,60 @@ async function confirmarCobroR() {
   const metodo = document.getElementById('cobro-metodo-r').value;
 
   if (!metodo) {
-    alert('Selecciona un método de pago');
+    errorCampo('cobro-metodo-r', 'Selecciona un método de pago');
     return;
   }
-
-  btn.disabled = true;
-  btn.textContent = 'Registrando...';
+  limpiarErroresCampos(document.getElementById('modal-cobro-r'));
 
   const fd = new FormData();
   fd.append('metodo_pago', metodo);
 
-  try {
-    const r = await window.fetch(`/cobros/registrar-cliente/${_cobrarId}`, {
-      method: 'POST',
-      body: fd
-    });
-    const d = await r.json();
-    if (d.ok) {
-      document.getElementById('modal-cobro-r').classList.remove('open');
-      if (typeof toast === 'function') toast(d.mensaje || 'Cobro registrado', 'success');
-      else alert(d.mensaje || 'Cobro registrado');
-      setTimeout(buscar, 500);
-    } else {
-      alert(d.error || d.detail || 'Error al registrar cobro');
+  await conBoton(btn, 'Registrando...', async () => {
+    try {
+      const r = await window.fetch(`/cobros/registrar-cliente/${_cobrarId}`, {
+        method: 'POST',
+        body: fd
+      });
+      const d = await r.json();
+      if (d.ok) {
+        document.getElementById('modal-cobro-r').classList.remove('open');
+        toast(d.mensaje || 'Cobro registrado');
+        setTimeout(buscar, 500);
+      } else {
+        toast(d.error || d.detail || 'No se pudo registrar el cobro', 'error');
+      }
+    } catch(e) {
+      console.error('[Cobros] Error registrar:', e);
+      toast('Error de conexión. Intenta nuevamente.', 'error');
     }
-  } catch(e) {
-    console.error('[Cobros] Error registrar:', e);
-    alert('Error de conexión. Intenta nuevamente.');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Registrar Cobro';
-  }
+  });
 }
 
 async function guardarCliente() {
   const cedula = document.getElementById('nc-cedula').value.trim();
   const nombre = document.getElementById('nc-nombre').value.trim();
   const telefono = document.getElementById('nc-telefono').value.trim();
+  const whatsapp = document.getElementById('nc-whatsapp').value.trim();
   const zona_id = document.getElementById('nc-zona').value;
 
-  if (!cedula || !nombre || !telefono || !zona_id) {
-    alert('Cédula, nombre, teléfono y zona son obligatorios');
-    return;
+  limpiarErroresCampos(document.getElementById('modal-cliente'));
+  let hayError = false;
+  if (!cedula) { errorCampo('nc-cedula', 'La cédula es obligatoria'); hayError = true; }
+  if (!nombre) { errorCampo('nc-nombre', 'El nombre es obligatorio'); hayError = true; }
+  else if (/[0-9]/.test(nombre)) { errorCampo('nc-nombre', 'El nombre no puede llevar números'); hayError = true; }
+  if (!telefono) { errorCampo('nc-telefono', 'El teléfono es obligatorio'); hayError = true; }
+  else if (!/^[0-9]{7}$|^[0-9]{10}$/.test(telefono)) {
+    errorCampo('nc-telefono', 'Debe tener 7 dígitos (fijo) o 10 (celular), solo números');
+    hayError = true;
   }
-
-  // Validar que zona_id sea un número válido
-  if (isNaN(zona_id)) {
-    alert('Zona inválida');
-    return;
+  // WhatsApp es opcional, pero si lo escriben tiene que servir para enviar:
+  // en Colombia son 10 digitos que empiezan por 3.
+  if (whatsapp && !/^3[0-9]{9}$/.test(whatsapp)) {
+    errorCampo('nc-whatsapp', 'El WhatsApp debe tener 10 dígitos y empezar por 3');
+    hayError = true;
   }
+  if (!zona_id || isNaN(zona_id)) { errorCampo('nc-zona', 'Selecciona una zona'); hayError = true; }
+  if (hayError) return;
 
   const fd = new FormData();
   fd.append('cedula', cedula);
@@ -304,21 +311,23 @@ async function guardarCliente() {
   fd.append('direccion', document.getElementById('nc-direccion').value.trim());
   fd.append('barrio', document.getElementById('nc-barrio').value.trim());
 
-  try {
-    const r = await window.fetch('/clientes/nuevo', { method:'POST', body: fd });
-    const d = await r.json();
-    if (d.ok) {
-      document.getElementById('modal-cliente').classList.remove('open');
-      if (typeof toast === 'function') toast('Cliente creado', 'success');
-      else alert('Cliente creado exitosamente');
-      buscar(); // refrescar resultados
-    } else {
-      alert(d.error || d.detail || 'Error al guardar cliente');
+  const btn = document.querySelector('[onclick="guardarCliente()"]');
+  await conBoton(btn, 'Guardando cliente...', async () => {
+    try {
+      const r = await window.fetch('/clientes/nuevo', { method:'POST', body: fd });
+      const d = await r.json();
+      if (d.ok) {
+        document.getElementById('modal-cliente').classList.remove('open');
+        toast('Cliente creado');
+        buscar(); // refrescar resultados
+      } else {
+        toast(d.error || d.detail || 'No se pudo guardar el cliente', 'error');
+      }
+    } catch(e) {
+      console.error('[Clientes] Error guardar:', e);
+      toast('Error de conexión. Intenta nuevamente.', 'error');
     }
-  } catch(e) {
-    console.error('[Clientes] Error guardar:', e);
-    alert('Error de conexión. Intenta nuevamente.');
-  }
+  });
 }
 </script>
 

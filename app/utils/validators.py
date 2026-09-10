@@ -55,15 +55,41 @@ def validar_username(username: str) -> str:
     return u
 
 
+def _solo_digitos(valor: str) -> str:
+    return re.sub(r"\D", "", valor or "")
+
+
 def validar_telefono(tel: str, requerido: bool = True) -> Optional[str]:
-    t = limpiar_texto(tel, 20)
+    """Telefono de contacto: fijo (7 digitos) o con indicativo/celular (10).
+
+    No se exige que empiece por 3: los fijos de Medellin tambien son de 10
+    digitos (604...) desde el cambio de numeracion. Esa exigencia solo aplica
+    a WhatsApp, que unicamente funciona sobre celulares.
+    """
+    t = _solo_digitos(limpiar_texto(tel, 25))
     if not t:
         if requerido:
             raise HTTPException(400, "Teléfono requerido")
         return None
-    if not TEL_RE.match(t):
-        raise HTTPException(400, "Teléfono inválido")
+    if len(t) not in (7, 10):
+        raise HTTPException(400, "El teléfono debe tener 7 dígitos (fijo) o 10 (celular)")
     return t
+
+
+def validar_whatsapp(numero: str, requerido: bool = False) -> Optional[str]:
+    """WhatsApp: exactamente 10 digitos empezando por 3 (celular colombiano).
+
+    Un numero incompleto no falla al guardarlo sino despues, en silencio, al
+    intentar enviar el recordatorio -- por eso se rechaza aqui y no alla.
+    """
+    n = _solo_digitos(limpiar_texto(numero, 25))
+    if not n:
+        if requerido:
+            raise HTTPException(400, "WhatsApp requerido")
+        return None
+    if len(n) != 10 or not n.startswith("3"):
+        raise HTTPException(400, "El WhatsApp debe tener exactamente 10 dígitos y empezar por 3")
+    return n
 
 
 METODOS_PAGO_VALIDOS = ("Efectivo", "Nequi", "Daviplata", "Transferencia")

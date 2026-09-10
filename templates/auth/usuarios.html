@@ -160,20 +160,16 @@ async function crearUsuario(e){
   e.preventDefault();
   const fd = new FormData(e.target);
   const btn = e.target.querySelector('button[type="submit"]');
-  const texto = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Guardando...';
-  try {
-    const r = await fetch('/auth/usuarios/nuevo', {method:'POST', body:fd});
-    const d = await r.json();
-    if(d.ok){ alert(d.mensaje); location.reload(); }
-    else alert(d.error || 'Error');
-  } catch(err) {
-    alert('Error de conexion');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = texto;
-  }
+  await conBoton(btn, 'Guardando...', async () => {
+    try {
+      const r = await fetch('/auth/usuarios/nuevo', {method:'POST', body:fd});
+      const d = await r.json();
+      if(d.ok){ toast(d.mensaje); setTimeout(()=>location.reload(), 900); }
+      else toast(d.error || d.detail || 'No se pudo crear el usuario', 'error');
+    } catch(err) {
+      toast('Error de conexión. Intenta nuevamente.', 'error');
+    }
+  });
 }
 
 function editarUsuario(id, username, nombre, rol, zonas, activo){
@@ -191,10 +187,17 @@ async function guardarEdicion(e){
   e.preventDefault();
   const id = document.getElementById('edit-id').value;
   const fd = new FormData(e.target);
-  const r = await fetch(`/auth/usuarios/${id}/editar`, {method:'POST', body:fd});
-  const d = await r.json();
-  if(d.ok){ alert(d.mensaje); location.reload(); }
-  else alert(d.error || 'Error');
+  const btn = e.target.querySelector('button[type="submit"]');
+  await conBoton(btn, 'Guardando...', async () => {
+    try {
+      const r = await fetch(`/auth/usuarios/${id}/editar`, {method:'POST', body:fd});
+      const d = await r.json();
+      if(d.ok){ toast(d.mensaje); setTimeout(()=>location.reload(), 900); }
+      else toast(d.error || d.detail || 'No se pudo guardar el usuario', 'error');
+    } catch(err) {
+      toast('Error de conexión. Intenta nuevamente.', 'error');
+    }
+  });
 }
 
 async function eliminarUsuario(id, nombre){

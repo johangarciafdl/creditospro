@@ -187,6 +187,16 @@ tbody tr:hover{background:var(--surface-2)}
 #toast.error{background:var(--red);color:#fff}
 #toast.warn{background:var(--abg);color:var(--amber);border-color:rgba(217,119,6,.2)}
 
+/* SPINNER EN BOTONES (anti doble clic) */
+.btn-spinner{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:btnspin .6s linear infinite;vertical-align:-1px;margin-right:6px}
+@keyframes btnspin{to{transform:rotate(360deg)}}
+button[disabled],.btn[disabled]{opacity:.6;cursor:not-allowed}
+
+/* ERROR INLINE BAJO UN CAMPO */
+.field-error{display:none;font-size:11.5px;color:var(--red);margin-top:4px;line-height:1.4}
+.field-error.show{display:block}
+input.has-error,select.has-error{border-color:var(--red)!important}
+
 /* PROGRESS BAR TOP */
 #nprogress{height:2px;background:var(--gold);position:fixed;top:0;left:0;z-index:99998;transition:width .3s ease}
 
@@ -394,8 +404,10 @@ function tick(){const el=document.getElementById('fecha-hora');if(el)el.textCont
 tick();setInterval(tick,30000);
 
 // ── TOAST (seguro contra XSS) ──
-function toast(msg,tipo='success',ms=3200){
+function toast(msg,tipo='success',ms=null){
   const t=document.getElementById('toast');
+  // Los errores se leen mas despacio que un "guardado ✓"
+  if(ms===null) ms = (tipo==='error') ? 5200 : 3200;
   // Construir DOM con createElement para evitar que 'msg' se interprete como HTML
   while(t.firstChild)t.removeChild(t.firstChild);
   const ns='http://www.w3.org/2000/svg';
@@ -407,11 +419,15 @@ function toast(msg,tipo='success',ms=3200){
     const p=document.createElementNS(ns,'polyline');
     p.setAttribute('points','20 6 9 17 4 12');svg.appendChild(p);
   }else if(tipo==='error'){
+    // Triangulo de advertencia, NO una "X": una X se lee como boton de cerrar
+    // y la gente le hace clic esperando que el aviso desaparezca.
+    const p=document.createElementNS(ns,'path');
+    p.setAttribute('d','M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z');
     const l1=document.createElementNS(ns,'line');
-    l1.setAttribute('x1','18');l1.setAttribute('y1','6');l1.setAttribute('x2','6');l1.setAttribute('y2','18');
+    l1.setAttribute('x1','12');l1.setAttribute('y1','9');l1.setAttribute('x2','12');l1.setAttribute('y2','13');
     const l2=document.createElementNS(ns,'line');
-    l2.setAttribute('x1','6');l2.setAttribute('y1','6');l2.setAttribute('x2','18');l2.setAttribute('y2','18');
-    svg.appendChild(l1);svg.appendChild(l2);
+    l2.setAttribute('x1','12');l2.setAttribute('y1','17');l2.setAttribute('x2','12.01');l2.setAttribute('y2','17');
+    svg.appendChild(p);svg.appendChild(l1);svg.appendChild(l2);
   }else{
     const c=document.createElementNS(ns,'circle');c.setAttribute('cx','12');c.setAttribute('cy','12');c.setAttribute('r','10');
     const l1=document.createElementNS(ns,'line');l1.setAttribute('x1','12');l1.setAttribute('y1','8');l1.setAttribute('x2','12');l1.setAttribute('y2','12');
@@ -423,6 +439,10 @@ function toast(msg,tipo='success',ms=3200){
   t.appendChild(document.createTextNode(' '+msg));
   t.className=tipo;t.style.display='flex';t.style.opacity='1';
   clearTimeout(t._t);
+  // Cerrar con clic: la gente igual intenta hacerle clic al aviso, sobre todo
+  // cuando trae un icono. Mejor que responda a que parezca congelado.
+  t.style.cursor='pointer';t.title='Clic para cerrar';
+  t.onclick=()=>{clearTimeout(t._t);t.style.display='none';};
   
   // Intentar usar Anime.js
   if(window.anime&&typeof anime==='function'){
@@ -573,6 +593,76 @@ document.getElementById('pwa-install-btn').addEventListener('click',async()=>{
   if(outcome==='accepted')toast('CreditosPro instalado','success');
   localStorage.setItem('pwa_d','1');_pwaP=null;
 });
+
+// ── ANTI DOBLE CLIC ──
+// Envuelve una accion async: bloquea el boton al primer clic y lo restaura al
+// terminar. Si el usuario le da 5 veces seguidas, los clics 2..5 se ignoran
+// (el boton ya esta disabled) en vez de mandar 5 peticiones al servidor.
+async function conBoton(btn, textoCargando, fn){
+  if(!btn) return await fn();
+  if(btn.disabled) return;            // ya hay una peticion en curso
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="btn-spinner"></span>' + (textoCargando || 'Guardando...');
+  try{
+    return await fn();
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+}
+
+// Marca/limpia un error debajo de un campo concreto (en vez de un alert global).
+// Acepta el id del campo o el elemento mismo.
+function errorCampo(campo, mensaje){
+  const inp = (typeof campo === 'string') ? document.getElementById(campo) : campo;
+  if(!inp) return;
+  let box = inp.parentElement.querySelector('.field-error');
+  if(!box){
+    box = document.createElement('div');
+    box.className = 'field-error';
+    inp.parentElement.appendChild(box);
+  }
+  if(mensaje){
+    box.textContent = mensaje; box.classList.add('show'); inp.classList.add('has-error');
+  }else{
+    box.classList.remove('show'); inp.classList.remove('has-error');
+  }
+}
+function limpiarErroresCampos(contenedor){
+  (contenedor||document).querySelectorAll('.field-error.show').forEach(b=>b.classList.remove('show'));
+  (contenedor||document).querySelectorAll('.has-error').forEach(i=>i.classList.remove('has-error'));
+}
+
+// ── COORDENADAS → DIRECCION LEGIBLE ──
+// Un cobrador en la calle no puede verificar "6.28521, -75.56153". Esto lo
+// convierte en "Calle 52A #51-20, Bello" usando OpenStreetMap (gratis, sin
+// llave). Si falla o no hay internet devuelve null y el llamador muestra las
+// coordenadas: nunca bloquea el registro del cobro.
+const _cacheDirecciones = {};
+async function direccionDesdeCoords(lat, lng){
+  const clave = lat.toFixed(5)+','+lng.toFixed(5);
+  if(clave in _cacheDirecciones) return _cacheDirecciones[clave];
+  try{
+    const ctrl = new AbortController();
+    const corte = setTimeout(()=>ctrl.abort(), 6000);
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18`
+              + `&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}`;
+    const r = await fetch(url, {signal: ctrl.signal, headers:{'Accept':'application/json'}});
+    clearTimeout(corte);
+    if(!r.ok) return null;
+    const d = await r.json();
+    const a = d.address || {};
+    const via = [a.road, a.house_number].filter(Boolean).join(' #');
+    const zona = a.neighbourhood || a.suburb || a.city_district || '';
+    const ciudad = a.city || a.town || a.village || a.municipality || '';
+    const texto = [via, zona, ciudad].filter(Boolean).join(', ') || d.display_name || null;
+    _cacheDirecciones[clave] = texto;
+    return texto;
+  }catch(e){
+    return null;   // sin internet o servicio caido: se muestran las coordenadas
+  }
+}
 
 // ── CSRF ──
 function getCsrf(){return document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('cp_csrf='))?.split('=')[1]||''}

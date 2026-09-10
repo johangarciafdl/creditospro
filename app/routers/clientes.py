@@ -24,7 +24,7 @@ from app.database import get_db, Cliente, Prestamo, Zona
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
-    validar_cedula, validar_nombre, validar_telefono, limpiar_texto,
+    validar_cedula, validar_nombre, validar_telefono, validar_whatsapp, limpiar_texto,
     sanitizar_imagen_subida, sin_html
 )
 
@@ -217,7 +217,7 @@ async def crear_cliente(
         cedula = validar_cedula(cedula)
         nombre = validar_nombre(nombre)
         telefono = validar_telefono(telefono, requerido=True)
-        whatsapp = validar_telefono(whatsapp, requerido=False)
+        whatsapp = validar_whatsapp(whatsapp, requerido=False)
         direccion = sin_html(direccion, "Dirección", 300)
         barrio = sin_html(barrio, "Barrio", 100)
     except HTTPException as e:
@@ -311,8 +311,13 @@ async def editar_cliente(
 
     try:
         nombre = validar_nombre(nombre)
-        telefono = validar_telefono(telefono, requerido=True)
-        whatsapp = validar_telefono(whatsapp, requerido=False)
+        # Un telefono heredado que ya estaba mal (ej. el "000" de la migracion
+        # inicial) no bloquea editar la direccion de ese cliente: solo se exige
+        # el formato nuevo cuando de verdad se esta cambiando el numero.
+        if (telefono or "").strip() != (cliente.telefono or ""):
+            telefono = validar_telefono(telefono, requerido=True)
+        if (whatsapp or "").strip() != (cliente.whatsapp or ""):
+            whatsapp = validar_whatsapp(whatsapp, requerido=False)
         direccion = sin_html(direccion, "Dirección", 300)
         barrio = sin_html(barrio, "Barrio", 100)
     except HTTPException as e:
