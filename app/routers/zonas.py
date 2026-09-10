@@ -3,6 +3,7 @@ from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from app.templates import templates
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 import re
 
@@ -88,16 +89,30 @@ async def listar_zonas(request: Request, db: Session = Depends(get_db)):
     if allowed_zones is not None:
         zonas_q = zonas_q.filter(Zona.id.in_(allowed_zones or [-1]))
     zonas = zonas_q.all()
+
+    # 2 consultas agrupadas en vez de 2 por zona (N+1): antes, con 20 zonas
+    # esta pantalla hacia 41 consultas; ahora siempre son 3, sin importar
+    # cuantas zonas tenga la empresa.
+    clientes_por_zona = dict(
+        db.query(Cliente.zona_id, func.count(Cliente.id))
+        .filter(Cliente.empresa_id == eid, Cliente.activo == True)
+        .group_by(Cliente.zona_id).all()
+    )
+    prestamos_por_zona = dict(
+        db.query(Prestamo.zona_id, func.count(Prestamo.id))
+        .filter(Prestamo.empresa_id == eid, Prestamo.estado == "Activo")
+        .group_by(Prestamo.zona_id).all()
+    )
+
     data = []
     for z in zonas:
-        clientes = db.query(Cliente).filter(Cliente.empresa_id == eid, Cliente.zona_id == z.id, Cliente.activo == True).count()
-        prestamos = db.query(Prestamo).filter(Prestamo.empresa_id == eid, Prestamo.zona_id == z.id, Prestamo.estado == "Activo").count()
         data.append({
             "id": z.id, "codigo": z.codigo, "nombre": z.nombre,
             "ciudad": z.ciudad, "cobrador": z.cobrador_nombre or "—",
             "cobrador_tel": z.cobrador_tel or "—",
             "cobrador_moto": z.cobrador_moto or "—",
-            "clientes": clientes, "prestamos": prestamos,
+            "clientes": clientes_por_zona.get(z.id, 0),
+            "prestamos": prestamos_por_zona.get(z.id, 0),
             "activa": z.activa, "lat": z.lat, "lng": z.lng,
         })
 

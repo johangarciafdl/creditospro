@@ -9,6 +9,7 @@ scheduler, la activacion de licencia y el selector de empresa.
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.database import get_db_system, Empresa, Usuario, ConfiguracionApp, Zona
 from app.routers.auth import get_current_user, SESSION_COOKIE, IS_PRODUCTION
@@ -97,17 +98,20 @@ async def panel_plataforma(request: Request, db: Session = Depends(get_db_system
         return RedirectResponse(url=destino, status_code=302)
 
     empresas = db.query(Empresa).order_by(Empresa.nombre).all()
+
+    # 1 consulta agrupada en vez de 1 por empresa (N+1).
+    cobradores_por_empresa = dict(
+        db.query(Usuario.empresa_id, func.count(Usuario.id))
+        .filter(Usuario.rol.in_(("cobrador", "supervisor")), Usuario.activo == True)
+        .group_by(Usuario.empresa_id).all()
+    )
+
     data = []
     for e in empresas:
-        cobradores_activos = db.query(Usuario).filter(
-            Usuario.empresa_id == e.id,
-            Usuario.rol.in_(("cobrador", "supervisor")),
-            Usuario.activo == True,
-        ).count()
         overrides = e.overrides or {}
         data.append({
             "id": e.id, "nombre": e.nombre, "plan": e.plan or "basico",
-            "activa": e.activa, "cobradores_activos": cobradores_activos,
+            "activa": e.activa, "cobradores_activos": cobradores_por_empresa.get(e.id, 0),
             "tiene_clave": bool(e.activation_key_hash),
             "clave_visible": bool(e.activation_key_encrypted),
             "override_whatsapp": overrides.get("whatsapp"),
