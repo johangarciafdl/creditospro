@@ -1,6 +1,5 @@
 """WhatsApp Bot router v2.1 - multi-tenant + auth"""
 import datetime
-import re
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from app.templates import templates
@@ -10,31 +9,13 @@ from app.database import get_db, Empresa, NotificacionWP, ConfiguracionApp, Clie
 from app.routers.auth import get_current_user
 from app.services.whatsapp_service import ejecutar_recordatorios, enviar_notificacion, get_config_by_empresa
 from app.utils.plan_limits import tiene_funcion
-from app.utils.validators import sin_html, validar_entero_positivo
+from app.utils.validators import (
+    sin_html, validar_entero_positivo, validar_wp_instance, validar_wp_token,
+)
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access
 
 router = APIRouter()
 
-_WP_PHONE_ID_RE = re.compile(r"^[0-9]{5,20}$")
-_WP_TOKEN_RE = re.compile(r"^[A-Za-z0-9]{10,100}$")
-
-
-def _validar_wp_phone_id(v: str) -> str | None:
-    v = (v or "").strip()
-    if not v:
-        return None
-    if not _WP_PHONE_ID_RE.match(v):
-        raise HTTPException(400, "ID de instancia invalido: solo digitos (5-20)")
-    return v
-
-
-def _validar_wp_token(v: str) -> str | None:
-    v = (v or "").strip()
-    if not v:
-        return None
-    if not _WP_TOKEN_RE.match(v):
-        raise HTTPException(400, "Token de instancia invalido: solo letras y numeros (10-100 caracteres)")
-    return v
 
 
 @router.get("")
@@ -125,8 +106,8 @@ async def configurar_wp(
             )
 
     try:
-        wp_phone_id = _validar_wp_phone_id(wp_phone_id)
-        wp_token = _validar_wp_token(wp_token)
+        wp_phone_id = validar_wp_instance(wp_phone_id)
+        wp_token = validar_wp_token(wp_token)
         dias_aviso = int(validar_entero_positivo(dias_aviso, "Días de aviso", minimo=0, maximo=30))
         if wp_mensaje_recordatorio:
             wp_mensaje_recordatorio = sin_html(wp_mensaje_recordatorio, "Mensaje de recordatorio", 500)

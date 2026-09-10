@@ -43,11 +43,20 @@
         {% if z.cobrador_moto and z.cobrador_moto != '—' %}<div class="fs-11 text-2">🏍 {{ z.cobrador_moto }}</div>{% endif %}
       </div>
 
+      <div class="fs-11 text-2 mb-2">
+        WhatsApp de la zona:
+        {% if z.bot_activo %}<span class="badge badge-gold">Activo</span>
+        {% elif z.bot_phone %}<span class="badge badge-gray">Configurado, apagado</span>
+        {% else %}<span class="badge badge-gray">Sin configurar</span>{% endif %}
+      </div>
+
       <div class="flex gap-1">
         <button class="btn btn-ghost btn-xs" style="flex:1;"
           data-zona-id="{{ z.id }}" data-zona-nombre="{{ z.nombre }}"
           data-zona-cobrador="{{ z.cobrador }}" data-zona-tel="{{ z.cobrador_tel }}" data-zona-moto="{{ z.cobrador_moto }}"
-          onclick="editarZona(Number(this.dataset.zonaId), this.dataset.zonaNombre, this.dataset.zonaCobrador, this.dataset.zonaTel, this.dataset.zonaMoto)">✏ Editar</button>
+          data-bot-phone="{{ z.bot_phone }}" data-bot-activo="{{ 'si' if z.bot_activo else '' }}"
+          data-bot-token="{{ 'si' if z.bot_tiene_token else '' }}"
+          onclick="editarZona(this.dataset)">✏ Editar</button>
         <a href="/reportes/resumen-zonas" class="btn btn-secondary btn-xs" style="flex:1;justify-content:center;">⬇ Excel</a>
       </div>
     </div>
@@ -81,27 +90,30 @@
         <div class="form-group"><label>Tel. cobrador</label><input type="tel" name="cobrador_tel" maxlength="10" pattern="[0-9]{7,10}" inputmode="numeric" placeholder="3001234567" title="Solo numeros, entre 7 y 10 digitos"></div>
         <div class="form-group"><label>Moto/Placa</label><input type="text" name="cobrador_moto" maxlength="6" pattern="[A-Za-z0-9]{6}" style="text-transform:uppercase" placeholder="ABC123" title="Exactamente 6 caracteres alfanumericos"></div>
       </div>
+
+      {# Estos campos estaban FUERA del <form>, asi que new FormData(form)
+         nunca los recogia: lo que se escribiera aqui se perdia en silencio. #}
+      <div style="height:1px;background:var(--border);margin:14px 0;"></div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--gold);margin-bottom:8px;">WhatsApp de esta zona (Green API)</div>
+      <div style="font-size:12px;color:var(--t3);margin-bottom:10px;">Cada zona puede usar el WhatsApp de su propio cobrador. Crea la instancia en green-api.com, vincula el celular con el QR y copia el ID y el token. Puedes dejarlo vacío ahora y configurarlo después desde "Editar".</div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>ID de instancia</label>
+          <input type="text" id="ez-bot-phone" name="bot_phone" placeholder="1101234567" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label>Token de instancia</label>
+          <input type="password" id="ez-bot-apikey" name="bot_apikey" autocomplete="new-password" placeholder="d1a2b3c4...">
+        </div>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;">
+          <input type="checkbox" id="ez-bot-activo" name="bot_activo" value="true" style="width:auto;accent-color:var(--gold);">
+          Enviar recordatorios automáticos desde esta zona
+        </label>
+      </div>
     </form>
-  
-          <div style="height:1px;background:var(--border);margin:14px 0;"></div>
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--gold);margin-bottom:8px;">Green API WhatsApp</div>
-          <div style="font-size:12px;color:var(--t3);margin-bottom:10px;">Cada zona puede tener su propia instancia. Crea una cuenta en green-api.com, vincula el WhatsApp de la zona con el QR y copia el ID y Token de esa instancia.</div>
-          <div class="grid-2">
-            <div class="form-group">
-              <label>ID de instancia (Green API)</label>
-              <input type="text" id="ez-bot-phone" name="bot_phone" placeholder="1101234567">
-            </div>
-            <div class="form-group">
-              <label>Token de instancia (Green API)</label>
-              <input type="text" id="ez-bot-apikey" name="bot_apikey" placeholder="d1a2b3c4...">
-            </div>
-          </div>
-          <div class="form-group">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;">
-              <input type="checkbox" id="ez-bot-activo" name="bot_activo" style="width:auto;accent-color:var(--gold);">
-              Activar bot para esta zona
-            </label>
-          </div></div>
+  </div>
   <div class="modal-footer">
     <button class="btn" onclick="document.getElementById('modal-zona').classList.remove('open')">Cancelar</button>
     <button class="btn btn-primary" onclick="guardarZona()">Guardar Zona</button>
@@ -143,7 +155,12 @@ async function guardarZona() {
   });
 }
 
-function editarZona(id, nombre, cobrador, tel, moto) {
+function editarZona(datos) {
+  const id      = Number(datos.zonaId) || 0;
+  const nombre  = datos.zonaNombre;
+  const tel     = datos.zonaTel;
+  const moto    = datos.zonaMoto;
+  let cobrador  = datos.zonaCobrador;
   // Los campos sin valor llegan como "—" (placeholder de la tarjeta), no vacios.
   if (cobrador === '—') cobrador = '';
   // El cobrador actual puede ya no estar activo -- se agrega igual como
@@ -164,6 +181,22 @@ function editarZona(id, nombre, cobrador, tel, moto) {
         <div class="form-group"><label>Teléfono</label><input name="cobrador_tel" value="${attr(tel === '—' ? '' : tel)}" maxlength="10" pattern="[0-9]{7,10}" inputmode="numeric" title="Solo numeros, entre 7 y 10 digitos"></div>
         <div class="form-group full"><label>Moto/Placa</label><input name="cobrador_moto" value="${attr(moto === '—' ? '' : moto)}" maxlength="6" pattern="[A-Za-z0-9]{6}" style="text-transform:uppercase" title="Exactamente 6 caracteres alfanumericos"></div>
       </div>
+      <div style="height:1px;background:var(--border);margin:14px 0;"></div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--gold);margin-bottom:6px;">WhatsApp de esta zona (Green API)</div>
+      <div class="fs-11 text-2" style="margin-bottom:10px;">Cada zona puede usar el WhatsApp de su propio cobrador. Crea la instancia en green-api.com, vincula el celular con el QR y copia el ID y el token.</div>
+      <div class="form-grid">
+        <div class="form-group"><label>ID de instancia</label>
+          <input name="bot_phone" value="${attr(datos.botPhone || '')}" placeholder="1101234567" inputmode="numeric"></div>
+        <div class="form-group"><label>Token</label>
+          <input name="bot_apikey" type="password" autocomplete="new-password"
+                 placeholder="${datos.botToken ? 'Guardado — déjalo vacío para no cambiarlo' : 'Token de la instancia'}"></div>
+        <div class="form-group full">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;">
+            <input type="checkbox" name="bot_activo" value="true" ${datos.botActivo ? 'checked' : ''} style="width:auto;accent-color:var(--gold);">
+            Enviar recordatorios automáticos desde esta zona
+          </label>
+        </div>
+      </div>
     </form>`,
     `<button class="btn" onclick="cerrarModal()">Cancelar</button>
      <button class="btn btn-primary" onclick="actualizarZona(${Number(id)||0})">Guardar</button>`
@@ -174,7 +207,11 @@ async function actualizarZona(id) {
   const form = document.getElementById('fe-zona');
   if(!_validarCobradorZona(form)) return;
   const fd = new FormData(form);
-  fd.append('activa', 'true');
+  // Un checkbox sin marcar no viaja en el FormData, asi que apagar el bot
+  // nunca llegaria al servidor. Se manda siempre el valor explicito.
+  fd.set('bot_activo', form.querySelector('[name=bot_activo]').checked ? 'true' : 'false');
+  // Ya no se manda "activa": editar el nombre de una zona no deberia
+  // reactivarla si el usuario la habia desactivado a proposito.
   const btn = document.querySelector(`[onclick="actualizarZona(${id})"]`);
   await conBoton(btn, 'Guardando...', async () => {
     try{

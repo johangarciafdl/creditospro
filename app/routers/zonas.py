@@ -10,7 +10,9 @@ import re
 from app.database import get_db, Empresa, Zona, Cliente, Prestamo, Cobro, Usuario
 from app.routers.auth import get_current_user
 from app.utils.plan_limits import tiene_funcion
-from app.utils.validators import validar_nombre, limpiar_texto, sin_html
+from app.utils.validators import (
+    validar_nombre, limpiar_texto, sin_html, validar_wp_instance, validar_wp_token,
+)
 from app.utils.zone_permissions import get_allowed_zone_ids
 
 router = APIRouter()
@@ -114,6 +116,11 @@ async def listar_zonas(request: Request, db: Session = Depends(get_db)):
             "clientes": clientes_por_zona.get(z.id, 0),
             "prestamos": prestamos_por_zona.get(z.id, 0),
             "activa": z.activa, "lat": z.lat, "lng": z.lng,
+            # El token NO se manda a la vista: solo si ya hay uno guardado,
+            # para que el formulario pueda decir "dejalo vacio si no lo cambias".
+            "bot_phone": z.bot_phone or "",
+            "bot_activo": bool(z.bot_activo),
+            "bot_tiene_token": bool(z.bot_apikey),
         })
 
     return templates.TemplateResponse(request, "zonas.html", {
@@ -143,6 +150,10 @@ async def crear_zona(
     pais: str = Form("Colombia"), cobrador_nombre: str = Form(""),
     cobrador_tel: str = Form(""), cobrador_moto: str = Form(""),
     lat: float = Form(None), lng: float = Form(None),
+    # El formulario de crear zona ya pedia estos datos, pero el endpoint no
+    # los recibia: se escribian y se perdian sin que nadie se enterara.
+    bot_phone: str = Form(""), bot_apikey: str = Form(""),
+    bot_activo: str = Form("false"),
     db: Session = Depends(get_db)
 ):
     user = get_current_user(request, db)
@@ -163,8 +174,24 @@ async def crear_zona(
         # para operar la zona en campo.
         if cobrador_nombre_limpio and not (cobrador_tel_limpio and cobrador_moto_limpio):
             raise HTTPException(400, "Si asignas un cobrador, su telefono y placa/moto son obligatorios")
+        bot_phone_limpio = validar_wp_instance(bot_phone)
+        bot_apikey_limpio = validar_wp_token(bot_apikey)
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    bot_activo_bool = bot_activo.lower() in ("true", "1", "on")
+    if bot_activo_bool:
+        if not (bot_phone_limpio and bot_apikey_limpio):
+            return JSONResponse(
+                {"error": "Para activar el bot de la zona faltan el ID de instancia y el token de Green API"},
+                status_code=400,
+            )
+        empresa_plan = db.query(Empresa).filter(Empresa.id == user.empresa_id).first()
+        if not empresa_plan or not tiene_funcion(empresa_plan, "whatsapp"):
+            return JSONResponse(
+                {"error": "Tu plan no incluye WhatsApp automatico. Contacta al proveedor para activarlo."},
+                status_code=403,
+            )
 
     existente = db.query(Zona).filter(
         Zona.empresa_id == user.empresa_id, Zona.codigo == codigo_limpio
@@ -180,6 +207,9 @@ async def crear_zona(
         cobrador_tel=cobrador_tel_limpio,
         cobrador_moto=cobrador_moto_limpio,
         lat=lat, lng=lng,
+        bot_phone=bot_phone_limpio,
+        bot_apikey=bot_apikey_limpio,
+        bot_activo=bot_activo_bool,
     )
     db.add(zona)
     db.commit()
@@ -191,9 +221,15 @@ async def editar_zona(
     request: Request, zona_id: int,
     nombre: str = Form(...), cobrador_nombre: str = Form(""),
     cobrador_tel: str = Form(""), cobrador_moto: str = Form(""),
-    activa: str = Form("true"),
-    bot_phone: str = Form(""), bot_apikey: str = Form(""),
-    bot_activo: str = Form("false"),
+    # Estos cuatro por defecto en None ("no vino en el formulario"), no en ""
+    # ("vino vacio"). Antes tenian default "" / "false" y el formulario de
+    # editar zona no los enviaba: cambiarle el nombre a una zona le borraba
+    # las credenciales de Green API, apagaba su bot y la reactivaba si
+    # estaba inactiva. Ahora lo que no se envia, no se toca.
+    activa: str | None = Form(None),
+    bot_phone: str | None = Form(None),
+    bot_apikey: str | None = Form(None),
+    bot_activo: str | None = Form(None),
     db: Session = Depends(get_db)
 ):
     user = get_current_user(request, db)
@@ -213,23 +249,37 @@ async def editar_zona(
         cobrador_tel_limpio = _validar_telefono_cobrador(cobrador_tel)
         if cobrador_nombre_limpio and not (cobrador_tel_limpio and cobrador_moto_limpio):
             raise HTTPException(400, "Si asignas un cobrador, su telefono y placa/moto son obligatorios")
+        bot_phone_limpio = validar_wp_instance(bot_phone) if bot_phone is not None else None
+        # Token vacio = "no lo cambies": asi el formulario no necesita
+        # reenviar (ni mostrar) el token guardado para editar lo demas.
+        bot_apikey_limpio = validar_wp_token(bot_apikey) if (bot_apikey or "").strip() else None
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
     zona.nombre = nombre_limpio
     zona.cobrador_nombre = cobrador_nombre_limpio
     zona.cobrador_moto = cobrador_moto_limpio
     zona.cobrador_tel = cobrador_tel_limpio
-    zona.activa = activa.lower() in ("true", "1", "on")
-    zona.bot_phone = bot_phone.strip() or None
-    zona.bot_apikey = bot_apikey.strip() or None
-    bot_activo_nuevo = bot_activo.lower() in ("true", "1", "on")
-    if bot_activo_nuevo:
-        empresa_plan = db.query(Empresa).filter(Empresa.id == user.empresa_id).first()
-        if not empresa_plan or not tiene_funcion(empresa_plan, "whatsapp"):
-            return JSONResponse(
-                {"error": "Tu plan no incluye WhatsApp automatico. Contacta al proveedor para activarlo."},
-                status_code=403,
-            )
-    zona.bot_activo = bot_activo_nuevo
+    if activa is not None:
+        zona.activa = activa.lower() in ("true", "1", "on")
+    if bot_phone is not None:
+        zona.bot_phone = bot_phone_limpio
+    if bot_apikey_limpio:
+        zona.bot_apikey = bot_apikey_limpio
+    if bot_activo is not None:
+        bot_activo_nuevo = bot_activo.lower() in ("true", "1", "on")
+        if bot_activo_nuevo:
+            empresa_plan = db.query(Empresa).filter(Empresa.id == user.empresa_id).first()
+            if not empresa_plan or not tiene_funcion(empresa_plan, "whatsapp"):
+                return JSONResponse(
+                    {"error": "Tu plan no incluye WhatsApp automatico. Contacta al proveedor para activarlo."},
+                    status_code=403,
+                )
+            if not (zona.bot_phone and zona.bot_apikey):
+                return JSONResponse(
+                    {"error": "Para activar el bot de la zona faltan el ID de instancia y el token de Green API"},
+                    status_code=400,
+                )
+        zona.bot_activo = bot_activo_nuevo
     db.commit()
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "mensaje": "Zona actualizada"})

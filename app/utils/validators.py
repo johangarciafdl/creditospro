@@ -92,6 +92,30 @@ def validar_whatsapp(numero: str, requerido: bool = False) -> Optional[str]:
     return n
 
 
+WP_INSTANCE_RE = re.compile(r"^[0-9]{5,20}$")
+WP_TOKEN_RE = re.compile(r"^[A-Za-z0-9]{10,100}$")
+
+
+def validar_wp_instance(valor: str) -> Optional[str]:
+    """ID de instancia de Green API: solo digitos."""
+    v = limpiar_texto(valor, 30)
+    if not v:
+        return None
+    if not WP_INSTANCE_RE.match(v):
+        raise HTTPException(400, "ID de instancia invalido: solo digitos (5-20)")
+    return v
+
+
+def validar_wp_token(valor: str) -> Optional[str]:
+    """Token de instancia de Green API: alfanumerico."""
+    v = limpiar_texto(valor, 120)
+    if not v:
+        return None
+    if not WP_TOKEN_RE.match(v):
+        raise HTTPException(400, "Token de instancia invalido: solo letras y numeros (10-100 caracteres)")
+    return v
+
+
 METODOS_PAGO_VALIDOS = ("Efectivo", "Nequi", "Daviplata", "Transferencia")
 
 
