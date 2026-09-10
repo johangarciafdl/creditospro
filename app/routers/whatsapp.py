@@ -118,7 +118,18 @@ async def configurar_wp(
 
     config = get_config_by_empresa(db, user.empresa_id)
     config.wp_phone_id = wp_phone_id
-    config.wp_token = wp_token
+    # Token vacio = "no lo cambies" (el formulario no lo reenvia para no
+    # imprimirlo en el HTML). Solo se sobrescribe si llega uno nuevo.
+    if wp_token:
+        config.wp_token = wp_token
+    # Sin credenciales, "activo" solo hace que los envios se simulen en
+    # silencio como si hubieran salido: es peor que dejarlo apagado.
+    if wp_activo and not (config.wp_phone_id and config.wp_token):
+        db.rollback()
+        return JSONResponse(
+            {"error": "Para activar WhatsApp faltan el ID de instancia y el token de Green API"},
+            status_code=400,
+        )
     config.wp_activo = wp_activo
     config.dias_aviso_vencimiento = dias_aviso
     if wp_mensaje_recordatorio:

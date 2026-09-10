@@ -113,11 +113,14 @@
         </div>
         <div class="form-group">
           <label>Token de instancia (Green API)</label>
-          <input type="password" name="wp_token" value="{{ config.wp_token or '' }}" placeholder="d1a2b3c4...">
+          {# El token ya no se imprime en el HTML de la pagina: se deja vacio
+             para no cambiarlo, igual que en las zonas. #}
+          <input type="password" name="wp_token" autocomplete="new-password"
+                 placeholder="{% if config.wp_token %}Guardado — déjalo vacío para no cambiarlo{% else %}d1a2b3c4...{% endif %}">
         </div>
         <div class="form-group">
           <label>Días de aviso antes de vencimiento</label>
-          <input type="number" name="dias_aviso" value="{{ config.dias_aviso_vencimiento }}" min="1" max="7">
+          <input type="number" name="dias_aviso" value="{{ config.dias_aviso_vencimiento }}" min="0" max="30">
         </div>
         <div class="form-group" style="justify-content:flex-end;padding-top:20px;">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
