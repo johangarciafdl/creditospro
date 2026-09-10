@@ -249,6 +249,10 @@ CreditosPro/
 
 ## Solución de problemas
 
+**"El teléfono debe tener 7 dígitos (fijo) o 10 (celular)"** — es a propósito: un número incompleto no falla al guardarlo, sino después y en silencio, cuando el recordatorio de WhatsApp no se puede enviar. El **WhatsApp** es más estricto todavía (exactamente 10 dígitos empezando por 3), porque WhatsApp solo funciona sobre celulares — un fijo de 10 dígitos como `604...` no sirve para enviar. Los clientes que ya tenían un teléfono inválido de antes (por ejemplo el `000` de la migración inicial de ElRusso) se pueden seguir editando: el formato solo se exige cuando de verdad cambias el número.
+
+**"Ese préstamo ya se había creado (#N) — no se duplicó"** — el sistema detectó dos veces el mismo préstamo (mismo cliente, monto, cuotas y fecha) en menos de 25 segundos y guardó solo uno. Es la protección contra el doble clic; no perdiste nada. Si de verdad necesitas dos préstamos idénticos el mismo día, espera unos segundos o cambia algún dato.
+
 **"Python no está instalado"** — instala desde [python.org](https://python.org/downloads) marcando "Add Python to PATH", reinicia el script.
 
 **"Puerto 8000 ya en uso"** — cierra el otro programa, o cambia `PORT=8001` en `.env`.
