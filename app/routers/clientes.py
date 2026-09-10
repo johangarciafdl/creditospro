@@ -79,9 +79,8 @@ async def buscar_ajax(
 
     q = limpiar_texto(q, 100)
 
-    if not q and not zona_id:
-        return JSONResponse({"clientes": [], "total": 0, "page": page, "per_page": per_page, "total_pages": 0})
-
+    # Sin filtros se devuelven los clientes mas recientes (paginados), en vez
+    # de una lista vacia que hacia parecer que la empresa no tenia ninguno.
     # Cobrador solo ve su zona
     allowed_zones = get_allowed_zone_ids(db, user)
     if allowed_zones is not None and zona_id and zona_id not in allowed_zones:

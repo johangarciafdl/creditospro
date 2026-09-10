@@ -106,6 +106,9 @@
 <script nonce="{{ csp_nonce }}">
 let _debounce = null;
 
+// Mostrar los clientes mas recientes al entrar, sin esperar un filtro.
+document.addEventListener('DOMContentLoaded', () => buscar());
+
 function buscarDebounce() {
   clearTimeout(_debounce);
   _debounce = setTimeout(buscar, 420);
@@ -115,15 +118,8 @@ async function buscar() {
   const q       = document.getElementById('inp-buscar').value.trim();
   const zona_id = document.getElementById('sel-zona').value;
 
-  if (!q && !zona_id) {
-    document.getElementById('grid-clientes').style.display = 'none';
-    document.getElementById('estado-busqueda').innerHTML = `
-      <div style="font-size:48px;margin-bottom:12px;">🔍</div>
-      <div style="font-size:15px;font-weight:500;">Busca por nombre, cédula o selecciona una zona</div>`;
-    document.getElementById('estado-busqueda').style.display = 'block';
-    return;
-  }
-
+  // Sin filtros el servidor devuelve los mas recientes paginados, para no
+  // dejar la pantalla en blanco al entrar a Clientes.
   document.getElementById('estado-busqueda').innerHTML =
     '<div style="font-size:32px;margin-bottom:8px;">⏳</div><div>Buscando...</div>';
   document.getElementById('estado-busqueda').style.display = 'block';

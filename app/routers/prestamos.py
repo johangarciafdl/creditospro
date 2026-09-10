@@ -82,9 +82,10 @@ async def buscar_ajax(
     q = limpiar_texto(q, 100)
     estado = limpiar_texto(estado, 30)
 
-    if not q and not estado and not zona_id:
-        return JSONResponse({"prestamos": [], "total": 0, "page": page, "per_page": per_page, "total_pages": 0})
-
+    # Sin filtros se muestran los prestamos mas recientes (paginados, 20 por
+    # pagina). Antes se devolvia una lista vacia para no traer todo de golpe,
+    # pero el resultado era una pantalla en blanco al entrar a Prestamos, como
+    # si la empresa no tuviera ninguno. La paginacion ya acota la consulta.
     allowed_zones = get_allowed_zone_ids(db, user)
     if allowed_zones is not None and zona_id and zona_id not in allowed_zones:
         return JSONResponse({"prestamos": [], "total": 0, "page": page, "per_page": per_page, "total_pages": 0})

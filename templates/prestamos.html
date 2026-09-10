@@ -151,6 +151,10 @@ document.getElementById('np-fecha').value = new Date().toISOString().split('T')[
 
 let _deb = null, _clienteDeb = null, _calcDeb = null;
 
+// Mostrar los prestamos mas recientes al entrar, sin esperar a que el usuario
+// escriba un filtro (antes la pantalla arrancaba vacia).
+document.addEventListener('DOMContentLoaded', () => buscar());
+
 function buscarDebounce() {
   clearTimeout(_deb);
   _deb = setTimeout(buscar, 420);
@@ -161,15 +165,8 @@ async function buscar() {
   const estado  = document.getElementById('sel-estado').value;
   const zona_id = document.getElementById('sel-zona').value;
 
-  if (!q && !estado && !zona_id) {
-    document.getElementById('wrap-tabla').style.display = 'none';
-    document.getElementById('estado-busqueda').innerHTML = `
-      <div style="font-size:48px;margin-bottom:12px;">🔍</div>
-      <div style="font-size:15px;font-weight:500;">Busca por nombre, estado o zona</div>`;
-    document.getElementById('estado-busqueda').style.display = 'block';
-    return;
-  }
-
+  // Sin filtros ya no se corta: el servidor devuelve los mas recientes
+  // paginados, para no dejar la pantalla en blanco al entrar.
   document.getElementById('estado-busqueda').innerHTML =
     '<div style="font-size:32px;margin-bottom:8px;">⏳</div><div>Buscando...</div>';
   document.getElementById('estado-busqueda').style.display = 'block';

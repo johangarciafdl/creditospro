@@ -166,22 +166,38 @@ async function confirmarCobro() {
   fd.append('metodo_pago', metodo);
   fd.append('observaciones', obs);
 
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(pos => {
-      fd.append('lat', pos.coords.latitude);
-      fd.append('lng', pos.coords.longitude);
-    }, ()=>{}, {timeout:2000});
+  // getCurrentPosition es asincrono: antes se lanzaba el callback y de una vez
+  // se enviaba el cobro, asi que lat/lng se agregaban al FormData DESPUES de
+  // que la peticion ya habia salido -- el GPS del cobrador nunca llegaba al
+  // servidor. Ahora se espera la ubicacion (max 3s) antes de enviar, y si no
+  // llega el cobro se registra igual, solo que sin coordenadas.
+  const ubicacion = await new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve(pos), () => resolve(null), {timeout: 3000, maximumAge: 60000}
+    );
+  });
+  if (ubicacion) {
+    fd.append('lat', ubicacion.coords.latitude);
+    fd.append('lng', ubicacion.coords.longitude);
   }
 
-  const r = await window.fetch('/cobros/registrar', {method:'POST', body:fd});
-  const d = await r.json();
-  if (d.ok) {
-    document.getElementById('modal-cobro').classList.remove('open');
-    toast(d.mensaje, 'success');
-    setTimeout(cargarRuta, 600);
-  } else {
-    toast(d.error || d.detail || 'No se pudo registrar el cobro','error');
-  }
+  const btn = document.querySelector('[onclick="confirmarCobro()"]');
+  await conBoton(btn, 'Registrando...', async () => {
+    try {
+      const r = await window.fetch('/cobros/registrar', {method:'POST', body:fd});
+      const d = await r.json();
+      if (d.ok) {
+        document.getElementById('modal-cobro').classList.remove('open');
+        toast(d.mensaje, 'success');
+        setTimeout(cargarRuta, 600);
+      } else {
+        toast(d.error || d.detail || 'No se pudo registrar el cobro','error');
+      }
+    } catch(e) {
+      toast('Error de conexión. Intenta nuevamente.','error');
+    }
+  });
 }
 
 cargarRuta();
