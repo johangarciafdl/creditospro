@@ -136,13 +136,15 @@ Esto genera una clave que el cliente ingresa en `/license/activar`. Al mostrarla
 
 El superadmin (dueño de la plataforma) administra **todas** las empresas desde `/plataforma`, pero **no es un usuario de ninguna empresa** — no tiene `empresa_id`, no consume cupo de cobradores de nadie, y no necesita activar ninguna clave comercial (esa clave es para tus clientes, no para ti). Entra por una puerta separada, **`/plataforma/login`**, con su propio usuario y contraseña — no por `/auth/login` ni por `/license/activar`.
 
-Cada empresa (cliente) tiene un plan (`basico`, `medio` o `alto`) que limita cuántos cobradores/supervisores puede tener activos a la vez y si tiene acceso a WhatsApp automático:
+Cada empresa (cliente) tiene un plan (`basico`, `medio` o `alto`) que limita cuántos cobradores/supervisores puede tener activos a la vez:
 
-| Plan | Cobradores/supervisores activos | WhatsApp automático |
-|---|---|---|
-| Básico | Máximo 2 | No |
-| Medio | Máximo 6 | Sí |
-| Alto | Sin límite | Sí |
+| Plan | Cobradores/supervisores activos |
+|---|---|
+| Básico | Máximo 2 |
+| Medio | Máximo 6 |
+| Alto | Sin límite |
+
+**WhatsApp ya no depende del plan** — en el modelo de venta actual (propuesta anual) es un adicional que se cobra aparte por cada cobrador que lo use, sin importar el tamaño del plan. Por eso los tres planes traen WhatsApp apagado por defecto; se activa por empresa con la excepción puntual de abajo, no cambiando de plan.
 
 Una empresa con un plan distinto a estos tres (por ejemplo `trial`, el valor que tenían las empresas creadas antes de que este sistema existiera) no tiene ninguna restricción — así una instalación previa no pierde acceso de golpe.
 
@@ -157,7 +159,7 @@ Es un panel web (`/plataforma`), no un script — solo lo puede ver y usar un us
 
 En la misma pantalla, cada empresa tiene un segundo formulario de "excepciones":
 
-- **WhatsApp**: "Forzar activado" le da acceso aunque su plan no lo incluya (por ejemplo, para que lo pruebe antes de decidir subir de plan); "Forzar desactivado" se lo quita aunque su plan sí lo incluya.
+- **WhatsApp**: como ningún plan lo trae por defecto, "Forzar activado" es la forma normal de encenderlo para quien pagó el adicional; "Forzar desactivado" se lo quita a quien dejó de pagarlo (o a un plan `trial`/legado que por defecto queda sin restricciones).
 - **Límite de cobradores**: escribe un número para reemplazar el límite del plan solo para esa empresa; deja el campo vacío para volver a usar el límite del plan.
 
 Los cambios aplican de inmediato — no hace falta que la empresa cierre sesión ni que reinicies nada. El bloqueo real de WhatsApp está en el punto donde la app llama a Green API (no solo en los formularios de configuración), así que no se puede saltar activando el bot por otro lado.

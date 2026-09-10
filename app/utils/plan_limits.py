@@ -1,10 +1,15 @@
 """Limites y funciones habilitadas segun el plan comercial de la empresa.
 
-El plan (Empresa.plan) define los valores por defecto de cada funcion.
-Empresa.overrides permite al dueno de la plataforma activar o desactivar
-una funcion puntual para una empresa especifica sin cambiarle el plan
-completo (ej. dejarle probar WhatsApp a un cliente basico antes de que
-decida subir de plan, o bloquearselo a un cliente que dejo de pagar).
+El plan (Empresa.plan) define el limite de cobradores por defecto.
+WhatsApp ya NO depende del plan: en el modelo de venta actual (propuesta
+anual) es un adicional que se cobra aparte por cobrador conectado, sin
+importar si la empresa es basico, medio o alto -- por eso los tres
+planes traen whatsapp=False por defecto. La unica forma de activarlo es
+la excepcion puntual (Empresa.overrides), que el superadmin enciende
+desde /plataforma para cada cobrador/empresa que sí pagó el adicional.
+
+Empresa.overrides tambien sirve para lo contrario: bloquear una funcion a
+una empresa que dejo de pagar, sin tener que bajarle el plan completo.
 
 Agregar una funcion nueva al sistema: solo hace falta agregar su nombre
 en PLAN_DEFAULTS (con su valor por cada plan) -- tiene_funcion()/
@@ -14,11 +19,12 @@ from __future__ import annotations
 
 PLANES_VALIDOS = ("basico", "medio", "alto")
 
-# None en max_cobradores significa "sin limite".
+# None en max_cobradores significa "sin limite". whatsapp siempre en False:
+# ver nota arriba, ya no es una funcion de plan sino un adicional aparte.
 PLAN_DEFAULTS: dict[str, dict] = {
     "basico": {"max_cobradores": 2, "whatsapp": False},
-    "medio": {"max_cobradores": 6, "whatsapp": True},
-    "alto": {"max_cobradores": None, "whatsapp": True},
+    "medio": {"max_cobradores": 6, "whatsapp": False},
+    "alto": {"max_cobradores": None, "whatsapp": False},
 }
 
 # Valor por defecto para un plan que no es ninguno de los tres anteriores
