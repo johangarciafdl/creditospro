@@ -210,9 +210,16 @@
   <div class="modal-body">
     <form id="form-editar-cliente">
       <div class="grid-2">
-        <div class="form-group"><label>Nombre completo</label><input name="nombre" value="{{ cliente.nombre }}" required></div>
-        <div class="form-group"><label>Telefono</label><input name="telefono" value="{{ cliente.telefono }}" required></div>
-        {% if cliente.whatsapp %}<span class="text-2">WhatsApp</span><span>{{ cliente.whatsapp }}</span>{% endif %}
+        <div class="form-group"><label>Nombre completo</label><input name="nombre" value="{{ cliente.nombre }}" required maxlength="200"></div>
+        <div class="form-group"><label>Telefono</label>
+          <input name="telefono" value="{{ cliente.telefono }}" required type="tel" maxlength="10" inputmode="numeric"
+                 title="7 dígitos (fijo) o 10 (celular)"></div>
+        {# El campo de WhatsApp era solo texto de lectura, no un input: al
+           guardar el formulario llegaba vacio al servidor y le borraba el
+           numero al cliente. Ahora es editable y viaja con el formulario. #}
+        <div class="form-group"><label>WhatsApp</label>
+          <input name="whatsapp" value="{{ cliente.whatsapp or '' }}" type="tel" maxlength="10" inputmode="numeric"
+                 placeholder="3008845057" title="10 dígitos empezando por 3"></div>
         <div class="form-group">
           <label>Zona</label>
           <select name="zona_id" required>
@@ -324,18 +331,21 @@ function abrirEditar() {
 async function guardarClienteEditado() {
   const form = document.getElementById('form-editar-cliente');
   const fd = new FormData(form);
-  try {
-    const r = await window.fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
-    const d = await r.json();
-    if (d.ok) {
-      toast('Cliente actualizado');
-      setTimeout(() => location.reload(), 700);
-    } else {
-      toast(d.error || 'Error al guardar', 'error');
+  const btn = document.querySelector('[onclick="guardarClienteEditado()"]');
+  await conBoton(btn, 'Guardando...', async () => {
+    try {
+      const r = await window.fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
+      const d = await r.json();
+      if (d.ok) {
+        toast('Cliente actualizado');
+        setTimeout(() => location.reload(), 700);
+      } else {
+        toast(d.error || d.detail || 'No se pudo guardar el cliente', 'error');
+      }
+    } catch(e) {
+      toast('Error de conexión. Intenta nuevamente.', 'error');
     }
-  } catch(e) {
-    toast('Error de conexion', 'error');
-  }
+  });
 }
 
 async function calcularPrev() {
@@ -356,25 +366,32 @@ async function calcularPrev() {
 async function guardarPrestamo() {
   const form = document.getElementById('form-prestamo');
   const fd = new FormData(form);
-  try {
-    const r = await window.fetch('/prestamos/nuevo', { method:'POST', body: fd });
-    const d = await r.json();
-    if (d.ok) { toast('Préstamo registrado âœ“'); setTimeout(() => location.reload(), 1000); }
-    else toast(d.error || 'Error', 'error');
-  } catch(e) { toast('Error', 'error'); }
+  const btn = document.querySelector('[onclick="guardarPrestamo()"]');
+  await conBoton(btn, 'Guardando préstamo...', async () => {
+    try {
+      const r = await window.fetch('/prestamos/nuevo', { method:'POST', body: fd });
+      const d = await r.json();
+      if (d.ok) {
+        toast(d.duplicado ? d.mensaje : 'Préstamo registrado', d.duplicado ? 'warn' : 'success');
+        setTimeout(() => location.reload(), 1200);
+      }
+      else toast(d.error || d.detail || 'No se pudo registrar el préstamo', 'error');
+    } catch(e) { toast('Error de conexión. Intenta nuevamente.', 'error'); }
+  });
 }
 
 async function subirFoto(inp) {
   if (!inp.files[0]) return;
+  // Endpoint propio: solo toca la foto. Antes usaba /editar mandando 4
+  // campos y el resto se guardaba vacio, borrando direccion/barrio/WhatsApp.
   const fd = new FormData();
   fd.append('foto', inp.files[0]);
-  fd.append('nombre', '{{ cliente.nombre }}');
-  fd.append('telefono', '{{ cliente.telefono }}');
-  fd.append('zona_id', '{{ cliente.zona_id }}');
-  fd.append('tipo_cliente', '{{ cliente.tipo_cliente }}');
-  const r = await window.fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
-  const d = await r.json();
-  if (d.ok) { toast('Foto actualizada'); setTimeout(() => location.reload(), 800); }
+  try {
+    const r = await window.fetch('/clientes/{{ cliente.id }}/foto', { method:'POST', body: fd });
+    const d = await r.json();
+    if (d.ok) { toast('Foto actualizada'); setTimeout(() => location.reload(), 800); }
+    else toast(d.error || d.detail || 'No se pudo subir la foto', 'error');
+  } catch(e) { toast('Error de conexión al subir la foto', 'error'); }
 }
 
 function abrirMaps() {
@@ -390,20 +407,33 @@ function abrirMaps() {
 }
 
 function capturarUbicacion() {
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(async pos => {
-      const fd = new FormData();
-      fd.append('nombre', '{{ cliente.nombre }}');
-      fd.append('telefono', '{{ cliente.telefono }}');
-      fd.append('zona_id', '{{ cliente.zona_id }}');
-      fd.append('tipo_cliente', '{{ cliente.tipo_cliente }}');
-      fd.append('lat', pos.coords.latitude);
-      fd.append('lng', pos.coords.longitude);
-      const r = await window.fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
-      const d = await r.json();
-      if (d.ok) { toast('Ubicación guardada âœ“'); setTimeout(() => location.reload(), 800); }
-    });
+  if (!navigator.geolocation) {
+    toast('Este dispositivo no permite obtener la ubicación', 'error');
+    return;
   }
+  toast('Obteniendo ubicación...', 'warn');
+  navigator.geolocation.getCurrentPosition(async pos => {
+    // Endpoint propio: solo guarda lat/lng. Antes usaba /editar mandando 4
+    // campos y borraba direccion/barrio/WhatsApp del cliente.
+    const fd = new FormData();
+    fd.append('lat', pos.coords.latitude);
+    fd.append('lng', pos.coords.longitude);
+    try {
+      const r = await window.fetch('/clientes/{{ cliente.id }}/ubicacion', { method:'POST', body: fd });
+      const d = await r.json();
+      if (d.ok) {
+        const dir = await direccionDesdeCoords(pos.coords.latitude, pos.coords.longitude);
+        toast(dir ? ('Ubicación guardada: ' + dir) : 'Ubicación guardada');
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        toast(d.error || d.detail || 'No se pudo guardar la ubicación', 'error');
+      }
+    } catch(e) { toast('Error de conexión al guardar la ubicación', 'error'); }
+  }, err => {
+    // Antes no habia callback de error: si el usuario negaba el permiso GPS,
+    // no pasaba absolutamente nada y parecia que el boton estaba roto.
+    toast('No se pudo obtener la ubicación. Revisa los permisos de GPS.', 'error');
+  }, {timeout: 10000, enableHighAccuracy: true});
 }
 </script>
 {% endblock %}

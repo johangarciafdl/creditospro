@@ -59,7 +59,10 @@ async def descargar_cobros_diarios(
     allowed_zones = get_allowed_zone_ids(db, user)
     if allowed_zones is not None and zona_id is not None and zona_id not in allowed_zones:
         return JSONResponse({"error": "Sin permisos para esa zona"}, status_code=403)
-    fecha_dt = datetime.date.fromisoformat(fecha) if fecha else datetime.date.today()
+    try:
+        fecha_dt = datetime.date.fromisoformat(fecha) if fecha else datetime.date.today()
+    except ValueError:
+        return JSONResponse({"error": "Fecha invalida. Usa el formato AAAA-MM-DD."}, status_code=400)
     data = reporte_cobros_diarios(db, empresa_id=user.empresa_id, zona_id=zona_id, fecha=fecha_dt, zona_ids=allowed_zones)
     return _excel_response(data, f"cobros_{fecha_dt.strftime('%Y%m%d')}.xlsx")
 
@@ -88,8 +91,13 @@ async def descargar_resumen_zonas(
     if is_rate_limited(request, "/reportes/resumen-zonas", 10, 60):
         return JSONResponse({"error": "Demasiadas descargas. Intenta en un minuto."}, status_code=429)
     hoy = datetime.date.today()
-    f_desde = datetime.date.fromisoformat(fecha_desde) if fecha_desde else hoy.replace(day=1)
-    f_hasta = datetime.date.fromisoformat(fecha_hasta) if fecha_hasta else hoy
+    # Una fecha mal formada llegaba a fromisoformat sin proteccion y tumbaba
+    # la descarga con un error 500 en vez de un mensaje entendible.
+    try:
+        f_desde = datetime.date.fromisoformat(fecha_desde) if fecha_desde else hoy.replace(day=1)
+        f_hasta = datetime.date.fromisoformat(fecha_hasta) if fecha_hasta else hoy
+    except ValueError:
+        return JSONResponse({"error": "Fechas invalidas. Usa el formato AAAA-MM-DD."}, status_code=400)
     if f_hasta < f_desde or (f_hasta - f_desde).days > _MAX_RANGO_DIAS:
         return JSONResponse(
             {"error": f"El rango de fechas no puede superar {_MAX_RANGO_DIAS} dias"}, status_code=400

@@ -102,7 +102,10 @@ async def buscar_cobros(request: Request, q: str="", zona_id: int=None, fecha: s
     if allowed_zones is not None and zona_id and zona_id not in allowed_zones:
         return JSONResponse({"cobros": [], "total": 0})
     hoy = datetime.date.today()
-    fecha_f = datetime.date.fromisoformat(fecha) if fecha else hoy
+    try:
+        fecha_f = datetime.date.fromisoformat(fecha) if fecha else hoy
+    except ValueError:
+        return JSONResponse({"error": "Fecha invalida. Usa el formato AAAA-MM-DD."}, status_code=400)
 
     query = (db.query(Cobro, Cliente, Cuota)
         .join(Cliente, Cobro.cliente_id==Cliente.id)

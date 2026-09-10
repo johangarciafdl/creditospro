@@ -360,6 +360,76 @@ async def editar_cliente(
     return JSONResponse({"ok": True, "mensaje": "Cliente actualizado"})
 
 
+def _cliente_editable(db: Session, user, cliente_id: int):
+    """Cliente de la empresa del usuario, con permiso de zona. None si no aplica."""
+    cliente = db.query(Cliente).filter(
+        Cliente.id == cliente_id,
+        Cliente.empresa_id == user.empresa_id,
+        Cliente.activo == True,
+    ).first()
+    if not cliente or not require_zone_access(db, user, cliente.zona_id):
+        return None
+    return cliente
+
+
+# Actualizaciones parciales con endpoint propio. Antes estas dos acciones
+# reusaban /editar mandando solo 4 campos, y como el resto del formulario
+# llegaba vacio se guardaba vacio: tomar una foto o capturar el GPS BORRABA
+# la direccion, el barrio y el WhatsApp del cliente. Con un endpoint por
+# accion, una actualizacion parcial no puede tocar campos que no envia.
+@router.post("/{cliente_id}/ubicacion")
+async def actualizar_ubicacion(
+    request: Request, cliente_id: int,
+    lat: str = Form(...), lng: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    cliente = _cliente_editable(db, user, cliente_id)
+    if not cliente:
+        return JSONResponse({"error": "Cliente no encontrado"}, status_code=404)
+
+    try:
+        lat_val, lng_val = float(lat), float(lng)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "Coordenadas invalidas"}, status_code=400)
+    if not (-90 <= lat_val <= 90) or not (-180 <= lng_val <= 180):
+        return JSONResponse({"error": "Coordenadas fuera de rango"}, status_code=400)
+
+    cliente.lat, cliente.lng = lat_val, lng_val
+    db.commit()
+    return JSONResponse({"ok": True, "mensaje": "Ubicación guardada"})
+
+
+@router.post("/{cliente_id}/foto")
+async def actualizar_foto(
+    request: Request, cliente_id: int,
+    foto: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    cliente = _cliente_editable(db, user, cliente_id)
+    if not cliente:
+        return JSONResponse({"error": "Cliente no encontrado"}, status_code=404)
+    if not foto or not foto.filename:
+        return JSONResponse({"error": "No se recibió ninguna foto"}, status_code=400)
+
+    try:
+        contenido = await foto.read()
+        ext, contenido = sanitizar_imagen_subida(foto.filename, contenido)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    nombre_archivo = f"{user.empresa_id}_{cliente.id}_{uuid.uuid4().hex}{ext}"
+    (UPLOAD_DIR / nombre_archivo).write_bytes(contenido)
+    cliente.foto_path = f"fotos/{nombre_archivo}"
+    db.commit()
+    return JSONResponse({"ok": True, "mensaje": "Foto actualizada"})
+
+
 @router.get("/{cliente_id}")
 async def detalle_cliente(
     request: Request,
