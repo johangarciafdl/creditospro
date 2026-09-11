@@ -157,9 +157,13 @@ async function downloadData() {
 // offline fallaba siempre, en silencio.
 async function uploadPendingCobros() {
   console.log('[PWA] Sincronizando cobros pendientes...');
-  
+
   try {
-    if (!pwaDb.cobros) {
+    // syncAllData puede entrar aqui antes de que initPwaDb haya terminado:
+    // pwaDb seguia en null y reventaba con "Cannot read properties of null",
+    // abortando la subida de los cobros pendientes.
+    if (!pwaDb) pwaDb = await initPwaDb();
+    if (!pwaDb || !pwaDb.cobros) {
       console.log('[PWA] No hay DB de cobros');
       return;
     }
@@ -409,7 +413,11 @@ async function getClientesOffline(q, zonaId) {
 
   const qLower = (q || '').trim().toLowerCase();
   const zonaNum = zonaId ? Number(zonaId) : null;
-  if (!qLower && !zonaNum) return [];
+  // Sin filtros se devuelven los clientes guardados (el tope de 100 de mas
+  // abajo acota la lista), igual que hace el servidor. Antes devolvia una
+  // lista vacia: sin señal la pantalla de Clientes decia "Sin resultados"
+  // aunque el celular tuviera los clientes descargados, y como no se veia
+  // ninguna tarjeta tampoco habia boton "Cobrar" que pulsar.
 
   const [clientes, prestamos, zonas] = await Promise.all([
     pwaDb.clientes.toArray(),
@@ -471,7 +479,7 @@ async function getPrestamosOffline(q, estado, zonaId) {
   const qLower = (q || '').trim().toLowerCase();
   const estadoLower = (estado || '').trim().toLowerCase();
   const zonaNum = zonaId ? Number(zonaId) : null;
-  if (!qLower && !estadoLower && !zonaNum) return [];
+  // Sin filtros se devuelven los prestamos guardados, como en el servidor.
 
   const [prestamos, clientes, zonas] = await Promise.all([
     pwaDb.prestamos.toArray(),
