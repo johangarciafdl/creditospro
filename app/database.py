@@ -321,8 +321,13 @@ class Cobro(Base):
     lat_cobro = Column(Float, nullable=True)
     lng_cobro = Column(Float, nullable=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    # Clave que genera el celular del cobrador al registrar el cobro (incluso
+    # sin señal). Si la respuesta del servidor se pierde y la PWA reintenta,
+    # el reintento trae la misma clave y el cobro no se aplica dos veces.
+    idempotency_key = Column(String(64), nullable=True)
     __table_args__ = (
         Index("ix_cobros_empresa_fecha", "empresa_id", "fecha"),
+        UniqueConstraint("empresa_id", "idempotency_key", name="uq_cobro_idempotency"),
         Index("ix_cobros_empresa_cliente", "empresa_id", "cliente_id"),
         Index("ix_cobros_empresa_prestamo", "empresa_id", "prestamo_id"),
         CheckConstraint("valor_cobrado > 0", name="ck_cobro_valor_pos"),

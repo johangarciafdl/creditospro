@@ -172,6 +172,7 @@ async function uploadPendingCobros() {
         form.set('observaciones', String(cobro.observaciones || 'Cobro sincronizado desde PWA'));
         form.set('lat', String(cobro.lat || ''));
         form.set('lng', String(cobro.lng || ''));
+        if (cobro.idempotency_key) form.set('idempotency_key', String(cobro.idempotency_key));
         if (cobro.foto instanceof Blob) {
           form.set('foto', cobro.foto, cobro.foto.name || 'cobro.jpg');
         }
@@ -186,8 +187,21 @@ async function uploadPendingCobros() {
           // Marcar como sincronizado
           await pwaDb.cobros.update(cobro.id, { sincronizado: 1 });
           console.log(`[PWA] Cobro #${cobro.id} sincronizado`);
+        } else if (response.status >= 400 && response.status < 500
+                   && response.status !== 408 && response.status !== 429) {
+          // El servidor lo rechaza de forma definitiva (cuota ya pagada,
+          // datos invalidos...). Antes se dejaba como pendiente y se
+          // reintentaba en cada sincronizacion para siempre: el cobrador
+          // veia "1 cobro sin enviar" eternamente sin forma de resolverlo.
+          // Ahora se marca con el motivo (estado 2) y se avisa una vez.
+          let motivo = 'Rechazado por el servidor';
+          try { const d = await response.json(); motivo = d.error || d.detail || motivo; } catch (e) {}
+          await pwaDb.cobros.update(cobro.id, { sincronizado: 2, error_sync: motivo });
+          console.warn(`[PWA] Cobro #${cobro.id} rechazado definitivamente: ${motivo}`);
+          showSyncNotification(`Un cobro guardado sin señal no se pudo registrar: ${motivo}`, 'error');
         } else {
-          console.warn(`[PWA] Cobro #${cobro.id} rechazado por el servidor (${response.status})`);
+          // 5xx / timeout / rate limit: es temporal, se reintenta luego.
+          console.warn(`[PWA] Cobro #${cobro.id} no se pudo enviar ahora (${response.status}), se reintenta`);
         }
       } catch (err) {
         console.error(`[PWA] Error sincronizando cobro #${cobro.id}:`, err);
@@ -204,8 +218,19 @@ async function uploadPendingCobros() {
 // REGISTRO DE COBRO OFFLINE
 // ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Clave unica por cobro, generada en el celular. Viaja con el cobro y se
+ * repite en cada reintento: si la respuesta del servidor se pierde a mitad
+ * de camino, el reintento NO le cobra dos veces al cliente.
+ */
+function nuevaClaveCobro() {
+  if (self.crypto && self.crypto.randomUUID) return self.crypto.randomUUID();
+  return 'c-' + Date.now() + '-' + Math.random().toString(36).slice(2, 12);
+}
+
 async function saveCobro(cobroData) {
   console.log('[PWA] Guardando cobro:', cobroData);
+  if (!cobroData.idempotency_key) cobroData.idempotency_key = nuevaClaveCobro();
 
   try {
     if (isOnline) {
@@ -217,6 +242,7 @@ async function saveCobro(cobroData) {
       form.set('observaciones', String(cobroData.observaciones || 'Cobro desde PWA'));
       form.set('lat', String(cobroData.lat || ''));
       form.set('lng', String(cobroData.lng || ''));
+      form.set('idempotency_key', String(cobroData.idempotency_key));
       if (cobroData.foto instanceof Blob) {
         form.set('foto', cobroData.foto, cobroData.foto.name || 'cobro.jpg');
       }

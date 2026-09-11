@@ -1,5 +1,5 @@
 /* CreditosPro Service Worker v3 */
-const CACHE = 'creditospro-v3';
+const CACHE = 'creditospro-v4';
 const STATIC = [
   '/', '/clientes', '/prestamos', '/cobros', '/zonas',
   '/static/manifest.json',
@@ -45,4 +45,113 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => caches.match(e.request))
   );
+});
+/* ─────────────────────────────────────────────────────────────────────
+   BACKGROUND SYNC DE COBROS
+   pwa.js registra el tag 'sync-cobros' al guardar un cobro sin señal,
+   pero aqui no habia ningun listener de 'sync': el navegador disparaba
+   el evento y no lo atendia nadie. Resultado: con la app cerrada NO se
+   sincronizaba nada, aunque el README lo prometiera.
+
+   No se puede usar Dexie aqui (no esta cargado en el worker), asi que se
+   lee el mismo IndexedDB con la API nativa. Tampoco hay document.cookie:
+   el token CSRF se saca con cookieStore, que existe en los mismos
+   navegadores donde existe Background Sync (Chrome/Android).
+   ───────────────────────────────────────────────────────────────────── */
+
+const DB_NAME = 'CreditosProDb';
+const STORE_COBROS = 'cobros';
+
+function abrirDb() {
+  return new Promise((resolve, reject) => {
+    // Sin version: abre la que exista y nunca dispara un upgrade que
+    // pudiera pelear con la version que maneja Dexie en la pagina.
+    const req = indexedDB.open(DB_NAME);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function cobrosPendientes(db) {
+  return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(STORE_COBROS)) return resolve([]);
+    const tx = db.transaction(STORE_COBROS, 'readonly');
+    const req = tx.objectStore(STORE_COBROS).index('sincronizado').getAll(0);
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function marcarCobro(db, cobro, cambios) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_COBROS, 'readwrite');
+    const store = tx.objectStore(STORE_COBROS);
+    const req = store.put({ ...cobro, ...cambios });
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function csrfToken() {
+  try {
+    if (typeof cookieStore === 'undefined') return '';
+    const c = await cookieStore.get('cp_csrf');
+    return c ? c.value : '';
+  } catch (e) { return ''; }
+}
+
+async function subirCobrosPendientes() {
+  const db = await abrirDb();
+  const pendientes = await cobrosPendientes(db);
+  if (!pendientes.length) return 0;
+
+  const token = await csrfToken();
+  let enviados = 0;
+
+  for (const cobro of pendientes) {
+    const form = new FormData();
+    form.set('cuota_id', String(cobro.cuota_id));
+    form.set('valor_cobrado', String(cobro.valor_cobrado));
+    form.set('metodo_pago', String(cobro.metodo_pago || 'Efectivo'));
+    form.set('observaciones', String(cobro.observaciones || 'Cobro sincronizado sin conexion'));
+    form.set('lat', String(cobro.lat || ''));
+    form.set('lng', String(cobro.lng || ''));
+    if (cobro.idempotency_key) form.set('idempotency_key', String(cobro.idempotency_key));
+    if (cobro.foto instanceof Blob) form.set('foto', cobro.foto, 'cobro.jpg');
+
+    let res;
+    try {
+      res = await fetch('/cobros/registrar', {
+        method: 'POST', credentials: 'same-origin',
+        headers: token ? { 'X-CSRF-Token': token } : {},
+        body: form,
+      });
+    } catch (e) {
+      // Se fue la señal a mitad: se deja pendiente y se reintenta luego.
+      // Devolver rechazo hace que el navegador reprograme este sync.
+      throw e;
+    }
+
+    if (res.ok) {
+      await marcarCobro(db, cobro, { sincronizado: 1 });
+      enviados++;
+    } else if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) {
+      // El servidor lo rechaza y lo va a seguir rechazando (cuota ya pagada,
+      // datos invalidos...). Reintentarlo eternamente solo deja el contador
+      // de pendientes trabado para siempre: se marca con el motivo para que
+      // la app lo muestre en vez de reintentar en un bucle infinito.
+      let motivo = 'Rechazado por el servidor';
+      try { const d = await res.json(); motivo = d.error || d.detail || motivo; } catch (e) {}
+      await marcarCobro(db, cobro, { sincronizado: 2, error_sync: motivo });
+    }
+    // 5xx / 408 / 429: se deja pendiente tal cual para el proximo intento.
+  }
+
+  const clientes = await self.clients.matchAll({ includeUncontrolled: true });
+  for (const c of clientes) c.postMessage({ type: 'SYNC_COMPLETE', synced: enviados });
+  return enviados;
+}
+
+self.addEventListener('sync', e => {
+  if (e.tag === 'sync-cobros') e.waitUntil(subirCobrosPendientes());
 });
