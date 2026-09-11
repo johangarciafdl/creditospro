@@ -196,7 +196,7 @@
                    del cliente que ya se tenia abierto. #}
                 {% if c.estado != 'Pagada' %}
                 <button class="btn btn-gold btn-xs"
-                        onclick="abrirCobroCuota({{ c.id }}, {{ c.numero }}, {{ (c.valor - c.valor_pagado)|round(0, 'floor')|int }})">Cobrar</button>
+                        onclick="abrirCobroCuota({{ c.id }}, {{ c.numero }}, {{ '%.2f'|format(c.valor - c.valor_pagado) }})">Cobrar</button>
                 {% endif %}
               </td>
             </tr>
