@@ -176,7 +176,7 @@
       <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:500;">Ver plan de cuotas ({{ p.num_cuotas }})</summary>
       <div style="margin-top:10px;max-height:200px;overflow-y:auto;">
         <table>
-          <thead><tr><th>#</th><th>Vencimiento</th><th>Valor</th><th>Pagado</th><th>Estado</th></tr></thead>
+          <thead><tr><th>#</th><th>Vencimiento</th><th>Valor</th><th>Pagado</th><th>Estado</th><th></th></tr></thead>
           <tbody>
             {% for c in p.cuotas %}
             <tr>
@@ -190,6 +190,15 @@
                 {% elif c.estado=='Parcial' %}<span class="badge badge-yellow">Parcial</span>
                 {% else %}<span class="badge badge-gray">Pendiente</span>{% endif %}
               </td>
+              <td>
+                {# El perfil mostraba el plan de cuotas pero no dejaba cobrar:
+                   habia que salir a Cobros o a Clientes para registrar el pago
+                   del cliente que ya se tenia abierto. #}
+                {% if c.estado != 'Pagada' %}
+                <button class="btn btn-gold btn-xs"
+                        onclick="abrirCobroCuota({{ c.id }}, {{ c.numero }}, {{ (c.valor - c.valor_pagado)|round(0, 'floor')|int }})">Cobrar</button>
+                {% endif %}
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -199,6 +208,37 @@
   </div>
 </div>
 {% endfor %}
+
+<!-- MODAL COBRAR CUOTA DESDE EL PERFIL -->
+<div class="modal-overlay" id="modal-cobro-cuota" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" style="max-width:360px;" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Registrar Cobro</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cobro-cuota').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <p class="fs-12 text-2" id="cc-detalle">—</p>
+    <div class="form-group">
+      <label>Valor a cobrar (COP)</label>
+      <input type="number" id="cc-valor" min="1" step="1000"
+             style="font-size:18px;font-weight:700;text-align:right;font-family:var(--mono);">
+    </div>
+    <div class="form-group">
+      <label>Método de pago</label>
+      <select id="cc-metodo">
+        <option value="Efectivo">Efectivo</option>
+        <option value="Nequi">Nequi</option>
+        <option value="Daviplata">Daviplata</option>
+        <option value="Transferencia">Transferencia</option>
+      </select>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-cobro-cuota').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-gold" id="cc-btn" onclick="confirmarCobroCuota()">Registrar Cobro</button>
+  </div>
+</div>
+</div>
 
 <!-- MODAL EDITAR CLIENTE -->
 <div class="modal-overlay" id="modal-editar-cliente" onclick="if(event.target===this)this.classList.remove('open')">
@@ -326,6 +366,64 @@ function abrirModalPrestamo() {
 
 function abrirEditar() {
   document.getElementById('modal-editar-cliente').classList.add('open');
+}
+
+let _ccCuota = null;
+
+function abrirCobroCuota(cuotaId, numero, saldo) {
+  _ccCuota = cuotaId;
+  document.getElementById('cc-detalle').textContent =
+    `Cuota #${numero} — saldo pendiente $${Number(saldo).toLocaleString('es-CO')}`;
+  document.getElementById('cc-valor').value = saldo;
+  document.getElementById('cc-metodo').value = 'Efectivo';
+  limpiarErroresCampos(document.getElementById('modal-cobro-cuota'));
+  document.getElementById('modal-cobro-cuota').classList.add('open');
+}
+
+async function confirmarCobroCuota() {
+  if (!_ccCuota) return;
+  const valor = parseFloat(document.getElementById('cc-valor').value);
+  const metodo = document.getElementById('cc-metodo').value;
+  limpiarErroresCampos(document.getElementById('modal-cobro-cuota'));
+  if (!valor || valor <= 0) { errorCampo('cc-valor', 'Ingresa un valor mayor a 0'); return; }
+
+  const btn = document.getElementById('cc-btn');
+  await conBoton(btn, 'Registrando...', async () => {
+    const datos = { cuota_id: _ccCuota, valor_cobrado: valor, metodo_pago: metodo,
+                    observaciones: 'Cobro desde el perfil del cliente', lat: '', lng: '', foto: null };
+    try {
+      // saveCobro envia si hay red y guarda en el celular si no la hay, igual
+      // que en Cobros y en el cobro rapido de Clientes.
+      if (window.pwa && window.pwa.saveCobro) {
+        const d = await window.pwa.saveCobro(datos);
+        document.getElementById('modal-cobro-cuota').classList.remove('open');
+        if (d && d.offline) {
+          toast('Sin conexión: cobro guardado en el celular, se enviará solo al recuperar señal', 'warn');
+        } else {
+          toast((d && d.mensaje) || 'Cobro registrado');
+          setTimeout(() => location.reload(), 1200);
+        }
+        return;
+      }
+      const fd = new FormData();
+      fd.append('cuota_id', _ccCuota);
+      fd.append('valor_cobrado', valor);
+      fd.append('metodo_pago', metodo);
+      fd.append('observaciones', datos.observaciones);
+      const r = await window.fetch('/cobros/registrar', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.ok) {
+        document.getElementById('modal-cobro-cuota').classList.remove('open');
+        toast(d.mensaje || 'Cobro registrado');
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        toast(d.error || d.detail || 'No se pudo registrar el cobro', 'error');
+      }
+    } catch (e) {
+      console.error('[Perfil] Error registrando cobro:', e);
+      toast('No se pudo registrar el cobro. Intenta nuevamente.', 'error');
+    }
+  });
 }
 
 async function guardarClienteEditado() {

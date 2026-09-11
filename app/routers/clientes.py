@@ -472,6 +472,8 @@ async def detalle_cliente(
             "fecha_inicio": p.fecha_inicio.strftime("%d/%m/%Y") if p.fecha_inicio else "—",
             "fecha_fin": p.fecha_fin.strftime("%d/%m/%Y") if p.fecha_fin else "—",
             "cuotas": [{
+                # El id hace falta para poder cobrar la cuota desde el perfil.
+                "id": c.id,
                 "numero": c.numero, "valor": c.valor or 0,
                 "valor_pagado": c.valor_pagado or 0,
                 "fecha_vencimiento": c.fecha_vencimiento.strftime("%d/%m/%Y") if c.fecha_vencimiento else "—",
