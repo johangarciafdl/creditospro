@@ -1,5 +1,5 @@
 /* CreditosPro Service Worker v3 */
-const CACHE = 'creditospro-v4';
+const CACHE = 'creditospro-v5';
 const STATIC = [
   '/', '/clientes', '/prestamos', '/cobros', '/zonas',
   '/static/manifest.json',
@@ -26,12 +26,20 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   // API calls: network only
   if (url.pathname.startsWith('/auth') || url.pathname.includes('ajax') || url.pathname.includes('nuevo')) return;
+  // OJO con ignoreVary: el servidor responde "Vary: Cookie" en todas las
+  // paginas, y caches.match() respeta ese encabezado. Como la cookie CSRF
+  // cambia al iniciar sesion, la pagina guardada NUNCA coincidia con la
+  // peticion y el modo sin señal no servia ni una sola pantalla: el cobrador
+  // veia el error de "sin internet" del navegador aunque todo estuviera en
+  // el cache. Con ignoreVary la busqueda se hace solo por URL.
+  const OPC = { ignoreVary: true };
+
   // Static assets: cache first
   if (url.pathname.startsWith('/static/')) {
     e.respondWith(
-      caches.match(e.request).then(r => r || fetch(e.request).then(res => {
+      caches.match(e.request, OPC).then(r => r || fetch(e.request).then(res => {
         const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
+        caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{});
         return res;
       }))
     );
@@ -40,11 +48,41 @@ self.addEventListener('fetch', e => {
   // Pages: network first, cache fallback
   e.respondWith(
     fetch(e.request).then(res => {
-      const clone = res.clone();
-      caches.open(CACHE).then(c => c.put(e.request, clone));
+      // No guardar redirecciones (sesion vencida -> login): quedarian
+      // cacheadas y sin señal mostrarian el login en vez de la pantalla.
+      if (res.ok && !res.redirected) {
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{});
+      }
       return res;
-    }).catch(() => caches.match(e.request))
+    }).catch(() => caches.match(e.request, OPC).then(r => r || respuestaSinSeñal()))
   );
+});
+
+/** Si no hay nada en cache, al menos una pantalla entendible y no el
+ *  error crudo del navegador. */
+function respuestaSinSeñal() {
+  return new Response(
+    `<!doctype html><meta charset="utf-8">
+     <meta name="viewport" content="width=device-width,initial-scale=1">
+     <style>body{font-family:system-ui,sans-serif;background:#0A0A0A;color:#eee;
+     display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}
+     div{max-width:300px;padding:24px}h1{font-size:18px;margin:0 0 8px}p{font-size:14px;color:#999;line-height:1.6}
+     button{margin-top:16px;padding:10px 18px;border:0;border-radius:8px;background:#C8A95A;font-weight:600}</style>
+     <div><h1>Sin conexión</h1>
+     <p>Esta pantalla todavía no está guardada en el celular. Ábrela una vez con señal y quedará disponible sin internet.</p>
+     <button onclick="location.reload()">Reintentar</button></div>`,
+    { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+  );
+}
+
+// Permite borrar el cache al cerrar sesion: como ahora la busqueda ignora
+// la cookie, una pagina guardada por un usuario no debe quedar disponible
+// para el siguiente que use el mismo celular.
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'LIMPIAR_CACHE') {
+    e.waitUntil(caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))));
+  }
 });
 /* ─────────────────────────────────────────────────────────────────────
    BACKGROUND SYNC DE COBROS

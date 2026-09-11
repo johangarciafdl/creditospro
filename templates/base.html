@@ -358,7 +358,7 @@ window.attr = window.esc;
         <div class="user-name">{% if current_user %}{{ current_user.nombre or current_user.username }}{% endif %}</div>
         <div class="user-role">{% if current_user %}{% if current_user.rol=='admin' %}Administrador{% elif current_user.rol=='superadmin' %}Super Admin{% else %}Cobrador{% endif %}{% endif %}</div>
       </div>
-      <a href="/auth/logout" class="logout-a" aria-label="Cerrar sesión" onclick="return confirm('Cerrar sesion?')">
+      <a href="/auth/logout" class="logout-a" aria-label="Cerrar sesión" onclick="return cerrarSesion()">
         <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </a>
     </div>
@@ -593,6 +593,19 @@ document.getElementById('pwa-install-btn').addEventListener('click',async()=>{
   if(outcome==='accepted')toast('CreditosPro instalado','success');
   localStorage.setItem('pwa_d','1');_pwaP=null;
 });
+
+// Al cerrar sesion se borra el cache del service worker: las pantallas
+// guardadas para trabajar sin señal son de ESTE usuario, y el celular puede
+// pasar a otro cobrador.
+function cerrarSesion(){
+  if(!confirm('Cerrar sesion?')) return false;
+  try{
+    if(navigator.serviceWorker && navigator.serviceWorker.controller){
+      navigator.serviceWorker.controller.postMessage({type:'LIMPIAR_CACHE'});
+    }
+  }catch(e){}
+  return true;
+}
 
 // ── ANTI DOBLE CLIC ──
 // Envuelve una accion async: bloquea el boton al primer clic y lo restaura al
