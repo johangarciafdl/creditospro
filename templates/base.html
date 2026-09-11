@@ -7,6 +7,14 @@
 <link rel="manifest" href="/static/manifest.json">
 <meta name="theme-color" content="#0A0A0A">
 <meta name="mobile-web-app-capable" content="yes">
+<!-- iPhone: Safari no lee los iconos del manifest de la misma forma. Sin
+     apple-touch-icon, el acceso en la pantalla de inicio sale como una foto
+     borrosa de la pagina; y sin apple-mobile-web-app-title, debajo del icono
+     aparece el titulo completo de la pantalla ("CreditosPro — Cobros"). -->
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CreditosPro">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -585,6 +593,30 @@ window.addEventListener('beforeinstallprompt',e=>{
   e.preventDefault();_pwaP=e;
   if(!localStorage.getItem('pwa_d'))document.getElementById('pwa-banner').classList.add('show');
 });
+
+// iPhone/iPad: Safari NUNCA dispara beforeinstallprompt, asi que el boton
+// "Instalar" no aparece jamas y el cobrador no se entera de que puede
+// instalar la app. Ahi se explica el camino manual (Compartir -> Añadir a
+// pantalla de inicio), que es la unica via en iOS.
+(function avisoInstalarEnIphone(){
+  const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+             || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const yaInstalada = window.navigator.standalone === true
+             || window.matchMedia('(display-mode: standalone)').matches;
+  if(!esIOS || yaInstalada || localStorage.getItem('pwa_d')) return;
+  const b = document.getElementById('pwa-banner');
+  if(!b) return;
+  b.querySelector('.pwa-text').innerHTML =
+    '<strong>Instalar CreditosPro</strong>' +
+    '<span>Toca Compartir y luego "Añadir a pantalla de inicio"</span>';
+  const btn = document.getElementById('pwa-install-btn');
+  btn.textContent = 'Entendido';
+  btn.addEventListener('click', () => {
+    b.classList.remove('show');
+    localStorage.setItem('pwa_d','1');
+  });
+  setTimeout(()=>b.classList.add('show'), 2500);
+})();
 document.getElementById('pwa-install-btn').addEventListener('click',async()=>{
   if(!_pwaP)return;
   _pwaP.prompt();
