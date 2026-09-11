@@ -232,8 +232,15 @@ async function saveCobro(cobroData) {
   console.log('[PWA] Guardando cobro:', cobroData);
   if (!cobroData.idempotency_key) cobroData.idempotency_key = nuevaClaveCobro();
 
+  // Se consulta navigator.onLine en el momento, no la variable isOnline: esa
+  // solo se actualiza con los eventos online/offline, y si la pagina se abrio
+  // ya sin señal (tipico: el cobrador abre la app en la calle) podia quedar en
+  // true. Con eso saveCobro intentaba enviar, el fetch fallaba y el cobro se
+  // perdia en vez de guardarse en el celular.
+  const hayRed = (typeof navigator !== 'undefined') ? navigator.onLine : isOnline;
+
   try {
-    if (isOnline) {
+    if (hayRed) {
       // Si está online, enviar directo al servidor
       const form = new FormData();
       form.set('cuota_id', String(cobroData.cuota_id));
@@ -285,6 +292,24 @@ async function saveCobro(cobroData) {
       throw new Error('IndexedDB no disponible en este navegador');
     }
   } catch (err) {
+    // Si el envio directo se cayo por red (se fue la señal a mitad del
+    // envio), el cobro NO se pierde: se guarda en el celular y se sube en la
+    // proxima sincronizacion. La clave de idempotencia evita que se registre
+    // dos veces si el servidor alcanzo a recibirlo.
+    const fueDeRed = err instanceof TypeError || /fetch|network|conexi/i.test(String(err && err.message));
+    if (fueDeRed && !cobroData.sincronizado) {
+      console.warn('[PWA] Falló el envío directo, se guarda en el celular:', err.message);
+      try {
+        if (!pwaDb) pwaDb = await initPwaDb();
+        cobroData.sincronizado = 0;
+        cobroData.fecha_registro_offline = new Date().toISOString();
+        const id = await pwaDb.cobros.add(cobroData);
+        await updatePendingBadge();
+        return { id, ok: true, offline: true, recuperado: true };
+      } catch (e2) {
+        console.error('[PWA] Tampoco se pudo guardar localmente:', e2);
+      }
+    }
     console.error('[PWA] Error guardando cobro:', err);
     throw err;
   }
