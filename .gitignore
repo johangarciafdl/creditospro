@@ -76,3 +76,10 @@ htmlcov/
 *.txt.bak
 Procfile (*)
 *.gitignore.txt
+
+# Herramientas locales de Claude Code (no son parte de la app)
+.agents/
+.claude/skills/supabase/
+.claude/skills/supabase-postgres-best-practices/
+.claude/settings.local.json
+skills-lock.json
