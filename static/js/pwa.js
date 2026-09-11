@@ -63,7 +63,9 @@ function createLocalStorageDb() {
 // ─────────────────────────────────────────────────────────────────────
 
 async function syncAllData() {
-  if (!isOnline) {
+  // navigator.onLine en el momento, no la variable isOnline: esa solo cambia
+  // con los eventos online/offline y puede quedar desfasada.
+  if (!navigator.onLine) {
     console.log('[PWA] Offline - No se puede sincronizar');
     updateOnlineStatus(false);
     return;
@@ -72,27 +74,28 @@ async function syncAllData() {
   console.log('[PWA] Iniciando sincronización...');
   updateOnlineStatus(true);
 
+  // PRIMERO subir, despues bajar. Los cobros de la calle solo existen en el
+  // celular: son lo unico que se puede perder. Antes se descargaban clientes,
+  // prestamos y ~1000 cuotas primero y los cobros iban al final, dentro del
+  // MISMO try: si la descarga fallaba a mitad, los cobros pendientes no se
+  // llegaban a subir nunca y se quedaban en la cola sin que nadie lo notara.
+  let subidos = false;
   try {
-    // 1. Descargar datos nuevos del servidor
-    await downloadData();
-
-    // 2. Sincronizar cobros pendientes
     await uploadPendingCobros();
-
-    // 3. Marcar como sincronizado
-    const syncRecord = {
-      id: 1,
-      lastSync: new Date().toISOString(),
-      success: true,
-    };
-    
-    if (pwaDb.sincronizacion) {
-      await pwaDb.sincronizacion.put(syncRecord);
-    }
-
-    showSyncNotification('✅ Sincronización completada', 'success');
+    subidos = true;
   } catch (err) {
-    console.error('[PWA] Error en sincronización:', err);
+    console.error('[PWA] Error subiendo cobros pendientes:', err);
+  }
+
+  try {
+    await downloadData();
+    if (pwaDb.sincronizacion) {
+      await pwaDb.sincronizacion.put({ id: 1, lastSync: new Date().toISOString(), success: true });
+    }
+    showSyncNotification(subidos ? '✅ Sincronización completada'
+                                 : '⚠️ Datos actualizados, pero quedan cobros sin enviar', subidos ? 'success' : 'warning');
+  } catch (err) {
+    console.error('[PWA] Error descargando datos:', err);
     showSyncNotification('⚠️ Error al sincronizar', 'warning');
   }
 }
@@ -267,7 +270,14 @@ async function saveCobro(cobroData) {
       });
 
       if (!response.ok) {
-        throw new Error('Error del servidor');
+        // Conservar el motivo real ("La cuota ya esta pagada", "El valor
+        // supera el saldo"...). Antes se perdia y el usuario solo veia un
+        // "no se pudo registrar" generico que no le decia que corregir.
+        let motivo = 'Error del servidor';
+        try { const d = await response.json(); motivo = d.error || d.detail || motivo; } catch (e) {}
+        const err = new Error(motivo);
+        err.respuestaDelServidor = true;
+        throw err;
       }
 
       return await response.json();
@@ -302,7 +312,10 @@ async function saveCobro(cobroData) {
     // envio), el cobro NO se pierde: se guarda en el celular y se sube en la
     // proxima sincronizacion. La clave de idempotencia evita que se registre
     // dos veces si el servidor alcanzo a recibirlo.
-    const fueDeRed = err instanceof TypeError || /fetch|network|conexi/i.test(String(err && err.message));
+    // Si el servidor respondio rechazando, no es un problema de red: no tiene
+    // sentido encolarlo para reintentar, va a fallar igual.
+    const fueDeRed = !err.respuestaDelServidor &&
+      (err instanceof TypeError || /fetch|network|conexi/i.test(String(err && err.message)));
     if (fueDeRed && !cobroData.sincronizado) {
       console.warn('[PWA] Falló el envío directo, se guarda en el celular:', err.message);
       try {

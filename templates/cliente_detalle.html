@@ -421,7 +421,9 @@ async function confirmarCobroCuota() {
       }
     } catch (e) {
       console.error('[Perfil] Error registrando cobro:', e);
-      toast('No se pudo registrar el cobro. Intenta nuevamente.', 'error');
+      // e.message trae el motivo real del servidor ("La cuota ya esta
+      // pagada", "El valor supera el saldo de la cuota"...).
+      toast(e && e.message ? e.message : 'No se pudo registrar el cobro. Intenta nuevamente.', 'error');
     }
   });
 }
