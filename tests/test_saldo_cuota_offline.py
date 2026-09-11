@@ -25,8 +25,11 @@ def test_pantallas_de_cobro_usan_el_saldo_y_no_el_valor():
     """Ninguna pantalla debe pre-llenar el cobro con el valor total de la cuota."""
     for nombre in ("cobros.html", "app_cobrador.html"):
         html = (RAIZ / "templates" / nombre).read_text(encoding="utf-8")
-        assert "const saldo = Math.max(0, Number(p.valor||0) - Number(p.valor_pagado||0));" in html, (
+        assert "Number(p.valor||0) - Number(p.valor_pagado||0)" in html, (
             f"{nombre} debe calcular el saldo pendiente de la cuota"
+        )
+        assert "const saldo = Math.round(" in html, (
+            f"{nombre} debe redondear el saldo a centavos"
         )
         llamadas = re.findall(r"abrirCobro\((.*?)\)\"", html)
         assert llamadas, f"{nombre}: no se encontro la llamada a abrirCobro"
