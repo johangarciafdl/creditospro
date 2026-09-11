@@ -382,7 +382,7 @@ async function confirmarCobro(){
 
   try{
     const r=await window.fetch('/cobros/registrar',{method:'POST',body:fd});
-    const d=await r.json();
+    const d=await leerRespuesta(r);
     if(d.ok){
       document.getElementById('modal-cobro').classList.remove('open');
       toast(d.mensaje,'success');

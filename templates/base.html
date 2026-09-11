@@ -639,6 +639,26 @@ function cerrarSesion(){
   return true;
 }
 
+// Lee la respuesta del servidor sin romperse si no es JSON. Antes, cualquier
+// respuesta que no fuera JSON (un 500 sin manejar, o un 502 del proxy cuando
+// el servidor se esta reiniciando) hacia fallar response.json(), caia en el
+// catch y se mostraba "Error de conexión. Intenta nuevamente." -- culpando al
+// internet del usuario y sin dejar rastro de que fue lo que paso realmente.
+async function leerRespuesta(r){
+  let datos = null, texto = '';
+  try { datos = await r.clone().json(); }
+  catch(e){ try { texto = (await r.text()).slice(0,200); } catch(e2){} }
+  if (datos) return datos;
+  if (r.status === 502 || r.status === 503 || r.status === 504) {
+    return { error: 'El servidor no está respondiendo en este momento (puede estar actualizándose). Espera unos segundos e intenta de nuevo.' };
+  }
+  if (r.status === 401 || r.status === 403) {
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' };
+  }
+  console.error('[Respuesta no JSON]', r.status, texto);
+  return { error: `El servidor respondió con un error (${r.status}). Intenta de nuevo.` };
+}
+
 // ── ANTI DOBLE CLIC ──
 // Envuelve una accion async: bloquea el boton al primer clic y lo restaura al
 // terminar. Si el usuario le da 5 veces seguidas, los clics 2..5 se ignoran

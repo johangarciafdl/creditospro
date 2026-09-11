@@ -262,7 +262,7 @@ async function confirmarCobroR() {
         method: 'POST',
         body: fd
       });
-      const d = await r.json();
+      const d = await leerRespuesta(r);
       if (d.ok) {
         document.getElementById('modal-cobro-r').classList.remove('open');
         toast(d.mensaje || 'Cobro registrado');
@@ -274,7 +274,7 @@ async function confirmarCobroR() {
       console.error('[Cobros] Error registrar:', e);
       // Se cayo la red durante el envio: tampoco se pierde el cobro.
       if (window.pwa) { await cobrarSinSenal(metodo); return; }
-      toast('Error de conexión. Intenta nuevamente.', 'error');
+      toast('No hay conexión. Revisa tu internet e intenta de nuevo.', 'error');
     }
   });
 }
@@ -341,7 +341,7 @@ async function guardarCliente() {
   await conBoton(btn, 'Guardando cliente...', async () => {
     try {
       const r = await window.fetch('/clientes/nuevo', { method:'POST', body: fd });
-      const d = await r.json();
+      const d = await leerRespuesta(r);
       if (d.ok) {
         document.getElementById('modal-cliente').classList.remove('open');
         toast('Cliente creado');
@@ -351,7 +351,7 @@ async function guardarCliente() {
       }
     } catch(e) {
       console.error('[Clientes] Error guardar:', e);
-      toast('Error de conexión. Intenta nuevamente.', 'error');
+      toast('No hay conexión. Revisa tu internet e intenta de nuevo.', 'error');
     }
   });
 }

@@ -28,6 +28,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.templates import templates
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -155,6 +156,30 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 # /static/sw.js su alcance era /static/, asi que nunca veia /cobros, /clientes
 # ni ninguna pantalla -- el modo sin señal guardaba las paginas en cache y
 # despues no podia servirlas. Desde /sw.js el alcance es todo el sitio.
+# Cualquier error no previsto devolvia el HTML de error de Starlette. El
+# frontend hace response.json() sobre eso, la lectura falla, y al usuario le
+# sale "Error de conexión. Intenta nuevamente." -- un mensaje que apunta a su
+# internet cuando el problema estaba en el servidor, y que no deja rastro de
+# que fallo. Con esto SIEMPRE responde JSON, con el id de la peticion para
+# poder cruzarlo con los logs.
+@app.exception_handler(Exception)
+async def error_no_previsto(request: Request, exc: Exception):
+    rid = getattr(request.state, "request_id", None) or "-"
+    logging.getLogger(__name__).exception(
+        "[ERROR-NO-PREVISTO] %s %s (request_id=%s)", request.method, request.url.path, rid
+    )
+    return JSONResponse(
+        {"error": "Ocurrió un error en el servidor. Intenta de nuevo.", "request_id": rid},
+        status_code=500,
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def error_http(request: Request, exc: StarletteHTTPException):
+    """Misma forma {"error": ...} que usan los routers, en vez de {"detail": ...}."""
+    return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+
+
 @app.get("/sw.js", include_in_schema=False)
 async def service_worker():
     return FileResponse(

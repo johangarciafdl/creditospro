@@ -335,7 +335,7 @@ async function guardarClienteEditado() {
   await conBoton(btn, 'Guardando...', async () => {
     try {
       const r = await window.fetch('/clientes/{{ cliente.id }}/editar', { method:'POST', body: fd });
-      const d = await r.json();
+      const d = await leerRespuesta(r);
       if (d.ok) {
         toast('Cliente actualizado');
         setTimeout(() => location.reload(), 700);
@@ -355,7 +355,7 @@ async function calcularPrev() {
   if (!capital || !tasa || !cuotas) return;
   try {
     const r = await window.fetch(`/prestamos/calcular?capital=${capital}&tasa=${tasa}&cuotas=${cuotas}`);
-    const d = await r.json();
+    const d = await leerRespuesta(r);
     document.getElementById('preview-calc').style.display = 'block';
     document.getElementById('pv-int').textContent = fmtCOP(d.interes_total);
     document.getElementById('pv-tot').textContent = fmtCOP(d.total_pagar);
@@ -370,7 +370,7 @@ async function guardarPrestamo() {
   await conBoton(btn, 'Guardando préstamo...', async () => {
     try {
       const r = await window.fetch('/prestamos/nuevo', { method:'POST', body: fd });
-      const d = await r.json();
+      const d = await leerRespuesta(r);
       if (d.ok) {
         toast(d.duplicado ? d.mensaje : 'Préstamo registrado', d.duplicado ? 'warn' : 'success');
         setTimeout(() => location.reload(), 1200);
@@ -388,7 +388,7 @@ async function subirFoto(inp) {
   fd.append('foto', inp.files[0]);
   try {
     const r = await window.fetch('/clientes/{{ cliente.id }}/foto', { method:'POST', body: fd });
-    const d = await r.json();
+    const d = await leerRespuesta(r);
     if (d.ok) { toast('Foto actualizada'); setTimeout(() => location.reload(), 800); }
     else toast(d.error || d.detail || 'No se pudo subir la foto', 'error');
   } catch(e) { toast('Error de conexión al subir la foto', 'error'); }
@@ -420,7 +420,7 @@ function capturarUbicacion() {
     fd.append('lng', pos.coords.longitude);
     try {
       const r = await window.fetch('/clientes/{{ cliente.id }}/ubicacion', { method:'POST', body: fd });
-      const d = await r.json();
+      const d = await leerRespuesta(r);
       if (d.ok) {
         const dir = await direccionDesdeCoords(pos.coords.latitude, pos.coords.longitude);
         toast(dir ? ('Ubicación guardada: ' + dir) : 'Ubicación guardada');
