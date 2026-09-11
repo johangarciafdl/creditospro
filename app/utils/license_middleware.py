@@ -10,7 +10,7 @@ from starlette.responses import RedirectResponse
 
 RUTAS_LIBRES_EXACTAS = {"/", "/inicio", "/comprar", "/license/activar", "/license/activate",
                         "/license/status", "/favicon.ico", "/health", "/csp-report",
-                        "/auth/logout"}
+                        "/auth/logout", "/sw.js"}
 # /plataforma es el panel del dueno de la plataforma (superadmin) -- administra
 # TODAS las empresas, no es cliente de ninguna, asi que no tiene (ni deberia
 # necesitar) una clave comercial de empresa para entrar. Su propia autenticacion

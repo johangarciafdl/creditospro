@@ -591,7 +591,14 @@ async function initPwa() {
   try {
     // 1. Registrar Service Worker
     if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.register('/static/sw.js');
+      // Desde la raiz, no desde /static/: el alcance de un service worker es la
+      // carpeta donde vive, y en /static/ nunca podia interceptar /cobros ni
+      // ninguna otra pantalla (el modo sin señal no servia nada).
+      const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      // Limpiar el registro viejo de /static/, que quedo sin uso y solo estorba.
+      for (const r of await navigator.serviceWorker.getRegistrations()) {
+        if (r.scope.endsWith('/static/')) { await r.unregister(); }
+      }
       console.log('[PWA] Service Worker registrado:', registration);
     }
 

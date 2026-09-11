@@ -150,6 +150,22 @@ app.add_middleware(RequestIDMiddleware)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+# El service worker DEBE servirse desde la raiz. Un service worker solo puede
+# interceptar peticiones dentro de la carpeta desde la que se sirve: estando en
+# /static/sw.js su alcance era /static/, asi que nunca veia /cobros, /clientes
+# ni ninguna pantalla -- el modo sin señal guardaba las paginas en cache y
+# despues no podia servirlas. Desde /sw.js el alcance es todo el sitio.
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker():
+    return FileResponse(
+        BASE_DIR / "static" / "sw.js",
+        media_type="application/javascript",
+        # Sin cache: si el navegador se queda con un sw.js viejo, los arreglos
+        # del modo offline no llegan nunca al celular del cobrador.
+        headers={"Cache-Control": "no-cache, max-age=0", "Service-Worker-Allowed": "/"},
+    )
+
+
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(registro.router, prefix="/registro", tags=["Registro"])
 app.include_router(selector.router, tags=["Selector"])
