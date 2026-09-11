@@ -251,6 +251,12 @@ async function confirmarCobroR() {
   fd.append('metodo_pago', metodo);
 
   await conBoton(btn, 'Registrando...', async () => {
+    // Sin señal el servidor no puede elegir la cuota, asi que se elige la
+    // misma que elegiria el (la mas proxima a vencer de ese cliente) con los
+    // datos guardados en el celular, y el cobro queda en la cola. Antes este
+    // boton no tenia respaldo offline: sin señal solo decia "Error de
+    // conexion" y el cobro se perdia.
+    if (!navigator.onLine && window.pwa) { await cobrarSinSenal(metodo); return; }
     try {
       const r = await window.fetch(`/cobros/registrar-cliente/${_cobrarId}`, {
         method: 'POST',
@@ -266,9 +272,33 @@ async function confirmarCobroR() {
       }
     } catch(e) {
       console.error('[Cobros] Error registrar:', e);
+      // Se cayo la red durante el envio: tampoco se pierde el cobro.
+      if (window.pwa) { await cobrarSinSenal(metodo); return; }
       toast('Error de conexión. Intenta nuevamente.', 'error');
     }
   });
+}
+
+async function cobrarSinSenal(metodo) {
+  try {
+    const pendientes = await window.pwa.getPendientesOffline('', '', '');
+    const cuota = pendientes.find(p => Number(p.cliente_id) === Number(_cobrarId));
+    if (!cuota) {
+      toast('Sin señal no se encontró una cuota pendiente de este cliente en el celular', 'error');
+      return;
+    }
+    const saldo = Number(cuota.valor) - Number(cuota.valor_pagado || 0);
+    await window.pwa.saveCobro({
+      cuota_id: cuota.cuota_id, valor_cobrado: saldo, metodo_pago: metodo,
+      observaciones: 'Cobro rapido sin conexion', lat: '', lng: '', foto: null,
+    });
+    document.getElementById('modal-cobro-r').classList.remove('open');
+    toast('Sin conexión: cobro guardado en el celular, se enviará solo al recuperar señal', 'warn');
+    setTimeout(buscar, 500);
+  } catch (e) {
+    console.error('[Cobros] Error guardando sin señal:', e);
+    toast('No se pudo guardar el cobro sin conexión. Anótalo a mano.', 'error');
+  }
 }
 
 async function guardarCliente() {

@@ -184,7 +184,29 @@ async function confirmarCobro() {
 
   const btn = document.querySelector('[onclick="confirmarCobro()"]');
   await conBoton(btn, 'Registrando...', async () => {
+    // Esta es la pantalla que usa el cobrador en la calle, justo donde mas
+    // falta la señal, y era la unica que NO guardaba el cobro sin conexion:
+    // salia "Error de conexion" y el cobro se perdia. Ahora pasa por
+    // window.pwa.saveCobro, que envia si hay red y encola en el celular si no.
+    const datos = {
+      cuota_id, valor_cobrado: valor, metodo_pago: metodo,
+      observaciones: obs || 'Cobro desde la ruta',
+      lat: ubicacion ? ubicacion.coords.latitude : '',
+      lng: ubicacion ? ubicacion.coords.longitude : '',
+      foto: null,
+    };
     try {
+      if (window.pwa && window.pwa.saveCobro) {
+        const d = await window.pwa.saveCobro(datos);
+        document.getElementById('modal-cobro').classList.remove('open');
+        if (d && d.offline) {
+          toast('Sin conexión: cobro guardado en el celular, se enviará solo al recuperar señal', 'warn');
+        } else {
+          toast((d && d.mensaje) || 'Cobro registrado', 'success');
+        }
+        setTimeout(cargarRuta, 600);
+        return;
+      }
       const r = await window.fetch('/cobros/registrar', {method:'POST', body:fd});
       const d = await r.json();
       if (d.ok) {
@@ -195,7 +217,8 @@ async function confirmarCobro() {
         toast(d.error || d.detail || 'No se pudo registrar el cobro','error');
       }
     } catch(e) {
-      toast('Error de conexión. Intenta nuevamente.','error');
+      console.error('[Ruta] Error registrando cobro:', e);
+      toast(e && e.message ? ('No se pudo registrar: ' + e.message) : 'No se pudo registrar el cobro', 'error');
     }
   });
 }

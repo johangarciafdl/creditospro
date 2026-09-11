@@ -377,6 +377,8 @@ async function getPendientesOffline(q, zonaId, fecha) {
     cuota_num: cu.numero,
     total_cuotas: prestamo.num_cuotas,
     valor: cu.valor,
+    // Saldo real de la cuota: el cobro rapido paga lo que falta, no el total.
+    valor_pagado: cu.valor_pagado || 0,
     estado: cu.estado,
     vencimiento: venc.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     dias: Math.round((hoy - venc) / 86400000),
