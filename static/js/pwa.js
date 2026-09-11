@@ -98,6 +98,14 @@ async function syncAllData() {
     console.error('[PWA] Error descargando datos:', err);
     showSyncNotification('⚠️ Error al sincronizar', 'warning');
   }
+  // Pedirle al service worker que guarde las pantallas principales ahora que
+  // SI hay sesion: asi el cobrador tiene offline todo el modulo, no solo lo
+  // que haya abierto por casualidad.
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'PRECARGAR' });
+    }
+  } catch (e) {}
 }
 
 async function downloadData() {

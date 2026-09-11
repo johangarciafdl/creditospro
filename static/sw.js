@@ -1,5 +1,5 @@
 /* CreditosPro Service Worker v3 */
-const CACHE = 'creditospro-v6';
+const CACHE = 'creditospro-v7';
 const STATIC = [
   '/', '/dashboard', '/clientes', '/prestamos', '/cobros', '/zonas',
   '/static/manifest.json',
@@ -94,7 +94,27 @@ function respuestaSinSeñal() {
 // Permite borrar el cache al cerrar sesion: como ahora la busqueda ignora
 // la cookie, una pagina guardada por un usuario no debe quedar disponible
 // para el siguiente que use el mismo celular.
+/** Vuelve a guardar las pantallas principales, ahora CON la sesion iniciada.
+ *  El precacheo del install corre cuando el worker se instala, que suele ser
+ *  antes del login: ahi /clientes, /cobros, etc. responden con una redireccion
+ *  al login y no se guardan. Resultado: el cobrador "preparaba" el celular en
+ *  la mañana y en la calle solo tenia offline las pantallas que por casualidad
+ *  hubiera abierto. Esto lo dispara pwa.js despues de cada sincronizacion. */
+async function precargarPantallas() {
+  const c = await caches.open(CACHE);
+  await Promise.allSettled(STATIC.map(async u => {
+    try {
+      const res = await fetch(new Request(u, { cache: 'reload' }), { credentials: 'same-origin' });
+      if (res.ok && !res.redirected) await c.put(u, res);
+    } catch (e) { /* sin señal: se queda lo que ya hubiera */ }
+  }));
+}
+
 self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'PRECARGAR') {
+    e.waitUntil(precargarPantallas());
+    return;
+  }
   if (e.data && e.data.type === 'LIMPIAR_CACHE') {
     e.waitUntil(caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))));
   }
