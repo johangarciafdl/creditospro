@@ -411,6 +411,60 @@ async function getPendientesOffline(q, zonaId, fecha) {
 }
 
 /**
+ * Proxima cuota por cobrar de un cliente, con la MISMA regla que usa el
+ * servidor en /cobros/registrar-cliente/{id}: la pendiente mas antigua por
+ * fecha de vencimiento (y luego por numero), sin importar que tan lejos
+ * venza y con saldo mayor a cero.
+ *
+ * Antes el cobro rapido sin señal se apoyaba en getPendientesOffline, que
+ * solo mira los proximos 3 dias: si la cuota del cliente vencia mas
+ * adelante, sin internet el boton "Cobrar" respondia "no se encontro una
+ * cuota pendiente" y el cobro se perdia, aunque con internet ese mismo
+ * boton si registraba. Ahora offline y online eligen la misma cuota.
+ */
+async function getProximaCuotaCliente(clienteId) {
+  if (!pwaDb) pwaDb = await initPwaDb();
+  if (!pwaDb.cuotas || !pwaDb.prestamos) return null;
+
+  const idCliente = Number(clienteId);
+  if (!idCliente) return null;
+
+  const prestamos = await pwaDb.prestamos.toArray();
+  const mios = prestamos.filter(p => Number(p.cliente_id) === idCliente);
+  if (!mios.length) return null;
+  const idsPrestamo = new Set(mios.map(p => Number(p.id)));
+
+  const cuotas = await pwaDb.cuotas.where('estado').anyOf(['Pendiente', 'Vencida', 'Parcial']).toArray();
+  const candidatas = cuotas.filter(cu => {
+    if (!idsPrestamo.has(Number(cu.prestamo_id))) return false;
+    const saldo = Number(cu.valor || 0) - Number(cu.valor_pagado || 0);
+    return saldo > 0;
+  });
+  if (!candidatas.length) return null;
+
+  candidatas.sort((a, b) => {
+    const fa = a.fecha_vencimiento || '9999-12-31';
+    const fb = b.fecha_vencimiento || '9999-12-31';
+    if (fa !== fb) return fa < fb ? -1 : 1;
+    return Number(a.numero || 0) - Number(b.numero || 0);
+  });
+
+  const cu = candidatas[0];
+  const prestamo = mios.find(p => Number(p.id) === Number(cu.prestamo_id)) || null;
+  return {
+    cuota_id: cu.id,
+    prestamo_id: cu.prestamo_id,
+    cliente_id: idCliente,
+    numero: cu.numero,
+    total_cuotas: prestamo ? prestamo.num_cuotas : null,
+    valor: Number(cu.valor || 0),
+    valor_pagado: Number(cu.valor_pagado || 0),
+    saldo: Number(cu.valor || 0) - Number(cu.valor_pagado || 0),
+    fecha_vencimiento: cu.fecha_vencimiento || '',
+  };
+}
+
+/**
  * Replica /clientes/buscar-ajax leyendo de IndexedDB (clientes+prestamos+
  * zonas ya descargados) para poder seguir consultando clientes sin señal.
  * No pagina (basta con un tope razonable para consulta en campo).
@@ -702,6 +756,7 @@ window.pwa = {
   saveCobro,
   syncAllData,
   getPendientesOffline,
+  getProximaCuotaCliente,
   getClientesOffline,
   getPrestamosOffline,
   pendingCobrosCount,

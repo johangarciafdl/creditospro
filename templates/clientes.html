@@ -281,13 +281,16 @@ async function confirmarCobroR() {
 
 async function cobrarSinSenal(metodo) {
   try {
-    const pendientes = await window.pwa.getPendientesOffline('', '', '');
-    const cuota = pendientes.find(p => Number(p.cliente_id) === Number(_cobrarId));
+    // Misma regla que el servidor: la cuota pendiente mas antigua del
+    // cliente, sin ventana de fechas. Con getPendientesOffline (que solo ve
+    // los proximos 3 dias) el cobro sin señal se rechazaba si la cuota
+    // vencia mas adelante, aunque con señal si se registraba.
+    const cuota = await window.pwa.getProximaCuotaCliente(_cobrarId);
     if (!cuota) {
       toast('Sin señal no se encontró una cuota pendiente de este cliente en el celular', 'error');
       return;
     }
-    const saldo = Number(cuota.valor) - Number(cuota.valor_pagado || 0);
+    const saldo = cuota.saldo;
     await window.pwa.saveCobro({
       cuota_id: cuota.cuota_id, valor_cobrado: saldo, metodo_pago: metodo,
       observaciones: 'Cobro rapido sin conexion', lat: '', lng: '', foto: null,

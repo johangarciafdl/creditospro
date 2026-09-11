@@ -1,5 +1,5 @@
 /* CreditosPro Service Worker v3 */
-const CACHE = 'creditospro-v7';
+const CACHE = 'creditospro-v8';
 const STATIC = [
   '/', '/dashboard', '/clientes', '/prestamos', '/cobros', '/zonas',
   '/static/manifest.json',
