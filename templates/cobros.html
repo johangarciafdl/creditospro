@@ -237,7 +237,7 @@ function renderPendientes(items){
     // Lo que falta por pagar, no el valor original: en una cuota Parcial el
     // boton pre-llenaba el valor completo y el servidor rechazaba el cobro
     // con "El valor supera el saldo de la cuota".
-    const saldo = Math.max(0, Number(p.valor||0) - Number(p.valor_pagado||0));
+    const saldo = Math.round(Math.max(0, Number(p.valor||0) - Number(p.valor_pagado||0)) * 100) / 100;
     return `<div class="card card-hover">
       <div style="display:flex;align-items:center;gap:12px;padding:13px 16px;">
         <div style="flex:1;min-width:0;">

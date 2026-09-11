@@ -108,7 +108,7 @@ async function cargarRuta() {
     const telDigits = String(p.telefono||'').replace(/[^\d+\-\s()]/g,'').slice(0,20);
     // Saldo pendiente, no el valor original de la cuota: en una cuota Parcial
     // cobrar el valor completo lo rechaza el servidor.
-    const saldo = Math.max(0, Number(p.valor||0) - Number(p.valor_pagado||0));
+    const saldo = Math.round(Math.max(0, Number(p.valor||0) - Number(p.valor_pagado||0)) * 100) / 100;
     return `
     <div class="card card-hover">
       <div style="padding:14px 14px 10px;">

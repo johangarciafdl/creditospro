@@ -451,6 +451,9 @@ async function getProximaCuotaCliente(clienteId) {
 
   const cu = candidatas[0];
   const prestamo = mios.find(p => Number(p.id) === Number(cu.prestamo_id)) || null;
+  // Redondeado a centavos: en coma flotante 933.36 - 900 da 33.360000000000014
+  // y ese sobrante puede hacer que el servidor lo lea como mayor al saldo.
+  const saldo = Math.round((Number(cu.valor || 0) - Number(cu.valor_pagado || 0)) * 100) / 100;
   return {
     cuota_id: cu.id,
     prestamo_id: cu.prestamo_id,
@@ -459,7 +462,7 @@ async function getProximaCuotaCliente(clienteId) {
     total_cuotas: prestamo ? prestamo.num_cuotas : null,
     valor: Number(cu.valor || 0),
     valor_pagado: Number(cu.valor_pagado || 0),
-    saldo: Number(cu.valor || 0) - Number(cu.valor_pagado || 0),
+    saldo: saldo,
     fecha_vencimiento: cu.fecha_vencimiento || '',
   };
 }
