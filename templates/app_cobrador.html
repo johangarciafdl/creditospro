@@ -106,6 +106,9 @@ async function cargarRuta() {
     const venc = dias > 0;
     const waDigits = String(p.whatsapp||'').replace(/\D/g,'').slice(0,20);
     const telDigits = String(p.telefono||'').replace(/[^\d+\-\s()]/g,'').slice(0,20);
+    // Saldo pendiente, no el valor original de la cuota: en una cuota Parcial
+    // cobrar el valor completo lo rechaza el servidor.
+    const saldo = Math.max(0, Number(p.valor||0) - Number(p.valor_pagado||0));
     return `
     <div class="card card-hover">
       <div style="padding:14px 14px 10px;">
@@ -115,12 +118,12 @@ async function cargarRuta() {
             <div style="font-size:11px;color:var(--t3);">Cuota ${Number(p.cuota_num||0)}/${Number(p.total_cuotas||0)} · ${esc(p.vencimiento)}</div>
           </div>
           <div style="text-align:right;">
-            <div style="font-family:var(--mono);font-weight:700;font-size:16px;">$${Number(p.valor||0).toLocaleString('es-CO')}</div>
+            <div style="font-family:var(--mono);font-weight:700;font-size:16px;">$${saldo.toLocaleString('es-CO')}</div>
             <div style="font-size:10px;font-weight:600;color:${venc?'var(--red)':'var(--amber)'};">${venc?dias+'d vencida':'Vence hoy'}</div>
           </div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(p.cliente||''))},${Number(p.valor||0)},${Number(p.cuota_num||0)})" class="btn btn-gold btn-sm" style="flex:1;justify-content:center;">💰 Cobrar</button>
+          <button onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(p.cliente||''))},${saldo},${Number(p.cuota_num||0)})" class="btn btn-gold btn-sm" style="flex:1;justify-content:center;">💰 Cobrar</button>
           ${waDigits?`<a href="https://wa.me/57${attr(waDigits)}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;padding:5px 10px;">💬</a>`:''}
           ${telDigits?`<a href="tel:${attr(telDigits)}" class="btn btn-sm" style="padding:5px 10px;">📞</a>`:''}
         </div>

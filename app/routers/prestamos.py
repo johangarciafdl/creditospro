@@ -389,6 +389,10 @@ async def sync_cuotas(request: Request, db: Session = Depends(get_db)):
         "id": c.id, "prestamo_id": c.prestamo_id,
         "numero": c.numero,
         "valor": float(c.valor or 0),
+        # Sin valor_pagado el celular no puede calcular el saldo: cobraba el
+        # valor completo de una cuota parcial y el servidor rechazaba el envio
+        # con "El valor supera el saldo de la cuota" al recuperar señal.
+        "valor_pagado": float(c.valor_pagado or 0),
         "fecha_vencimiento": c.fecha_vencimiento.isoformat() if c.fecha_vencimiento else None,
         "estado": c.estado or "Pendiente",
     } for c in cuotas])
