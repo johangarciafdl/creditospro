@@ -32,6 +32,11 @@ button.addEventListener('click',activate);key.addEventListener('keydown',event=>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+    // Dar de baja el registro viejo de /static/, que no controla ninguna
+    // pantalla: es lo que dejaba a las instalaciones anteriores sin offline.
+    navigator.serviceWorker.getRegistrations().then(rs => {
+      rs.forEach(r => { if (r.scope.endsWith('/static/')) r.unregister(); });
+    }).catch(() => {});
   });
 }
 </script>

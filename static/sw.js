@@ -1,14 +1,29 @@
 /* CreditosPro Service Worker v3 */
-const CACHE = 'creditospro-v5';
+const CACHE = 'creditospro-v6';
 const STATIC = [
-  '/', '/clientes', '/prestamos', '/cobros', '/zonas',
+  '/', '/dashboard', '/clientes', '/prestamos', '/cobros', '/zonas',
   '/static/manifest.json',
 ];
 
+// Este mismo archivo se sirve en /sw.js (alcance: todo el sitio) y, por
+// compatibilidad con instalaciones viejas, tambien en /static/sw.js. Un
+// worker registrado desde /static/ solo controla /static/: no sirve ninguna
+// pantalla y encima deja al navegador creyendo que ya hay offline. Si esta
+// copia despierta con ese alcance, se da de baja sola.
+if (self.registration && self.registration.scope.endsWith('/static/')) {
+  self.registration.unregister();
+}
+
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(STATIC.map(u => new Request(u, {cache:'reload'})))).catch(()=>{})
-  );
+  // Uno por uno en vez de addAll: addAll es atomico, asi que si una sola URL
+  // fallaba (p.ej. /clientes redirige al login cuando aun no hay sesion) se
+  // perdia TODO el precacheo, en silencio por el .catch de antes.
+  e.waitUntil(caches.open(CACHE).then(c => Promise.allSettled(
+    STATIC.map(async u => {
+      const res = await fetch(new Request(u, { cache: 'reload' }));
+      if (res.ok && !res.redirected) await c.put(u, res);
+    })
+  )));
   self.skipWaiting();
 });
 
