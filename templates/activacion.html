@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>CreditosPro - Activacion</title>
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="CreditosPro">
+<meta name="mobile-web-app-capable" content="yes">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
 <style>
@@ -18,4 +23,16 @@ function showSuccess(text){success.textContent=text;success.style.display='block
 function lock(seconds){button.disabled=true;let left=seconds;button.textContent=`Espera ${left}s`;timer&&clearInterval(timer);timer=setInterval(()=>{left-=1;if(left<=0){clearInterval(timer);button.disabled=false;button.textContent='Validar y continuar';}else button.textContent=`Espera ${left}s`;},1000);}
 async function activate(){const value=key.value.trim();if(!value){showError('Ingresa la clave de activacion.');return;}button.disabled=true;button.textContent='Validando...';try{const fd=new FormData();fd.append('license_key',value);const response=await fetch('/license/activate',{method:'POST',body:fd});const data=await response.json();if(data.valid){showSuccess(`Empresa validada: ${data.empresa_nombre}.`);setTimeout(()=>location.href=data.redirect||'/auth/login',600);return;}showError(data.error||'Clave de activacion invalida.');lock(Number(data.retry_after)||30);}catch(exc){showError('No se pudo validar la clave. Intenta nuevamente.');button.disabled=false;button.textContent='Validar y continuar';}}
 button.addEventListener('click',activate);key.addEventListener('keydown',event=>{if(event.key==='Enter')activate();});
-</script></body></html>
+</script><script nonce="{{ csp_nonce }}">
+/* Registrar el service worker tambien en las pantallas publicas. En Android,
+   el navegador solo ofrece "Instalar app" si hay un service worker con
+   alcance sobre la pagina; estas pantallas (la primera que ve el cobrador)
+   no lo registraban, asi que la opcion de instalar no aparecia hasta
+   despues de iniciar sesion. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+  });
+}
+</script>
+</body></html>

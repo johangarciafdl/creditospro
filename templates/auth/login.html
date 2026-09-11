@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>CreditosPro — Acceso</title>
 <link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="CreditosPro">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0A0A0A">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
@@ -349,6 +353,18 @@ function showSplash(redirectUrl){
   setTimeout(()=>{
     anime({targets:'#splash',opacity:[1,0],duration:300,easing:'easeInQuad',complete:()=>window.location.replace(redirectUrl)});
   },1900);
+}
+</script>
+<script nonce="{{ csp_nonce }}">
+/* Registrar el service worker tambien en las pantallas publicas. En Android,
+   el navegador solo ofrece "Instalar app" si hay un service worker con
+   alcance sobre la pagina; estas pantallas (la primera que ve el cobrador)
+   no lo registraban, asi que la opcion de instalar no aparecia hasta
+   despues de iniciar sesion. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+  });
 }
 </script>
 </body>
