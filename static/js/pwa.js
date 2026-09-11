@@ -146,6 +146,12 @@ async function downloadData() {
   }
 }
 
+// OJO con la capitalizacion del encabezado CSRF: base.html parchea
+// window.fetch y agrega 'x-csrf-token' (minusculas) si no lo encuentra en el
+// objeto de headers. Al mandarlo como 'X-CSRF-Token' no lo encontraba y
+// agregaba un SEGUNDO encabezado, asi que el servidor recibia "token, token"
+// y respondia "Solicitud bloqueada por CSRF": la sincronizacion de cobros
+// offline fallaba siempre, en silencio.
 async function uploadPendingCobros() {
   console.log('[PWA] Sincronizando cobros pendientes...');
   
@@ -179,7 +185,7 @@ async function uploadPendingCobros() {
         const response = await fetch('/cobros/registrar', {
           method: 'POST',
           credentials: 'same-origin',
-          headers: { 'X-CSRF-Token': getCookie('cp_csrf') },
+          headers: { 'x-csrf-token': getCookie('cp_csrf') },
           body: form,
         });
 
@@ -256,7 +262,7 @@ async function saveCobro(cobroData) {
       const response = await fetch('/cobros/registrar', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': getCookie('cp_csrf') },
+        headers: { 'x-csrf-token': getCookie('cp_csrf') },
         body: form,
       });
 
