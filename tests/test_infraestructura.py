@@ -186,3 +186,20 @@ def test_se_puede_saber_que_version_esta_desplegada():
     estado = (RAIZ / "app" / "utils" / "estado_sistema.py").read_text(encoding="utf-8")
     assert "RAILWAY_GIT_COMMIT_SHA" in estado
     assert "alembic_version" in estado
+
+
+def test_los_recordatorios_no_se_envian_dos_veces_con_varios_workers():
+    """El lock evita el envio simultaneo, no el consecutivo.
+
+    La ventana de disparo dura cinco minutos y el control de "ya se envio
+    hoy" era memoria de cada proceso: el segundo worker reintentaba cuando
+    el primero ya habia soltado el lock y los clientes recibian el mismo
+    recordatorio dos veces.
+    """
+    codigo = (RAIZ / "app" / "services" / "scheduler.py").read_text(encoding="utf-8")
+    assert "_ya_se_enviaron_hoy" in codigo
+    bloque = codigo.split("async def _recordatorios_async")[1]
+    assert bloque.index("_ya_se_enviaron_hoy(db)") < bloque.index("ejecutar_recordatorios(db"), (
+        "hay que comprobar la marca ANTES de enviar nada"
+    )
+    assert "_marcar_enviados_hoy" in bloque

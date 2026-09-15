@@ -59,6 +59,40 @@ def actualizar_estados_cuotas():
         db.close()
 
 
+ACCION_RECORDATORIOS = "recordatorios_wp_enviados"
+
+
+def _ya_se_enviaron_hoy(db) -> bool:
+    """¿Quedo registrado hoy un envio de recordatorios?
+
+    Se usa audit_log en vez de una tabla nueva: ya es el registro duradero
+    y comun a todos los procesos de las acciones del sistema, y de paso el
+    envio queda visible en el panel de monitoreo.
+    """
+    from app.database import AuditLog
+
+    inicio = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
+    return db.query(AuditLog.id).filter(
+        AuditLog.action == ACCION_RECORDATORIOS,
+        AuditLog.created_at >= inicio,
+    ).first() is not None
+
+
+def _marcar_enviados_hoy(db, num_empresas: int) -> None:
+    from app.database import AuditLog
+
+    try:
+        db.add(AuditLog(
+            action=ACCION_RECORDATORIOS,
+            category="scheduler",
+            details=f"Recordatorios enviados a {num_empresas} empresa(s)",
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning("No se pudo registrar el envio de recordatorios: %s", e)
+
+
 async def _recordatorios_async():
     """Envía recordatorios WhatsApp de forma asíncrona."""
     from app.services.whatsapp_service import ejecutar_recordatorios
@@ -70,10 +104,21 @@ async def _recordatorios_async():
             db.close()
             return
     try:
+        # El lock evita que dos workers envien A LA VEZ, pero no que envien
+        # uno detras de otro: la ventana de disparo dura cinco minutos y
+        # `ultimo_wp` es memoria de cada proceso, asi que el segundo worker
+        # reintenta cuando el primero ya solto el lock y los clientes
+        # reciben el recordatorio dos veces. La marca en la auditoria es
+        # comun a todos los procesos y sobrevive a un reinicio.
+        if _ya_se_enviaron_hoy(db):
+            logger.info("Scheduler: los recordatorios de hoy ya se enviaron, se salta")
+            return
+
         empresas = db.query(Empresa).filter(Empresa.activa == True).all()
         for empresa in empresas:
             resultado = await ejecutar_recordatorios(db, empresa.id)
             logger.info(f"WP empresa {empresa.id}: {resultado}")
+        _marcar_enviados_hoy(db, len(empresas))
     except Exception as e:
         logger.error(f"Scheduler WP error: {e}", exc_info=True)
     finally:
