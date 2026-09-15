@@ -4,7 +4,7 @@
 {% block topbar_sub %}Gestion de pagos{% endblock %}
 
 {% block content %}
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+<div class="stats-grid stats-grid-3 mb-4">
   <div class="stat-card gold card-anim">
     <div class="stat-label">Cobrado hoy</div>
     <div class="stat-val gold num">${{ "{:,.0f}".format(total_hoy) }}</div>

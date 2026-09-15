@@ -3,12 +3,12 @@
 {% block topbar_title %}Bot WhatsApp{% endblock %}
 {% block topbar_sub %}Notificaciones automáticas de cobro{% endblock %}
 {% block topbar_actions %}
-  <button class="btn btn-primary" onclick="enviarAhora()" id="btn-enviar">Enviar recordatorios ahora</button>
+  <button class="btn btn-primary" onclick="enviarAhora()" id="btn-enviar">Enviar recordatorios</button>
 {% endblock %}
 
 {% block content %}
 <!-- STATS -->
-<div class="stats-grid mb-3" style="grid-template-columns:repeat(3,1fr);">
+<div class="stats-grid stats-grid-3 mb-3">
   <div class="stat-card">
     <div class="stat-label">Mensajes enviados</div>
     <div class="stat-value gold">{{ total_enviados }}</div>
@@ -160,7 +160,7 @@ async function enviarAhora() {
     toast(`Enviados: ${d.enviados} · Errores: ${d.errores}`);
     setTimeout(() => location.reload(), 1500);
   } catch(e) { toast('Error', 'error'); }
-  btn.textContent = '▶ Enviar recordatorios ahora'; btn.disabled = false;
+  btn.textContent = '▶ Enviar recordatorios'; btn.disabled = false;
 }
 
 async function guardarConfigWP(e) {
