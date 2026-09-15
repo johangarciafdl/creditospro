@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}Monitoreo{% endblock %}
+{% block topbar_title %}Monitoreo del sistema{% endblock %}
+{% block topbar_sub %}Solo super admin{% endblock %}
+{% block topbar_actions %}
+  <a href="/plataforma" class="btn btn-ghost">← Empresas</a>
+  <button class="btn btn-primary" onclick="location.reload()">Actualizar</button>
+{% endblock %}
+
+{% block content %}
+
+{# ── Estado general ─────────────────────────────────────────────────── #}
+<div class="grid-4 mb-3" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
+  <div class="stat-card {% if sistema.error %}red{% else %}green{% endif %}">
+    <div class="stat-label">Base de datos</div>
+    <div class="stat-val" style="font-size:18px;">
+      {% if sistema.error %}Sin respuesta{% else %}{{ sistema.latencia_bd_ms }} ms{% endif %}
+    </div>
+    <div class="fs-11 text-2">{{ 'Error: ' ~ sistema.error if sistema.error else 'Responde correctamente' }}</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Versión desplegada</div>
+    <div class="stat-val" style="font-size:18px;">{{ sistema.version }}</div>
+    <div class="fs-11 text-2" style="font-family:var(--mono);">{{ sistema.commit }}</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Migración aplicada</div>
+    <div class="stat-val" style="font-size:15px;font-family:var(--mono);">{{ sistema.migracion }}</div>
+    <div class="fs-11 text-2">Esquema de la base de datos</div>
+  </div>
+
+  <div class="stat-card gold">
+    <div class="stat-label">Sesiones abiertas</div>
+    <div class="stat-val gold" style="font-size:18px;">{{ sesiones_activas }}</div>
+    <div class="fs-11 text-2">En todas las empresas</div>
+  </div>
+</div>
+
+{# ── Capacidad ──────────────────────────────────────────────────────── #}
+<div class="card mb-3">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Capacidad</div>
+      <div class="card-sub">Cuánto margen queda antes de que haya que crecer</div>
+    </div>
+  </div>
+  <div class="card-body">
+    {% if sistema.conexiones %}
+    {% set c = sistema.conexiones %}
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+      <span class="fs-13">Conexiones a la base de datos</span>
+      <span style="font-family:var(--mono);font-weight:600;">{{ c.en_uso }} / {{ c.maximo }} en uso</span>
+    </div>
+    <div style="height:8px;border-radius:4px;background:var(--bg-2);overflow:hidden;">
+      <div style="height:100%;width:{{ (100 * c.en_uso / c.maximo)|round|int }}%;background:{{ 'var(--green)' if c.en_uso < c.maximo * 0.7 else 'var(--red)' }};"></div>
+    </div>
+    <div class="fs-12 text-2" style="margin-top:8px;">
+      Esta aplicación puede llegar a abrir <strong>{{ c.techo_de_la_app }}</strong> conexiones
+      ({{ sistema.workers }} procesos × 2 motores × {{ sistema.pool_por_motor }}).
+      {% if c.holgado %}
+        <span class="badge badge-green">Hay margen para más procesos</span>
+      {% else %}
+        <span class="badge badge-red">Sin margen: subir procesos agotaría la base de datos</span>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="fs-12 text-2">Sin información de conexiones (base de datos local).</div>
+    {% endif %}
+
+    <div class="divider"></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      <span class="badge {{ 'badge-green' if sistema.rls_activo else 'badge-amber' }}">
+        Aislamiento por empresa en la base de datos: {{ 'activo' if sistema.rls_activo else 'inactivo' }}
+      </span>
+      <span class="badge {{ 'badge-green' if sistema.rol_restringido else 'badge-amber' }}">
+        Rol restringido: {{ 'en uso' if sistema.rol_restringido else 'no configurado' }}
+      </span>
+      <span class="badge {{ 'badge-green' if sesiones.compartido else 'badge-red' }}">
+        Sesiones compartidas entre procesos: {{ 'sí' if sesiones.compartido else 'NO' }}
+      </span>
+      <span class="badge {{ 'badge-green' if limite_peticiones.compartido else 'badge-red' }}">
+        Límite de peticiones compartido: {{ 'sí' if limite_peticiones.compartido else 'NO' }}
+      </span>
+      <span class="badge badge-gray">{{ sistema.workers }} procesos · entorno {{ sistema.entorno }}</span>
+    </div>
+  </div>
+</div>
+
+{# ── Rendimiento ────────────────────────────────────────────────────── #}
+<div class="card mb-3">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Rendimiento de las pantallas</div>
+      <div class="card-sub">
+        Últimas peticiones atendidas por <strong>este</strong> proceso
+        (lleva {{ (proceso.segundos_en_marcha / 60)|round|int }} min en marcha).
+        Con {{ sistema.workers }} procesos, cada uno lleva su propia cuenta: esto es una muestra, no el total.
+      </div>
+    </div>
+    <span class="badge badge-gray">{{ proceso.totales.peticiones }} peticiones</span>
+  </div>
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Ruta</th>
+          <th style="text-align:right;">Peticiones</th>
+          <th style="text-align:right;">Mediana</th>
+          <th style="text-align:right;">p95</th>
+          <th style="text-align:right;">Peor</th>
+          <th style="text-align:right;">Lentas</th>
+          <th style="text-align:right;">Errores</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in proceso.rutas %}
+        <tr>
+          <td style="font-family:var(--mono);font-size:12px;">{{ r.ruta }}</td>
+          <td style="text-align:right;">{{ r.peticiones }}</td>
+          <td style="text-align:right;font-family:var(--mono);">{{ r.mediana_ms }} ms</td>
+          <td style="text-align:right;font-family:var(--mono);color:{{ 'var(--red)' if r.p95_ms >= proceso.umbral_lenta_ms else 'inherit' }};">{{ r.p95_ms }} ms</td>
+          <td style="text-align:right;font-family:var(--mono);color:{{ 'var(--red)' if r.peor_ms >= proceso.umbral_lenta_ms else 'inherit' }};">{{ r.peor_ms }} ms</td>
+          <td style="text-align:right;">{{ r.lentas or '—' }}</td>
+          <td style="text-align:right;">
+            {% if r.errores_servidor %}<span class="badge badge-red">{{ r.errores_servidor }} del servidor</span>{% endif %}
+            {% if r.errores_cliente %}<span class="badge badge-amber">{{ r.errores_cliente }} rechazadas</span>{% endif %}
+            {% if not r.errores_servidor and not r.errores_cliente %}—{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center;padding:24px;" class="text-2">Todavía no hay peticiones medidas en este proceso.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Errores recientes ──────────────────────────────────────────────── #}
+{% if proceso.ultimos_errores %}
+<div class="card mb-3">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Fallos del servidor recientes</div>
+      <div class="card-sub">El identificador permite encontrar la petición exacta en los registros</div>
+    </div>
+    <span class="badge badge-red">{{ proceso.totales.errores_servidor }} en este proceso</span>
+  </div>
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead><tr><th>Ruta</th><th>Código</th><th style="text-align:right;">Duró</th><th>Identificador</th></tr></thead>
+      <tbody>
+        {% for e in proceso.ultimos_errores %}
+        <tr>
+          <td style="font-family:var(--mono);font-size:12px;">{{ e.ruta }}</td>
+          <td><span class="badge badge-red">{{ e.estado }}</span></td>
+          <td style="text-align:right;font-family:var(--mono);">{{ e.ms }} ms</td>
+          <td style="font-family:var(--mono);font-size:11px;">{{ e.request_id }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Actividad por empresa ──────────────────────────────────────────── #}
+<div class="card mb-3">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Actividad por empresa</div>
+      <div class="card-sub">Leído de la base de datos: estas cifras son exactas</div>
+    </div>
+  </div>
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead><tr><th>Empresa</th><th>Estado</th><th style="text-align:right;">Cobros hoy</th><th>Último cobro</th></tr></thead>
+      <tbody>
+        {% for a in actividad %}
+        <tr>
+          <td class="fw-600 fs-13">{{ a.nombre }}</td>
+          <td>
+            {% if not a.activa %}<span class="badge badge-gray">Inhabilitada</span>
+            {% elif a.dias_sin_cobrar is none %}<span class="badge badge-amber">Sin usar aún</span>
+            {% elif a.dias_sin_cobrar > 7 %}<span class="badge badge-red">{{ a.dias_sin_cobrar }} días sin cobrar</span>
+            {% else %}<span class="badge badge-green">Operando</span>{% endif %}
+          </td>
+          <td style="text-align:right;font-family:var(--mono);font-weight:600;">{{ a.cobros_hoy }}</td>
+          <td class="fs-12 text-2">{{ a.ultimo_cobro }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Auditoría y tamaño ─────────────────────────────────────────────── #}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Acciones sensibles (24 h)</div></div>
+    <div class="card-body-flush table-wrap">
+      <table>
+        <tbody>
+          {% for a in auditoria %}
+          <tr><td class="fs-13">{{ a.categoria }}</td><td style="text-align:right;font-family:var(--mono);">{{ a.veces }}</td></tr>
+          {% else %}
+          <tr><td class="text-2" style="padding:16px;">Sin actividad registrada.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">Tamaño de las tablas</div></div>
+    <div class="card-body-flush table-wrap">
+      <table>
+        <thead><tr><th>Tabla</th><th style="text-align:right;">Filas aprox.</th><th style="text-align:right;">Ocupa</th></tr></thead>
+        <tbody>
+          {% for t in sistema.tablas %}
+          <tr>
+            <td style="font-family:var(--mono);font-size:12px;">{{ t.nombre }}</td>
+            <td style="text-align:right;">{{ '{:,}'.format(t.filas).replace(',', '.') }}</td>
+            <td style="text-align:right;font-family:var(--mono);">{{ t.tamano }}</td>
+          </tr>
+          {% else %}
+          <tr><td class="text-2" style="padding:16px;">No disponible.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

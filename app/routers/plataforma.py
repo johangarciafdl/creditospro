@@ -6,12 +6,17 @@ por definicion necesita ver TODAS las empresas, no solo la del usuario
 actual -- el unico caso legitimo de acceso cross-empresa junto con el
 scheduler, la activacion de licencia y el selector de empresa.
 """
+import datetime
+import time
+
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.database import get_db_system, Empresa, Usuario, ConfiguracionApp, Zona
+from app.database import (
+    get_db_system, AuditLog, Cobro, Empresa, SesionJWT, Usuario, ConfiguracionApp, Zona,
+)
 from app.routers.auth import get_current_user, SESSION_COOKIE, IS_PRODUCTION
 from app.templates import templates
 from app.utils.audit import log_action
@@ -19,7 +24,8 @@ from app.utils.company_activation import assign_company_key
 from app.utils.csrf import CSRF_COOKIE, generate_csrf_token
 from app.utils.password_policy import validar_password
 from app.utils.plan_limits import PLANES_VALIDOS
-from app.utils.rate_limit import is_rate_limited
+from app.utils import estado_sistema, metricas, token_blacklist
+from app.utils.rate_limit import estado as rate_limit_estado, is_rate_limited
 from app.utils.security import (
     create_access_token,
     decrypt_secret,
@@ -338,3 +344,79 @@ async def crear_empresa(
     except Exception:
         db.rollback()
         return JSONResponse({"error": "No se pudo crear la empresa. Intenta de nuevo."}, status_code=500)
+
+
+@router.get("/monitoreo")
+async def panel_monitoreo(request: Request, db: Session = Depends(get_db_system)):
+    """Estado tecnico de toda la plataforma.
+
+    Responde las preguntas que antes solo se podian contestar entrando a
+    los logs del proveedor: que version esta desplegada, si la base de
+    datos va bien y cuanta capacidad queda, que rutas van lentas o estan
+    fallando, y si hay empresas que dejaron de operar.
+    """
+    user = _requiere_superadmin(request, db)
+    if not user:
+        destino = "/plataforma/login" if not get_current_user(request, db) else "/dashboard"
+        return RedirectResponse(url=destino, status_code=302)
+
+    hoy = datetime.date.today()
+    hace_24h = datetime.datetime.now() - datetime.timedelta(hours=24)
+
+    # Actividad real del negocio, leida de la base de datos: estas cifras si
+    # son exactas y sobreviven a un reinicio, a diferencia de las metricas
+    # del proceso.
+    actividad = []
+    cobros_por_empresa = dict(
+        db.query(Cobro.empresa_id, func.count(Cobro.id))
+        .filter(func.date(Cobro.fecha) == hoy)
+        .group_by(Cobro.empresa_id).all()
+    )
+    ultimo_cobro = dict(
+        db.query(Cobro.empresa_id, func.max(Cobro.fecha))
+        .group_by(Cobro.empresa_id).all()
+    )
+    for e in db.query(Empresa).order_by(Empresa.nombre).all():
+        ultimo = ultimo_cobro.get(e.id)
+        dias_sin_cobrar = (hoy - ultimo.date()).days if ultimo else None
+        actividad.append({
+            "nombre": e.nombre,
+            "activa": e.activa,
+            "cobros_hoy": cobros_por_empresa.get(e.id, 0),
+            "ultimo_cobro": ultimo.strftime("%d/%m/%Y") if ultimo else "nunca",
+            # Una empresa que lleva dias sin registrar un cobro puede estar
+            # de vacaciones o puede tener la aplicacion rota; conviene verlo.
+            "dias_sin_cobrar": dias_sin_cobrar,
+        })
+
+    # Acciones sensibles de las ultimas 24 horas, por categoria.
+    auditoria = [
+        {"categoria": c, "veces": n}
+        for c, n in db.query(AuditLog.category, func.count(AuditLog.id))
+        .filter(AuditLog.created_at >= hace_24h)
+        .group_by(AuditLog.category)
+        .order_by(func.count(AuditLog.id).desc())
+        .all()
+    ]
+
+    sesiones_activas = 0
+    try:
+        sesiones_activas = (
+            db.query(func.count(SesionJWT.jti))
+            .filter(SesionJWT.revocada.is_(False), SesionJWT.expira_en > int(time.time()))
+            .scalar() or 0
+        )
+    except Exception:
+        pass
+
+    return templates.TemplateResponse(request, "plataforma_monitoreo.html", {
+        "page": "plataforma",
+        "current_user": user,
+        "sistema": estado_sistema.detalle(),
+        "proceso": metricas.resumen(),
+        "actividad": actividad,
+        "auditoria": auditoria,
+        "sesiones_activas": sesiones_activas,
+        "sesiones": token_blacklist.estado(),
+        "limite_peticiones": rate_limit_estado(),
+    })

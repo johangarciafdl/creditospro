@@ -5,8 +5,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, case, text
 import datetime, json
 
-from app.database import get_db, Cliente, Prestamo, Cuota, Cobro, Zona
+from app.database import (
+    get_db, Cliente, NotificacionWP, Prestamo, Cuota, Cobro, Usuario, Zona,
+)
 from app.routers.auth import get_current_user
+from app.utils.estado_sistema import VERSION
 from app.utils.zone_permissions import get_allowed_zone_ids
 
 router = APIRouter()
@@ -159,4 +162,99 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         "chart_data": json.dumps(chart_data),
         "zonas_stats": zonas_stats[:8],
         "max_cobro": max_cobro,
+    })
+
+
+@router.get("/estado")
+async def estado_operacion(request: Request, db: Session = Depends(get_db)):
+    """Estado de la operacion de la empresa, para su administrador.
+
+    Es el equivalente "de negocio" del panel tecnico del superadmin:
+    responde si el sistema esta funcionando PARA ELLOS. Hasta ahora, si un
+    cobrador dejaba de registrar cobros o los recordatorios de WhatsApp
+    fallaban, no habia ninguna pantalla donde se notara -- habia que
+    descubrirlo por la queja de un cliente.
+    """
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse("/auth/login", 302)
+    if user.rol not in ("admin", "superadmin"):
+        return RedirectResponse("/dashboard", 302)
+
+    hoy = datetime.date.today()
+    hace_7d = hoy - datetime.timedelta(days=7)
+
+    # Cobradores y cuando registraron su ultimo cobro. Un cobrador activo
+    # que lleva dias sin registrar nada es la señal mas temprana de que algo
+    # va mal (aplicacion rota, celular sin sincronizar, o alguien que dejo
+    # de trabajar sin avisar).
+    cobradores = []
+    ultimo_por_usuario = dict(
+        db.query(Cobro.usuario_id, func.max(Cobro.fecha))
+        .filter(Cobro.empresa_id == user.empresa_id)
+        .group_by(Cobro.usuario_id).all()
+    )
+    hoy_por_usuario = dict(
+        db.query(Cobro.usuario_id, func.count(Cobro.id))
+        .filter(Cobro.empresa_id == user.empresa_id, func.date(Cobro.fecha) == hoy)
+        .group_by(Cobro.usuario_id).all()
+    )
+    for u in (
+        db.query(Usuario)
+        .filter(
+            Usuario.empresa_id == user.empresa_id,
+            Usuario.activo.is_(True),
+            Usuario.rol.in_(("cobrador", "supervisor", "admin")),
+        )
+        .order_by(Usuario.nombre)
+        .all()
+    ):
+        ultimo = ultimo_por_usuario.get(u.id)
+        cobradores.append({
+            "nombre": u.nombre or u.username,
+            "rol": u.rol,
+            "cobros_hoy": hoy_por_usuario.get(u.id, 0),
+            "ultimo": ultimo.strftime("%d/%m/%Y") if ultimo else "nunca",
+            "dias_sin_registrar": (hoy - ultimo.date()).days if ultimo else None,
+        })
+
+    # Recordatorios de WhatsApp: lo que se envio y lo que fallo.
+    wp = {"enviados": 0, "fallidos": 0, "pendientes": 0}
+    for estado, n in (
+        db.query(NotificacionWP.estado, func.count(NotificacionWP.id))
+        .filter(
+            NotificacionWP.empresa_id == user.empresa_id,
+            NotificacionWP.creado >= datetime.datetime.combine(hace_7d, datetime.time.min),
+        )
+        .group_by(NotificacionWP.estado).all()
+    ):
+        clave = (estado or "").lower()
+        if clave.startswith("enviad"):
+            wp["enviados"] += n
+        elif clave.startswith("pendien"):
+            wp["pendientes"] += n
+        else:
+            wp["fallidos"] += n
+
+    # Cartera en riesgo: cuotas vencidas sin cubrir.
+    vencidas = (
+        db.query(func.count(Cuota.id), func.coalesce(func.sum(Cuota.valor - Cuota.valor_pagado), 0))
+        .join(Prestamo, Cuota.prestamo_id == Prestamo.id)
+        .filter(
+            Cuota.empresa_id == user.empresa_id,
+            Cuota.estado.in_(("Pendiente", "Vencida", "Parcial")),
+            Cuota.fecha_vencimiento < hoy,
+        )
+        .first()
+    )
+
+    return templates.TemplateResponse(request, "estado_operacion.html", {
+        "page": "estado",
+        "current_user": user,
+        "cobradores": cobradores,
+        "whatsapp": wp,
+        "vencidas_num": int(vencidas[0] or 0),
+        "vencidas_monto": float(vencidas[1] or 0),
+        "version": VERSION,
+        "cobros_hoy": sum(hoy_por_usuario.values()),
     })

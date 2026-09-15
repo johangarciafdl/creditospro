@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Estado{% endblock %}
+{% block topbar_title %}Estado de la operación{% endblock %}
+{% block topbar_sub %}Cómo va el sistema hoy{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-primary" onclick="location.reload()">Actualizar</button>
+{% endblock %}
+
+{% block content %}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px;">
+  <div class="stat-card gold">
+    <div class="stat-label">Cobros registrados hoy</div>
+    <div class="stat-val gold" style="font-size:22px;">{{ cobros_hoy }}</div>
+    <div class="fs-11 text-2">Por todo el equipo</div>
+  </div>
+  <div class="stat-card {% if vencidas_num %}red{% endif %}">
+    <div class="stat-label">Cuotas vencidas sin cubrir</div>
+    <div class="stat-val {% if vencidas_num %}red{% endif %}" style="font-size:22px;">{{ vencidas_num }}</div>
+    <div class="fs-11 text-2">${{ '{:,.0f}'.format(vencidas_monto).replace(',', '.') }} por recuperar</div>
+  </div>
+  <div class="stat-card {% if whatsapp.fallidos %}red{% else %}green{% endif %}">
+    <div class="stat-label">Recordatorios de WhatsApp</div>
+    <div class="stat-val" style="font-size:22px;">{{ whatsapp.enviados }}</div>
+    <div class="fs-11 text-2">
+      enviados en 7 días{% if whatsapp.fallidos %} · <span style="color:var(--red);">{{ whatsapp.fallidos }} fallaron</span>{% endif %}{% if whatsapp.pendientes %} · {{ whatsapp.pendientes }} en cola{% endif %}
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Versión del sistema</div>
+    <div class="stat-val" style="font-size:22px;">{{ version }}</div>
+    <div class="fs-11 text-2">Se actualiza sola</div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Actividad del equipo</div>
+      <div class="card-sub">
+        Si alguien lleva días sin registrar cobros, conviene revisar: puede ser que su
+        aplicación no esté enviando lo que guardó sin señal.
+      </div>
+    </div>
+  </div>
+  <div class="card-body-flush table-wrap">
+    <table>
+      <thead>
+        <tr><th>Persona</th><th>Rol</th><th style="text-align:right;">Cobros hoy</th><th>Último cobro</th><th>Estado</th></tr>
+      </thead>
+      <tbody>
+        {% for c in cobradores %}
+        <tr>
+          <td class="fw-600 fs-13">{{ c.nombre }}</td>
+          <td class="fs-12 text-2">{{ c.rol }}</td>
+          <td style="text-align:right;font-family:var(--mono);font-weight:600;">{{ c.cobros_hoy }}</td>
+          <td class="fs-12 text-2">{{ c.ultimo }}</td>
+          <td>
+            {% if c.dias_sin_registrar is none %}
+              <span class="badge badge-gray">Nunca ha registrado</span>
+            {% elif c.dias_sin_registrar == 0 %}
+              <span class="badge badge-green">Al día</span>
+            {% elif c.dias_sin_registrar <= 3 %}
+              <span class="badge badge-amber">{{ c.dias_sin_registrar }} día(s) sin registrar</span>
+            {% else %}
+              <span class="badge badge-red">{{ c.dias_sin_registrar }} días sin registrar</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-2" style="text-align:center;padding:24px;">Sin personas activas todavía.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Cobros guardados en este dispositivo</div>
+      <div class="card-sub">Los que se registraron sin señal y todavía no han llegado al servidor</div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div id="estado-offline" class="fs-13 text-2">Consultando…</div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+// Esta cifra solo puede leerse en el propio dispositivo: los cobros sin
+// señal viven en el celular de cada cobrador hasta que se sincronizan, asi
+// que el servidor no sabe cuantos hay pendientes en otros equipos.
+(async function () {
+  const caja = document.getElementById('estado-offline');
+  try {
+    if (!window.pwa || !window.pwa.pendingCobrosCount) {
+      caja.textContent = 'El modo sin conexión no está disponible en este navegador.';
+      return;
+    }
+    const n = await window.pwa.pendingCobrosCount();
+    if (!n) {
+      caja.innerHTML = '<span class="badge badge-green">Todo enviado</span> '
+        + 'No hay cobros pendientes de sincronizar en este dispositivo.';
+    } else {
+      caja.innerHTML = '<span class="badge badge-amber">' + Number(n) + ' sin enviar</span> '
+        + 'Se enviarán solos en cuanto haya conexión.';
+    }
+  } catch (e) {
+    console.error('[Estado] No se pudo leer la cola offline:', e);
+    caja.textContent = 'No se pudo consultar la cola de este dispositivo.';
+  }
+})();
+</script>
+{% endblock %}

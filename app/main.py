@@ -30,6 +30,8 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.utils.estaticos import construir as construir_estaticos
+from app.utils.estado_sistema import salud
+from app.utils.metricas import MetricasMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.templates import templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -148,6 +150,7 @@ app.add_middleware(
     https_only=settings.IS_PRODUCTION,
 )
 app.add_middleware(AuditMiddleware)
+app.add_middleware(MetricasMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
 # Los estaticos se construyen antes de montarlos: la carpeta static/dist no
@@ -222,6 +225,16 @@ async def error_no_previsto(request: Request, exc: Exception):
 async def error_http(request: Request, exc: StarletteHTTPException):
     """Misma forma {"error": ...} que usan los routers, en vez de {"detail": ...}."""
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Los navegadores lo piden solos; sin esta ruta era un 404 en cada visita."""
+    return FileResponse(
+        BASE_DIR / "static" / "icons" / "icon-192.png",
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/sw.js", include_in_schema=False)
@@ -363,7 +376,17 @@ async def logo_empresa(filename: str):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "version": "2.1.0"}
+    """Chequeo que usa el proveedor para saber si el contenedor esta sano.
+
+    Antes devolvia siempre {"status": "healthy"} sin comprobar nada: un
+    proceso vivo pero sin base de datos se reportaba sano, asi que el
+    despliegue se daba por bueno y los usuarios se encontraban la
+    aplicacion rota. Ahora consulta la base de datos de verdad y responde
+    503 si no contesta, para que el proveedor no mande trafico a una
+    instancia que no puede atenderlo.
+    """
+    datos = salud()
+    return JSONResponse(datos, status_code=200 if datos["status"] == "healthy" else 503)
 
 
 def abrir_navegador():

@@ -114,6 +114,7 @@ def loop_scheduler():
     global _scheduler_heartbeat, _scheduler_alive
     ultimo_estado = None
     ultimo_wp = None
+    ultimo_limpieza = None
     logger.info("Scheduler iniciado correctamente")
 
     with _scheduler_lock:
@@ -130,6 +131,25 @@ def loop_scheduler():
         if ultimo_estado is None or (ahora - ultimo_estado).total_seconds() >= 3600:
             actualizar_estados_cuotas()
             ultimo_estado = ahora
+
+        # Cada hora, con el mismo pulso: borrar las ventanas del rate limit
+        # que ya nadie puede consultar. Sin esto la tabla crece una fila por
+        # cada combinacion de ruta e IP que haya pasado alguna vez.
+        if ultimo_limpieza is None or (ahora - ultimo_limpieza).total_seconds() >= 3600:
+            try:
+                from app.database import SessionLocal
+                from app.utils.rate_limit import limpiar_ventanas_viejas
+
+                db = SessionLocal()
+                try:
+                    borradas = limpiar_ventanas_viejas(db)
+                    if borradas:
+                        logger.info("Rate limit: %d ventanas antiguas borradas", borradas)
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.warning("No se pudieron limpiar las ventanas del rate limit: %s", e)
+            ultimo_limpieza = ahora
 
         # Cada día a las 8:00 AM: enviar recordatorios WhatsApp
         if (ahora.hour == 8 and ahora.minute < 5 and
