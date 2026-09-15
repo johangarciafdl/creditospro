@@ -62,7 +62,28 @@ function createLocalStorageDb() {
 // SINCRONIZACIÓN DE DATOS
 // ─────────────────────────────────────────────────────────────────────
 
-async function syncAllData() {
+// La app es servida por el servidor pagina a pagina: cada clic en el menu es
+// una carga completa. Descargar clientes + prestamos + cuotas + zonas en CADA
+// una de esas cargas era lo que volvia lento el software. La copia offline solo
+// necesita estar fresca, no recien bajada, asi que se refresca como mucho cada
+// 10 minutos. Los cobros pendientes SI se intentan subir siempre: son lo unico
+// que existe solo en el celular y se puede perder.
+const MINUTOS_ENTRE_DESCARGAS = 10;
+
+async function descargaReciente() {
+  try {
+    if (!pwaDb || !pwaDb.sincronizacion) return false;
+    const reg = await pwaDb.sincronizacion.get(1);
+    if (!reg || !reg.success || !reg.lastSync) return false;
+    const minutos = (Date.now() - new Date(reg.lastSync).getTime()) / 60000;
+    return minutos >= 0 && minutos < MINUTOS_ENTRE_DESCARGAS;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function syncAllData(opciones) {
+  const forzar = !!(opciones && opciones.forzar);
   // navigator.onLine en el momento, no la variable isOnline: esa solo cambia
   // con los eventos online/offline y puede quedar desfasada.
   if (!navigator.onLine) {
@@ -85,6 +106,11 @@ async function syncAllData() {
     subidos = true;
   } catch (err) {
     console.error('[PWA] Error subiendo cobros pendientes:', err);
+  }
+
+  if (!forzar && await descargaReciente()) {
+    console.log(`[PWA] Copia offline fresca (<${MINUTOS_ENTRE_DESCARGAS} min): no se vuelve a descargar`);
+    return;
   }
 
   try {
@@ -650,7 +676,9 @@ function updateOnlineStatus(online) {
 
 window.addEventListener('online', () => {
   updateOnlineStatus(true);
-  syncAllData();
+  // Al recuperar señal si se fuerza la descarga: pudo haber cambios del equipo
+  // mientras el celular estuvo sin conexion.
+  syncAllData({ forzar: true });
 });
 
 window.addEventListener('offline', () => {
@@ -735,12 +763,20 @@ async function initPwa() {
     updateOnlineStatus(navigator.onLine);
     await updatePendingBadge();
 
-    // 4. Sincronizar datos iniciales
+    // 4. Sincronizar datos iniciales — despues de que la pantalla ya pinto.
+    //    Antes se hacia con await aqui mismo y el modulo quedaba compitiendo
+    //    contra cuatro descargas completas justo mientras cargaba.
     if (isOnline) {
-      await syncAllData();
+      const arrancarSync = () => { syncAllData(); };
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(arrancarSync, { timeout: 3000 });
+      } else {
+        setTimeout(arrancarSync, 1500);
+      }
     }
 
-    // 5. Sincronizar cada 5 minutos
+    // 5. Revisar cada 5 minutos (la descarga real solo ocurre si la copia
+    //    offline ya lleva MINUTOS_ENTRE_DESCARGAS sin refrescarse).
     setInterval(() => {
       if (isOnline) {
         syncAllData();
