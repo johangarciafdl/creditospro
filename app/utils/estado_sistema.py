@@ -66,11 +66,21 @@ def salud() -> dict:
 
     arranque = time.perf_counter()
     bd_ok = False
+    ida_y_vuelta = None
     try:
         db = SessionLocal()
         try:
             db.execute(text("SELECT 1"))
             bd_ok = True
+            # Segunda consulta sobre la conexion YA abierta. La primera incluye
+            # abrir la conexion y el pre-ping; esta mide solo el viaje de ida y
+            # vuelta hasta la base de datos, que es lo que se multiplica por
+            # cada consulta que hace una pantalla. Si este numero es de dos
+            # cifras altas o mas, el servidor de aplicacion y la base de datos
+            # estan en regiones distintas y eso pesa mas que cualquier consulta.
+            t = time.perf_counter()
+            db.execute(text("SELECT 1"))
+            ida_y_vuelta = round((time.perf_counter() - t) * 1000, 1)
         finally:
             db.close()
     except Exception as exc:
@@ -82,6 +92,8 @@ def salud() -> dict:
         "commit": commit_desplegado(),
         "base_de_datos": "ok" if bd_ok else "sin respuesta",
         "latencia_bd_ms": round((time.perf_counter() - arranque) * 1000),
+        "ida_y_vuelta_bd_ms": ida_y_vuelta,
+        "region": os.getenv("RAILWAY_REGION") or os.getenv("FLY_REGION") or "desconocida",
     }
 
 
