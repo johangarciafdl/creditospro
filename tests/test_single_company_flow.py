@@ -21,11 +21,15 @@ def test_login_template_carries_empresa_id():
 def test_base_menu_visible_without_animation_dependency():
     from pathlib import Path
 
-    template = Path("templates/base.html").read_text(encoding="utf-8")
+    # Los estilos y el JS compartido se extrajeron de base.html a
+    # static/css/app.css y static/js/app.js para poder minificarlos y
+    # cachearlos; las reglas que importan son las mismas.
+    css = Path("static/css/app.css").read_text(encoding="utf-8")
+    js = Path("static/js/app.js").read_text(encoding="utf-8")
 
     # El menu debe ser visible por defecto (display:flex en .nav-item)
-    assert ".nav-item{display:flex" in template
+    assert ".nav-item{display:flex" in css
     # Debe haber fallback de anime.js por si el CDN falla
-    assert "if(!window.anime)" in template
+    assert "if(!window.anime)" in js
     # El fallback debe forzar opacity:1 para no dejar el menu invisible
-    assert "opacity='1'" in template or 'opacity="1"' in template
+    assert "opacity='1'" in js or 'opacity="1"' in js

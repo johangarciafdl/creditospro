@@ -10,17 +10,37 @@ def _read(rel):
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
+# Los helpers vivian dentro de un <script> en templates/base.html; se
+# extrajeron a static/js/app.js para poder minificarlos y cachearlos. El
+# contrato que estos tests protegen no cambio, solo el archivo.
+JS_COMPARTIDO = "static/js/app.js"
+
+
 def test_base_tiene_helpers_anti_xss():
-    """El template base debe exponer esc() y attr() para uso seguro."""
+    """esc() y attr() deben seguir definidos antes de cualquier otro script.
+
+    Estos dos se quedan en linea en base.html a proposito: todo el HTML que
+    generan las pantallas pasa por ellos, asi que tienen que existir aunque
+    un archivo externo no llegue a cargar.
+    """
     base = _read("templates/base.html")
     assert "window.esc" in base, "Falta helper esc() en base.html"
     assert "window.attr" in base, "Falta helper attr() en base.html"
-    assert "function toast" in base
+    assert "function toast" in _read(JS_COMPARTIDO), f"Falta toast() en {JS_COMPARTIDO}"
+
+
+def test_base_html_carga_el_js_compartido():
+    """base.html debe seguir sirviendo esos helpers a todas las pantallas."""
+    base = _read("templates/base.html")
+    assert "estatico('js/app.js')" in base, (
+        "base.html ya no carga js/app.js: las pantallas se quedarian sin esc(), "
+        "attr() ni toast()"
+    )
 
 
 def test_toast_no_inserta_html_del_mensaje():
     """toast() debe usar textContent para el mensaje, no innerHTML."""
-    base = _read("templates/base.html")
+    base = _read(JS_COMPARTIDO)
     # Buscar la funcion toast y verificar que use textContent o createTextNode
     m = re.search(r"function toast\([^)]*\)\{.*?clearTimeout\(t\._t\);", base, re.DOTALL)
     assert m, "No se encontro el cuerpo de toast()"
@@ -65,7 +85,7 @@ def test_xss_payload_bloqueado_por_esc():
     """Simula un nombre de cliente con payload XSS y verifica que
     pasarlo por esc() no produce HTML ejecutable.
     """
-    # Simulamos el helper tal como esta en base.html
+    # Simulamos el helper tal como esta en static/js/app.js
     def esc(s):
         if s is None or s is None:
             return ""

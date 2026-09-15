@@ -83,3 +83,6 @@ Procfile (*)
 .claude/skills/supabase-postgres-best-practices/
 .claude/settings.local.json
 skills-lock.json
+
+# Estaticos construidos en el arranque (se regeneran solos)
+static/dist/

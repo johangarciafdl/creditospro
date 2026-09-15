@@ -8,9 +8,17 @@ tenga que pasarlo explicitamente en el contexto.
 """
 from fastapi.templating import Jinja2Templates
 
+from app.utils.estaticos import estatico
+
 
 def _csp_context(request):
     return {"csp_nonce": getattr(request.state, "csp_nonce", "")}
 
 
 templates = Jinja2Templates(directory="templates", context_processors=[_csp_context])
+
+# {{ estatico('js/app.js') }} devuelve la URL versionada por contenido
+# (/static/dist/js/app.<hash>.js), que se sirve con cache de un año. Sin esto
+# habria que escribir la ruta con hash a mano en cada plantilla y actualizarla
+# en cada despliegue.
+templates.env.globals["estatico"] = estatico

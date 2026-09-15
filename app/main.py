@@ -28,6 +28,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+
+from app.utils.estaticos import construir as construir_estaticos
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.templates import templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -71,6 +73,14 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Inicialización segura de la aplicación con manejo de errores."""
     logger.info("Iniciando CreditosPro...")
+
+    # Antes que nada: los estaticos minificados y versionados. Si esto falla
+    # las plantillas siguen funcionando (estatico() cae a la ruta sin
+    # versionar), asi que un fallo aqui nunca deja la app sin arrancar.
+    try:
+        construir_estaticos(BASE_DIR)
+    except Exception:
+        logger.exception("No se pudieron construir los estaticos; se sirven sin minificar")
 
     required_vars = ["DATABASE_URL", "SECRET_KEY"]
     missing = [v for v in required_vars if not os.getenv(v)]
@@ -148,7 +158,38 @@ app.add_middleware(
 app.add_middleware(AuditMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+class EstaticosConCache(StaticFiles):
+    """StaticFiles con la cabecera Cache-Control que corresponda.
+
+    Sin Cache-Control el navegador revalida CADA archivo en CADA carga de
+    pagina: son varios viajes de ida y vuelta al servidor antes de poder
+    pintar nada, y en un celular con mala señal eso se nota mucho mas que el
+    tamaño de los archivos.
+
+    Los de /static/dist llevan el hash del contenido en el nombre, asi que
+    son inmutables: se cachean un año y el navegador no vuelve a pedirlos.
+    El resto (iconos, manifest) se revalida cada hora.
+    """
+
+    def __init__(self, *args, inmutable: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.inmutable = inmutable
+
+    def file_response(self, *args, **kwargs):
+        respuesta = super().file_response(*args, **kwargs)
+        respuesta.headers["Cache-Control"] = (
+            "public, max-age=31536000, immutable" if self.inmutable
+            else "public, max-age=3600"
+        )
+        return respuesta
+
+
+app.mount(
+    "/static/dist",
+    EstaticosConCache(directory=str(BASE_DIR / "static" / "dist"), inmutable=True),
+    name="estaticos_versionados",
+)
+app.mount("/static", EstaticosConCache(directory=str(BASE_DIR / "static")), name="static")
 
 
 # El service worker DEBE servirse desde la raiz. Un service worker solo puede
