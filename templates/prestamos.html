@@ -36,6 +36,7 @@
         </select>
       </div>
       <button class="btn btn-primary" onclick="buscar()">Buscar</button>
+      <button class="btn btn-ghost" onclick="verTodos()" title="Carga la lista completa (puede tardar)">Ver todos</button>
     </div>
   </div>
 </div>
@@ -44,7 +45,7 @@
 <div id="estado-busqueda" style="text-align:center;padding:60px 0;color:var(--t3);">
   <div style="font-size:48px;margin-bottom:12px;">🔍</div>
   <div style="font-size:15px;font-weight:500;">Busca por nombre, estado o zona</div>
-  <div style="font-size:13px;margin-top:6px;">{{ total_prestamos }} préstamos registrados</div>
+  <div style="font-size:13px;margin-top:6px;">{{ total_prestamos }} préstamos registrados · usa "Ver todos" si los quieres todos</div>
 </div>
 
 <!-- TABLA -->
@@ -151,22 +152,39 @@ document.getElementById('np-fecha').value = new Date().toISOString().split('T')[
 
 let _deb = null, _clienteDeb = null, _calcDeb = null;
 
-// Mostrar los prestamos mas recientes al entrar, sin esperar a que el usuario
-// escriba un filtro (antes la pantalla arrancaba vacia).
-document.addEventListener('DOMContentLoaded', () => buscar());
+// La pantalla arranca vacia a proposito: cargar todos los prestamos al entrar
+// hacia lento el modulo. El usuario elige estado/zona, busca, o pide
+// "Ver todos" explicitamente.
 
 function buscarDebounce() {
   clearTimeout(_deb);
   _deb = setTimeout(buscar, 420);
 }
 
-async function buscar() {
+// Recordar si el usuario pidio la lista completa, para que al guardar
+// un registro la vista se refresque igual que estaba.
+let _verTodosActivo = false;
+function verTodos() { _verTodosActivo = true; buscar({ todos: true }); }
+
+function estadoInicial() {
+  document.getElementById('wrap-tabla').style.display = 'none';
+  const el = document.getElementById('estado-busqueda');
+  el.style.display = 'block';
+  el.innerHTML =
+    '<div style="font-size:48px;margin-bottom:12px;">🔍</div>' +
+    '<div style="font-size:15px;font-weight:500;">Busca por nombre, o elige un estado o una zona</div>' +
+    '<div style="font-size:13px;margin-top:6px;">Si los quieres todos, usa el botón "Ver todos"</div>';
+}
+
+async function buscar(opciones) {
+  const todos   = !!(opciones && opciones.todos);
   const q       = document.getElementById('inp-buscar').value.trim();
   const estado  = document.getElementById('sel-estado').value;
   const zona_id = document.getElementById('sel-zona').value;
 
-  // Sin filtros ya no se corta: el servidor devuelve los mas recientes
-  // paginados, para no dejar la pantalla en blanco al entrar.
+  // Sin filtro y sin pedir "Ver todos" no se consulta nada al servidor.
+  if (!q && !estado && !zona_id && !todos) { estadoInicial(); return; }
+
   document.getElementById('estado-busqueda').innerHTML =
     '<div style="font-size:32px;margin-bottom:8px;">⏳</div><div>Buscando...</div>';
   document.getElementById('estado-busqueda').style.display = 'block';
@@ -176,6 +194,7 @@ async function buscar() {
   if (q)       params.set('q', q);
   if (estado)  params.set('estado', estado);
   if (zona_id) params.set('zona_id', zona_id);
+  if (todos)   params.set('todos', '1');
 
   async function obtenerDatos() {
     if (!navigator.onLine) {
@@ -441,7 +460,7 @@ async function guardarPrestamo() {
         document.getElementById('np-preview').style.display = 'none';
         if (d.duplicado) toast(d.mensaje, 'warn');
         else toast('Préstamo #' + d.id + ' creado para ' + cliente_nombre);
-        if (typeof buscar === 'function') buscar();
+        if (typeof buscar === 'function') buscar({ todos: _verTodosActivo });
       } else {
         toast(d.error || d.detail || 'No se pudo crear el préstamo', 'error');
         console.error('Detalles del error:', d);

@@ -154,13 +154,13 @@ window.attr = window.esc;
   {% block topbar %}
   <header class="topbar">
     <div class="topbar-title">
-      {% block topbar_title %}Dashboard{% endblock %}
+      <span class="topbar-nombre">{% block topbar_title %}Dashboard{% endblock %}</span>
       <span class="topbar-sub">{% block topbar_sub %}{% endblock %}</span>
     </div>
     <div class="topbar-actions">
-      <span data-pending-count style="display:none;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--abg);color:var(--amber);"></span>
-      <span data-online-indicator style="font-size:11px;font-weight:600;"></span>
-      <span style="font-size:11px;color:var(--t4);font-family:var(--mono);" id="fecha-hora"></span>
+      <span class="topbar-pend" data-pending-count></span>
+      <span class="topbar-red" data-online-indicator></span>
+      <span class="topbar-reloj" id="fecha-hora"></span>
       {% block topbar_actions %}{% endblock %}
     </div>
   </header>

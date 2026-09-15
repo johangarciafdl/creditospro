@@ -29,8 +29,8 @@
 
 <div class="card mb-3">
   <div class="card-body" style="padding:10px 16px;">
-    <div class="flex gap-2">
-      <div class="input-icon-wrap" style="flex:1;">
+    <div class="flex gap-2 flex-wrap" style="align-items:flex-end;">
+      <div class="input-icon-wrap" style="flex:1;min-width:180px;">
         <label for="inp-buscar" style="position:absolute;clip:rect(1px,1px,1px,1px);overflow:hidden;">Buscar cliente para cobro</label>
         <span class="input-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
         <input type="text" id="inp-buscar" placeholder="Buscar cliente..." oninput="buscarDebounce()" autocomplete="off">
@@ -41,10 +41,15 @@
           <option value="">Todas las zonas</option>
           {% for z in zonas %}
           <option value="{{ z.id }}">{{ z.nombre }}</option>
-        {% endfor %}
-      </select>
-      <input type="date" id="sel-fecha" style="width:150px;" onchange="buscar()">
+          {% endfor %}
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <label for="sel-fecha" style="font-size:11px;color:var(--t3);margin-bottom:3px;">Fecha</label>
+        <input type="date" id="sel-fecha" style="width:150px;" onchange="buscar()">
+      </div>
       <button class="btn btn-primary" onclick="buscar()">Buscar</button>
+      <button class="btn btn-ghost" onclick="verTodos()" title="Carga todas las zonas (puede tardar)">Ver todos</button>
     </div>
   </div>
 </div>
@@ -174,13 +179,21 @@ function setTab(tab){
 
 function buscarDebounce(){clearTimeout(_deb);_deb=setTimeout(buscar,400)}
 
+// "Ver todos" es la unica forma de traer todas las zonas de golpe: por defecto
+// el modulo arranca sin datos para que no pese al entrar.
+let _verTodosActivo=false;
+function verTodos(){_verTodosActivo=true;buscar();}
+
 async function buscar(){
   const q=document.getElementById('inp-buscar').value.trim();
   const zona_id=document.getElementById('sel-zona').value;
   const fecha=document.getElementById('sel-fecha').value;
   const estado=document.getElementById('estado');
-  if(!q&&!zona_id){
+  if(q||zona_id)_verTodosActivo=false;
+  if(!q&&!zona_id&&!_verTodosActivo){
     estado.style.display='block';
+    estado.innerHTML='<div style="font-size:14px;font-weight:500;">Selecciona una zona o busca un cliente</div>'+
+                     '<div style="font-size:12px;margin-top:6px;">Si los quieres todos, usa el botón "Ver todos"</div>';
     document.getElementById('lista-pendientes').style.display='none';
     document.getElementById('tabla-historial').style.display='none';
     return;

@@ -64,10 +64,17 @@ input,select,textarea{font-family:var(--font)}
 
 /* MAIN */
 .main{margin-left:var(--sw);min-height:100vh;display:flex;flex-direction:column}
-.topbar{position:sticky;top:0;z-index:100;height:var(--th);background:rgba(245,244,241,.88);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);border-bottom:1px solid rgba(0,0,0,.06);display:flex;align-items:center;padding:0 24px;gap:12px}
-.topbar-title{font-size:14px;font-weight:600;color:var(--t1);flex:1;letter-spacing:-.2px}
+.topbar{position:sticky;top:0;z-index:100;min-height:var(--th);background:rgba(245,244,241,.88);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);border-bottom:1px solid rgba(0,0,0,.06);display:flex;align-items:center;padding:0 24px;gap:12px;overflow:hidden}
+/* min-width:0 es lo que permite que el titulo se recorte en vez de estirar
+   la barra: sin eso un flex-item nunca baja de su ancho de contenido y
+   empuja toda la pagina de lado. */
+.topbar-title{font-size:14px;font-weight:600;color:var(--t1);flex:1 1 auto;min-width:0;letter-spacing:-.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .topbar-sub{font-size:12px;color:var(--t3);margin-left:6px;font-weight:400}
-.topbar-actions{display:flex;align-items:center;gap:8px}
+.topbar-actions{display:flex;align-items:center;gap:8px;flex:0 1 auto;min-width:0}
+.topbar-nombre{overflow:hidden;text-overflow:ellipsis}
+.topbar-pend{display:none;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--abg);color:var(--amber);white-space:nowrap}
+.topbar-red{font-size:11px;font-weight:600;white-space:nowrap}
+.topbar-reloj{font-size:11px;color:var(--t4);font-family:var(--mono);white-space:nowrap}
 .content{flex:1;padding:24px;max-width:1400px;width:100%}
 
 /* BUTTONS */
@@ -97,12 +104,12 @@ input,select,textarea{font-family:var(--font)}
 
 /* STAT CARDS */
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
-.stat-card{background:var(--surface);border-radius:var(--r);border:1px solid var(--border);padding:18px 20px;box-shadow:var(--sx);position:relative;overflow:hidden;transition:all var(--tb) var(--ease)}
+.stat-card{background:var(--surface);border-radius:var(--r);border:1px solid var(--border);padding:18px 20px;box-shadow:var(--sx);position:relative;overflow:hidden;min-width:0;transition:all var(--tb) var(--ease)}
 .stat-card:hover{box-shadow:var(--s);transform:translateY(-2px)}
 .stat-card::before{content:'';position:absolute;top:0;left:0;width:100%;height:3px;background:var(--al,var(--border))}
 .stat-card.gold{--al:var(--gold)}.stat-card.green{--al:var(--green)}.stat-card.red{--al:var(--red)}.stat-card.blue{--al:var(--blue)}
 .stat-label{font-size:11px;font-weight:500;color:var(--t3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px}
-.stat-val{font-size:24px;font-weight:700;color:var(--t1);font-family:var(--mono);letter-spacing:-1px;line-height:1}
+.stat-val{font-size:clamp(18px,2.2vw,24px);font-weight:700;color:var(--t1);font-family:var(--mono);letter-spacing:-1px;line-height:1.15;overflow-wrap:anywhere;min-width:0}
 .stat-val.green{color:var(--green)}.stat-val.red{color:var(--red)}.stat-val.gold{color:var(--gold)}.stat-val.blue{color:var(--blue)}
 .stat-sub{font-size:11px;color:var(--t4);margin-top:5px}
 
@@ -129,7 +136,11 @@ textarea{resize:vertical;min-height:80px}
 .badge-gray{background:var(--bg-2);color:var(--t2)}.badge-gold{background:rgba(200,169,90,.15);color:#966E1E}
 
 /* TABLE */
-.table-wrap{overflow-x:auto}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+/* Red de seguridad por si alguna tabla queda sin .table-wrap: el contenedor se
+   desplaza solo en horizontal en vez de estirar toda la pagina en el celular. */
+.card-body-flush,.card-body{max-width:100%}
+.card-body-flush:has(>table),.card-body:has(>table){overflow-x:auto;-webkit-overflow-scrolling:touch}
 table{width:100%;border-collapse:collapse}
 thead th{padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.6px;background:var(--surface-2);border-bottom:1px solid var(--border);white-space:nowrap}
 tbody td{padding:11px 14px;border-bottom:1px solid var(--border);font-size:13px;color:var(--t1);vertical-align:middle}
@@ -138,17 +149,25 @@ tbody tr{transition:background var(--tf)}
 tbody tr:hover{background:var(--surface-2)}
 
 /* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px;overflow-y:auto;overscroll-behavior:contain}
 .modal-overlay.open{display:flex}
-.modal{background:var(--surface);border-radius:var(--rlg);box-shadow:var(--slg);width:100%;max-width:520px;max-height:90vh;overflow-y:auto;border:1px solid var(--border)}
+/* El que hace scroll es el cuerpo, no el modal entero: asi el encabezado y
+   los botones quedan siempre a la vista y el dedo no arrastra la pagina de
+   atras (overscroll-behavior). 100dvh, no 90vh: en el celular la barra del
+   navegador se mueve y con vh el modal quedaba mas alto que la pantalla, que
+   es lo que hacia que se pudiera desplazar sin limite. */
+.modal{background:var(--surface);border-radius:var(--rlg);box-shadow:var(--slg);width:100%;max-width:520px;max-height:calc(100dvh - 40px);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
 .modal-lg{max-width:680px}
-.modal-header{padding:16px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;position:sticky;top:0;background:var(--surface);border-radius:var(--rlg) var(--rlg) 0 0;z-index:1}
+.modal-header{padding:16px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border-radius:var(--rlg) var(--rlg) 0 0;flex:0 0 auto}
 .modal-title{font-size:14px;font-weight:600;letter-spacing:-.2px}
-.modal-body{padding:18px 20px}
-.modal-footer{padding:14px 20px 18px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--border)}
+.modal-body{padding:18px 20px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
+.modal-footer{padding:14px 20px 18px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--border);flex:0 0 auto;background:var(--surface);flex-wrap:wrap}
 
 /* UTILS */
 .flex{display:flex}.flex-center{display:flex;align-items:center}.flex-between{display:flex;align-items:center;justify-content:space-between}
+.flex-wrap{flex-wrap:wrap}.flex-1{flex:1 1 auto;min-width:0}
+.input-icon-wrap{position:relative;display:block}
+.input-icon-wrap>input{padding-left:34px}
 .gap-1{gap:4px}.gap-2{gap:8px}.gap-3{gap:12px}.gap-4{gap:16px}
 .mb-1{margin-bottom:4px}.mb-2{margin-bottom:8px}.mb-3{margin-bottom:14px}.mb-4{margin-bottom:20px}
 .mt-1{margin-top:4px}.mt-2{margin-top:8px}.mt-3{margin-top:14px}
@@ -205,20 +224,66 @@ input.has-error,select.has-error{border-color:var(--red)!important}
 .pwa-text span{font-size:11px;color:rgba(255,255,255,.45)}
 .pwa-btn{background:var(--gold);color:var(--black);border:none;border-radius:var(--rsm);padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer}
 
+/* El contenido nunca empuja la pagina de lado: cualquier cosa mas ancha
+   (tablas, filas de filtros) se desplaza dentro de su propio contenedor. */
+html,body{max-width:100%;overflow-x:clip}
+.main,.content{min-width:0;max-width:100%}
+.card,.stat-card,.form-group{min-width:0}
+.card-header{flex-wrap:wrap;gap:8px}
+img{max-width:100%;height:auto}
+
+/* PANTALLAS GRANDES: el contenido ya estaba limitado a 1400px pero quedaba
+   pegado a la izquierda, con la mitad derecha del monitor vacia. Se centra. */
+@media(min-width:1500px){
+  .content{margin-left:auto;margin-right:auto}
+}
+
+@media(max-width:1024px){
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .grid-3{grid-template-columns:1fr 1fr}
+}
+
 @media(max-width:768px){
   .main{margin-left:0}
   .sidebar{transform:translateX(-100%);transition:transform var(--tb) var(--ease)}
   .sidebar.open{transform:translateX(0)}
   .sidebar-backdrop.open{display:block}
   .hamburger{display:flex}
-  .topbar{padding-left:56px}
-  .stats-grid{grid-template-columns:1fr 1fr}
-  .grid-2{grid-template-columns:1fr}
+  .topbar{padding-left:56px;padding-right:12px;gap:8px}
+  /* En el celular el titulo se parte en dos lineas cortas en vez de estirar
+     la barra; el reloj sobra ahi (el celular ya muestra la hora arriba). */
+  .topbar-title{white-space:normal;display:flex;flex-direction:column;justify-content:center;line-height:1.25}
+  .topbar-nombre{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topbar-sub{margin-left:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topbar-reloj{display:none}
+  /* El indicador de conexion se reduce al punto de color: el texto
+     "Conectado"/"Offline" era lo que desbordaba la barra. */
+  .topbar-red{width:14px;overflow:hidden;font-size:12px}
+  .topbar-pend{padding:3px 7px;font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis}
+  .topbar .btn,.topbar-actions .btn{padding:6px 10px;font-size:12px}
+  .stats-grid{grid-template-columns:1fr 1fr;gap:10px}
+  .grid-2,.grid-3{grid-template-columns:1fr}
   .content{padding:14px}
+  .stat-card{padding:14px}
+  /* En el celular el modal ocupa la pantalla de abajo hacia arriba: asi el
+     recorrido del dedo termina donde termina el formulario. */
+  .modal-overlay{padding:0;align-items:flex-end}
+  .modal{max-width:100%;max-height:92dvh;border-radius:var(--rlg) var(--rlg) 0 0;border-bottom:none}
+  .modal-footer{position:sticky;bottom:0}
+  .modal-footer .btn{flex:1 1 auto;justify-content:center}
+  .form-grid{grid-template-columns:1fr!important}
+  .card-body>.flex.gap-2{flex-wrap:wrap;align-items:stretch}
+  .card-body>.flex.gap-2>div{flex:1 1 100%;min-width:0}
+  .card-body>.flex.gap-2 select,
+  .card-body>.flex.gap-2 input[type=date]{width:100%!important}
+  .card-body>.flex.gap-2>.btn{flex:1 1 auto;justify-content:center}
 }
 @media(max-width:480px){
   .stats-grid{grid-template-columns:1fr}
   .grid-auto{grid-template-columns:1fr}
+  .stat-val{font-size:20px}
+  .content{padding:12px}
+  .btn{max-width:100%}
 }
 
 /* ANIMATIONS STAGGER - Fallback CSS puro */

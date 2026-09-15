@@ -69,6 +69,7 @@ async def buscar_ajax(
     request: Request,
     q: str = "",
     zona_id: int = None,
+    todos: int = 0,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -79,8 +80,14 @@ async def buscar_ajax(
 
     q = limpiar_texto(q, 100)
 
-    # Sin filtros se devuelven los clientes mas recientes (paginados), en vez
-    # de una lista vacia que hacia parecer que la empresa no tenia ninguno.
+    # Entrar al modulo no dispara ninguna consulta: sin busqueda ni zona, y sin
+    # el todos=1 que manda el boton "Ver todos", no se devuelve nada. Cargar la
+    # lista completa de entrada era lo que hacia lento el modulo.
+    if not q and not zona_id and not todos:
+        return JSONResponse({"clientes": [], "total": 0, "page": page,
+                             "per_page": per_page, "total_pages": 0,
+                             "requiere_filtro": True})
+
     # Cobrador solo ve su zona
     allowed_zones = get_allowed_zone_ids(db, user)
     if allowed_zones is not None and zona_id and zona_id not in allowed_zones:

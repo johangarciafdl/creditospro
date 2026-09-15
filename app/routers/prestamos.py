@@ -71,6 +71,7 @@ async def buscar_ajax(
     q: str = "",
     estado: str = "",
     zona_id: int = None,
+    todos: int = 0,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -82,10 +83,14 @@ async def buscar_ajax(
     q = limpiar_texto(q, 100)
     estado = limpiar_texto(estado, 30)
 
-    # Sin filtros se muestran los prestamos mas recientes (paginados, 20 por
-    # pagina). Antes se devolvia una lista vacia para no traer todo de golpe,
-    # pero el resultado era una pantalla en blanco al entrar a Prestamos, como
-    # si la empresa no tuviera ninguno. La paginacion ya acota la consulta.
+    # Entrar al modulo no dispara ninguna consulta: sin busqueda, estado ni
+    # zona, y sin el todos=1 que manda el boton "Ver todos", no se devuelve
+    # nada. Cargar la lista completa de entrada era lo que lo hacia lento.
+    if not q and not estado and not zona_id and not todos:
+        return JSONResponse({"prestamos": [], "total": 0, "page": page,
+                             "per_page": per_page, "total_pages": 0,
+                             "requiere_filtro": True})
+
     allowed_zones = get_allowed_zone_ids(db, user)
     if allowed_zones is not None and zona_id and zona_id not in allowed_zones:
         return JSONResponse({"prestamos": [], "total": 0, "page": page, "per_page": per_page, "total_pages": 0})
