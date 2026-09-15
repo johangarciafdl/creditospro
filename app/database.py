@@ -65,7 +65,17 @@ def _engine_kwargs_for(url: str) -> tuple[dict, dict]:
         return {"check_same_thread": False}, {"pool_pre_ping": True}
     return {}, {
         "pool_pre_ping": True,
-        "pool_recycle": 300,
+        # 300 segundos obligaba a tirar y reabrir cada conexion cada 5 minutos.
+        # Abrir una conexion nueva contra el pooler cuesta varios viajes de ida
+        # y vuelta (TLS + autenticacion), y con trafico continuo eso pasaba todo
+        # el rato: de ahi las cientos de miles de autenticaciones registradas en
+        # el pooler. Media hora sigue siendo muy inferior a cualquier tiempo de
+        # vida de conexion del servidor, y el pre-ping cubre la conexion muerta.
+        "pool_recycle": 1800,
+        # LIFO reutiliza siempre las conexiones mas recientes en vez de rotar
+        # por todas: con trafico bajo mantiene un par calientes y deja que las
+        # demas caduquen, en vez de mantenerlas todas a medio morir.
+        "pool_use_lifo": True,
         "pool_size": POOL_SIZE,
         "max_overflow": MAX_OVERFLOW,
         # Si el pool esta lleno, esperar en vez de fallar de inmediato: una

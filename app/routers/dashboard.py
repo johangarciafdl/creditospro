@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import RedirectResponse
 from app.templates import templates
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case, text
+from sqlalchemy import func, literal_column, select, text
 import datetime, json
 
 from app.database import (
@@ -35,42 +35,68 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
             return q.filter(col.in_(zone_filter))
         return q
 
-    # ── Stats en 2 queries (antes eran 7+) ──
-    stats_row = db.query(
-        func.count(Cliente.id).filter(Cliente.empresa_id == eid, Cliente.activo == True),
-    ).scalar()
-
-    pre_row = db.query(
-        func.count(case((Prestamo.estado.in_(["Activo", "activo"]), Prestamo.id))),
-        func.count(case((Prestamo.estado.in_(["Atrasado", "atrasado"]), Prestamo.id))),
-        func.sum(case((Prestamo.estado.in_(["Activo", "activo", "Atrasado", "atrasado"]), Prestamo.capital))),
-    ).filter(Prestamo.empresa_id == eid).first()
-
-    total_clientes = stats_row or 0
-    total_prestamos = (pre_row[0] or 0) if pre_row else 0
-    total_atrasados = (pre_row[1] or 0) if pre_row else 0
-    capital_activo = float((pre_row[2] or 0) if pre_row else 0)
-
-    vencidas_row = db.query(func.count(Cuota.id)).join(
-        Prestamo, Cuota.prestamo_id == Prestamo.id
-    ).filter(
-        Cuota.empresa_id == eid, Prestamo.empresa_id == eid, Cuota.estado == "Vencida",
+    # ── Todas las cifras de cabecera en UNA sola consulta ───────────────────
+    # Eran cuatro consultas independientes. Cada una es rapidisima dentro de
+    # Postgres (decimas de milisegundo) pero cada una paga el viaje de ida y
+    # vuelta hasta la base de datos, que es lo que domina el tiempo de la
+    # pantalla. Como subconsultas escalares van todas en el mismo viaje.
+    q_clientes = (
+        select(func.count(Cliente.id))
+        .where(Cliente.empresa_id == eid, Cliente.activo.is_(True))
+    )
+    q_prestamos_activos = (
+        select(func.count(Prestamo.id))
+        .where(Prestamo.empresa_id == eid, Prestamo.estado.in_(["Activo", "activo"]))
+    )
+    q_prestamos_atrasados = (
+        select(func.count(Prestamo.id))
+        .where(Prestamo.empresa_id == eid, Prestamo.estado.in_(["Atrasado", "atrasado"]))
+    )
+    q_capital = (
+        select(func.coalesce(func.sum(Prestamo.capital), 0))
+        .where(
+            Prestamo.empresa_id == eid,
+            Prestamo.estado.in_(["Activo", "activo", "Atrasado", "atrasado"]),
+        )
+    )
+    q_vencidas = (
+        select(func.count(Cuota.id))
+        .select_from(Cuota)
+        .join(Prestamo, Cuota.prestamo_id == Prestamo.id)
+        .where(Cuota.empresa_id == eid, Prestamo.empresa_id == eid, Cuota.estado == "Vencida")
+    )
+    q_cobrado_hoy = (
+        select(func.coalesce(func.sum(Cobro.valor_cobrado), 0))
+        .where(Cobro.empresa_id == eid, Cobro.fecha == hoy)
+    )
+    q_cobrado_mes = (
+        select(func.coalesce(func.sum(Cobro.valor_cobrado), 0))
+        .where(Cobro.empresa_id == eid, Cobro.fecha >= inicio_mes)
     )
     if zone_filter is not None:
-        vencidas_row = vencidas_row.filter(Prestamo.zona_id.in_(zone_filter))
-    total_vencidas = vencidas_row.scalar() or 0
+        q_vencidas = q_vencidas.where(Prestamo.zona_id.in_(zone_filter))
+        q_cobrado_hoy = q_cobrado_hoy.where(Cobro.zona_id.in_(zone_filter))
+        q_cobrado_mes = q_cobrado_mes.where(Cobro.zona_id.in_(zone_filter))
 
-    cobros_row = db.query(
-        func.sum(case((Cobro.fecha == hoy, Cobro.valor_cobrado))),
-        func.sum(case((Cobro.fecha >= inicio_mes, Cobro.valor_cobrado))),
-    ).filter(Cobro.empresa_id == eid).first()
-    if zone_filter is not None:
-        cobros_row = db.query(
-            func.sum(case((Cobro.fecha == hoy, Cobro.valor_cobrado))),
-            func.sum(case((Cobro.fecha >= inicio_mes, Cobro.valor_cobrado))),
-        ).filter(Cobro.empresa_id == eid, Cobro.zona_id.in_(zone_filter)).first()
-    cobrado_hoy = float((cobros_row[0] or 0) if cobros_row else 0)
-    cobrado_mes = float((cobros_row[1] or 0) if cobros_row else 0)
+    fila = db.execute(
+        select(
+            q_clientes.scalar_subquery(),
+            q_prestamos_activos.scalar_subquery(),
+            q_prestamos_atrasados.scalar_subquery(),
+            q_capital.scalar_subquery(),
+            q_vencidas.scalar_subquery(),
+            q_cobrado_hoy.scalar_subquery(),
+            q_cobrado_mes.scalar_subquery(),
+        )
+    ).first()
+
+    total_clientes = fila[0] or 0
+    total_prestamos = fila[1] or 0
+    total_atrasados = fila[2] or 0
+    capital_activo = float(fila[3] or 0)
+    total_vencidas = fila[4] or 0
+    cobrado_hoy = float(fila[5] or 0)
+    cobrado_mes = float(fila[6] or 0)
 
     # ── Cobros recientes (1 query) ──
     cobros_q = (db.query(Cobro, Cliente)
@@ -110,28 +136,40 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
             zona_ids = [z for z in zona_ids if z in zone_filter]
 
         if zona_ids:
-            zonas_cobro = db.query(
-                Cobro.zona_id,
-                func.sum(Cobro.valor_cobrado).label("cobrado"),
-            ).filter(
-                Cobro.empresa_id == eid, Cobro.zona_id.in_(zona_ids), Cobro.fecha >= inicio_mes
-            ).group_by(Cobro.zona_id).all()
-            cobro_map = {r.zona_id: float(r.cobrado or 0) for r in zonas_cobro}
-
-            zonas_cli = db.query(
-                Cliente.zona_id, func.count(Cliente.id).label("clientes")
-            ).filter(
-                Cliente.empresa_id == eid, Cliente.zona_id.in_(zona_ids), Cliente.activo == True
-            ).group_by(Cliente.zona_id).all()
-            cli_map = {r.zona_id: r.clientes for r in zonas_cli}
-
-            zonas_pre = db.query(
-                Prestamo.zona_id, func.count(Prestamo.id).label("prestamos")
-            ).filter(
-                Prestamo.empresa_id == eid, Prestamo.zona_id.in_(zona_ids),
-                Prestamo.estado.in_(["Activo", "activo", "Atrasado", "atrasado"])
-            ).group_by(Prestamo.zona_id).all()
-            pre_map = {r.zona_id: r.prestamos for r in zonas_pre}
+            # Las tres cifras por zona (cobrado, clientes, prestamos) salian de
+            # tres consultas con GROUP BY: tres viajes a la base de datos para
+            # rellenar la misma tabla. Un UNION ALL las trae en un solo viaje y
+            # el reparto se hace aqui, que no cuesta nada.
+            u_cobro = (
+                select(literal_column("'cobro'").label("clase"),
+                       Cobro.zona_id.label("zona_id"),
+                       func.coalesce(func.sum(Cobro.valor_cobrado), 0).label("valor"))
+                .where(Cobro.empresa_id == eid, Cobro.zona_id.in_(zona_ids),
+                       Cobro.fecha >= inicio_mes)
+                .group_by(Cobro.zona_id)
+            )
+            u_cli = (
+                select(literal_column("'cliente'"), Cliente.zona_id,
+                       func.count(Cliente.id))
+                .where(Cliente.empresa_id == eid, Cliente.zona_id.in_(zona_ids),
+                       Cliente.activo.is_(True))
+                .group_by(Cliente.zona_id)
+            )
+            u_pre = (
+                select(literal_column("'prestamo'"), Prestamo.zona_id,
+                       func.count(Prestamo.id))
+                .where(Prestamo.empresa_id == eid, Prestamo.zona_id.in_(zona_ids),
+                       Prestamo.estado.in_(["Activo", "activo", "Atrasado", "atrasado"]))
+                .group_by(Prestamo.zona_id)
+            )
+            cobro_map, cli_map, pre_map = {}, {}, {}
+            for clase, zona_id, valor in db.execute(u_cobro.union_all(u_cli, u_pre)).all():
+                if clase == "cobro":
+                    cobro_map[zona_id] = float(valor or 0)
+                elif clase == "cliente":
+                    cli_map[zona_id] = int(valor or 0)
+                else:
+                    pre_map[zona_id] = int(valor or 0)
 
             max_cobro = 1
             for z in zonas_base:

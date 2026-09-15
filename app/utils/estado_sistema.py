@@ -93,7 +93,8 @@ def salud() -> dict:
         "base_de_datos": "ok" if bd_ok else "sin respuesta",
         "latencia_bd_ms": round((time.perf_counter() - arranque) * 1000),
         "ida_y_vuelta_bd_ms": ida_y_vuelta,
-        "region": os.getenv("RAILWAY_REGION") or os.getenv("FLY_REGION") or "desconocida",
+        "region": (os.getenv("RAILWAY_REPLICA_REGION") or os.getenv("RAILWAY_REGION")
+                   or os.getenv("FLY_REGION") or "desconocida"),
     }
 
 
