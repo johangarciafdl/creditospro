@@ -165,6 +165,15 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     })
 
 
+def _como_fecha(valor):
+    """Cobro.fecha es un Date, pero segun el motor puede llegar como
+    datetime. Normalizar evita el AttributeError de llamar .date() sobre un
+    date, que es lo que tumbaba esta pantalla con un 500."""
+    if valor is None:
+        return None
+    return valor.date() if hasattr(valor, "date") else valor
+
+
 @router.get("/estado")
 async def estado_operacion(request: Request, db: Session = Depends(get_db)):
     """Estado de la operacion de la empresa, para su administrador.
@@ -209,13 +218,13 @@ async def estado_operacion(request: Request, db: Session = Depends(get_db)):
         .order_by(Usuario.nombre)
         .all()
     ):
-        ultimo = ultimo_por_usuario.get(u.id)
+        ultimo = _como_fecha(ultimo_por_usuario.get(u.id))
         cobradores.append({
             "nombre": u.nombre or u.username,
             "rol": u.rol,
             "cobros_hoy": hoy_por_usuario.get(u.id, 0),
             "ultimo": ultimo.strftime("%d/%m/%Y") if ultimo else "nunca",
-            "dias_sin_registrar": (hoy - ultimo.date()).days if ultimo else None,
+            "dias_sin_registrar": (hoy - ultimo).days if ultimo else None,
         })
 
     # Recordatorios de WhatsApp: lo que se envio y lo que fallo.

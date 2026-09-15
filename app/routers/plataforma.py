@@ -346,6 +346,15 @@ async def crear_empresa(
         return JSONResponse({"error": "No se pudo crear la empresa. Intenta de nuevo."}, status_code=500)
 
 
+def _como_fecha(valor):
+    """Cobro.fecha es un Date, pero segun el motor puede llegar como
+    datetime. Normalizar evita el AttributeError de llamar .date() sobre un
+    date, que es lo que tumbaba esta pantalla con un 500."""
+    if valor is None:
+        return None
+    return valor.date() if hasattr(valor, "date") else valor
+
+
 @router.get("/monitoreo")
 async def panel_monitoreo(request: Request, db: Session = Depends(get_db_system)):
     """Estado tecnico de toda la plataforma.
@@ -377,8 +386,8 @@ async def panel_monitoreo(request: Request, db: Session = Depends(get_db_system)
         .group_by(Cobro.empresa_id).all()
     )
     for e in db.query(Empresa).order_by(Empresa.nombre).all():
-        ultimo = ultimo_cobro.get(e.id)
-        dias_sin_cobrar = (hoy - ultimo.date()).days if ultimo else None
+        ultimo = _como_fecha(ultimo_cobro.get(e.id))
+        dias_sin_cobrar = (hoy - ultimo).days if ultimo else None
         actividad.append({
             "nombre": e.nombre,
             "activa": e.activa,
