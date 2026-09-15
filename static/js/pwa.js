@@ -630,12 +630,18 @@ function updateOnlineStatus(online) {
   const indicator = document.querySelector('[data-online-indicator]');
   
   if (indicator) {
+    // En el celular el texto se oculta por CSS y solo queda el punto de color,
+    // asi que el estado tiene que quedar tambien en title/aria-label.
     if (online) {
       indicator.textContent = '🟢 Conectado';
       indicator.style.color = '#10b981';
+      indicator.title = 'Conectado a internet';
+      indicator.setAttribute('aria-label', 'Conectado a internet');
     } else {
       indicator.textContent = '🔴 Offline';
       indicator.style.color = '#ef4444';
+      indicator.title = 'Sin conexión: los cobros se guardan en el celular';
+      indicator.setAttribute('aria-label', 'Sin conexión');
     }
   }
 

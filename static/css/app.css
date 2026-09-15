@@ -256,9 +256,6 @@ img{max-width:100%;height:auto}
   .topbar-nombre{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .topbar-sub{margin-left:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .topbar-reloj{display:none}
-  /* El indicador de conexion se reduce al punto de color: el texto
-     "Conectado"/"Offline" era lo que desbordaba la barra. */
-  .topbar-red{width:14px;overflow:hidden;font-size:12px}
   .topbar-pend{padding:3px 7px;font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis}
   .topbar .btn,.topbar-actions .btn{padding:6px 10px;font-size:12px}
   .stats-grid{grid-template-columns:1fr 1fr;gap:10px}
@@ -277,6 +274,14 @@ img{max-width:100%;height:auto}
   .card-body>.flex.gap-2 select,
   .card-body>.flex.gap-2 input[type=date]{width:100%!important}
   .card-body>.flex.gap-2>.btn{flex:1 1 auto;justify-content:center}
+}
+/* En pantallas angostas el indicador de conexion queda como punto de color: el
+   texto "Conectado"/"Offline" era lo que desbordaba la barra. No se recorta el
+   texto, se apaga (font-size:0) y el punto lo pinta ::before, heredando el
+   color verde/rojo que le pone el JS. En tablet si cabe el texto completo. */
+@media(max-width:600px){
+  .topbar-red{font-size:0}
+  .topbar-red::before{content:'●';font-size:13px;line-height:1}
 }
 @media(max-width:480px){
   .stats-grid{grid-template-columns:1fr}
