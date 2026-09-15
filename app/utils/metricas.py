@@ -128,11 +128,24 @@ class MetricasMiddleware(BaseHTTPMiddleware):
     """Mide cada peticion. Va por dentro para medir solo el trabajo real."""
 
     async def dispatch(self, request, call_next):
+        from app.database import contador_consultas, reiniciar_contador_consultas
+
+        reiniciar_contador_consultas()
         arranque = time.perf_counter()
         estado = 500
         try:
             respuesta = await call_next(request)
             estado = respuesta.status_code
+            # Server-Timing deja ver en las herramientas del navegador (y con
+            # curl) cuanto tardo el servidor de verdad, separado del viaje por
+            # la red. Sin esto, "va lento" no se puede atribuir: el mismo
+            # numero puede ser el servidor, la base de datos o la conexion del
+            # usuario. Lo lee el navegador en la pestaña Red, sin herramientas.
+            ms_app = (time.perf_counter() - arranque) * 1000
+            n_consultas, ms_bd = contador_consultas()
+            respuesta.headers["Server-Timing"] = (
+                f"app;dur={ms_app:.1f}, bd;dur={ms_bd:.1f}, consultas;dur={n_consultas}"
+            )
             return respuesta
         finally:
             ms = (time.perf_counter() - arranque) * 1000

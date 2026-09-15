@@ -3,9 +3,11 @@ CreditosPro v2.1 - Database Multi-tenant
 Cada Empresa tiene datos completamente aislados.
 Unique constraints son POR empresa, no globales.
 """
+import contextvars
 import datetime
 import logging
 import os
+import time
 from pathlib import Path
 
 from sqlalchemy import (
@@ -108,6 +110,48 @@ if APP_DATABASE_URL and APP_DATABASE_URL != SQLALCHEMY_DATABASE_URL:
     logger.info("DATABASE_URL_APP configurada: consultas por-empresa usan el rol restringido")
 else:
     AppSessionLocal = SessionLocal
+    app_engine = engine
+
+
+# ── Medicion del coste de base de datos por peticion ──────────────────────────
+# "Va lento" no se puede atribuir sin separar tres cosas: el viaje por la red
+# hasta el servidor, el trabajo de la aplicacion y las idas y venidas a la base
+# de datos. Estos dos contadores (numero de consultas y tiempo total dentro de
+# ellas) viven en un contextvar, asi que cada peticion tiene los suyos aunque se
+# atiendan varias a la vez, y MetricasMiddleware los publica en Server-Timing.
+_consultas_peticion: contextvars.ContextVar[list] = contextvars.ContextVar("consultas_peticion")
+
+
+def reiniciar_contador_consultas() -> None:
+    _consultas_peticion.set([0, 0.0])
+
+
+def contador_consultas() -> tuple[int, float]:
+    datos = _consultas_peticion.get(None)
+    if not datos:
+        return 0, 0.0
+    return datos[0], datos[1]
+
+
+@event.listens_for(engine, "before_cursor_execute")
+def _marcar_inicio_consulta(conn, cursor, statement, parameters, context, executemany):
+    conn.info["_t_consulta"] = time.perf_counter()
+
+
+@event.listens_for(engine, "after_cursor_execute")
+def _acumular_consulta(conn, cursor, statement, parameters, context, executemany):
+    inicio = conn.info.pop("_t_consulta", None)
+    if inicio is None:
+        return
+    datos = _consultas_peticion.get(None)
+    if datos is not None:
+        datos[0] += 1
+        datos[1] += (time.perf_counter() - inicio) * 1000
+
+
+if app_engine is not engine:
+    event.listen(app_engine, "before_cursor_execute", _marcar_inicio_consulta)
+    event.listen(app_engine, "after_cursor_execute", _acumular_consulta)
 
 
 def set_tenant_context(db: Session, empresa_id: int) -> None:
