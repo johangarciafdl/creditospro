@@ -297,24 +297,52 @@ document.getElementById('login-form').addEventListener('submit',async e=>{
   btn.disabled=true;text.textContent='Verificando...';arr.style.display='none';
   anime({targets:btn,scale:[.98,1],duration:200,easing:'easeOutBack'});
 
-  try{
-    const fd=new FormData(e.target);
-    const r=await fetch('/auth/login',{method:'POST',body:fd,redirect:'follow'});
-    if(r.ok||r.redirected||r.status===302||r.url!==location.href){
-      showSplash(r.url||'/dashboard');
-    }else{
-      throw new Error('bad');
-    }
-  }catch(ex){
-    // fetch throws on redirect in some browsers — treat as success
-    if(ex.message==='Failed to fetch'||ex.name==='TypeError'){
-      showSplash('/dashboard');return;
-    }
+  function mostrarError(mensaje){
     err.classList.add('show');
-    document.getElementById('err-msg').textContent='Usuario o contrasena incorrectos';
+    document.getElementById('err-msg').textContent=mensaje;
     anime({targets:'#err-box',translateX:[-5,5,-4,4,-3,0],duration:400,easing:'linear'});
     anime({targets:'#inp-pass',borderColor:['rgba(220,38,38,.5)','rgba(255,255,255,.08)'],duration:1500});
     btn.disabled=false;text.textContent='Ingresar';arr.style.display='';
+  }
+
+  try{
+    const fd=new FormData(e.target);
+    const r=await fetch('/auth/login',{method:'POST',body:fd,redirect:'follow'});
+
+    // Un login correcto SIEMPRE termina fuera de /auth/login: el servidor
+    // redirige al dashboard (o a /auth/2fa) y fetch sigue la redireccion.
+    // Si seguimos en /auth/login, entro mal -- pase lo que pase con el codigo.
+    //
+    // Antes esto se decidia con "r.url !== location.href", que daba verdadero
+    // en cuanto la barra de direcciones tuviera un ?next=..., asi que un 401
+    // se celebraba como exito: salia la animacion de bienvenida y el usuario
+    // aterrizaba de vuelta en el login sin ningun mensaje. Ese era el fallo de
+    // "se crea el usuario pero despues no deja entrar".
+    const destino = new URL(r.url || '/auth/login', location.origin);
+    if(r.ok && !destino.pathname.startsWith('/auth/login')){
+      showSplash(destino.pathname + destino.search);
+      return;
+    }
+
+    // Fallo: decir el motivo REAL. No todo es "contrasena incorrecta" --
+    // tambien puede faltar la activacion de la licencia (403) o haberse
+    // agotado los intentos (429), y ocultarlo deja al usuario sin saber
+    // que hacer.
+    let motivo = 'Usuario o contrasena incorrectos';
+    if(r.status===403||r.status===429){
+      try{ const d=await r.json(); if(d&&d.error) motivo=d.error; }catch(_){}
+    }
+    mostrarError(motivo);
+    // Sin licencia activada no hay nada que intentar desde aqui: se lleva al
+    // usuario a la pantalla de activacion en vez de dejarlo reintentando.
+    if(r.status===403) setTimeout(()=>{location.href='/license/activar';},2200);
+
+  }catch(ex){
+    // Un fallo de red es un fallo, no un login correcto. Antes se trataba el
+    // TypeError de fetch como exito y se redirigia al dashboard, que rebotaba
+    // de vuelta al login.
+    console.error('[Login] Error de red:', ex);
+    mostrarError('No hay conexion con el servidor. Revisa tu internet e intenta de nuevo.');
   }
 });
 
