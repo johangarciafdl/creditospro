@@ -39,6 +39,21 @@ if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
 IS_SQLITE = SQLALCHEMY_DATABASE_URL.startswith("sqlite://")
 
 
+# El tamaño del pool se mide contra el limite de conexiones del servidor de
+# base de datos, no contra lo que le gustaria a la aplicacion. La app abre
+# DOS motores (el de sistema y el restringido con RLS), asi que el consumo
+# maximo real es:
+#
+#     workers x 2 motores x (DB_POOL_SIZE + DB_MAX_OVERFLOW)
+#
+# Con los valores historicos (5 + 10) un solo proceso podia llegar a 30
+# conexiones; el servidor admite 60 en total y ya hay otras cosas
+# conectadas, asi que dos workers lo habrian agotado. Con los valores por
+# defecto de abajo, dos workers usan como mucho 20.
+POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "3"))
+MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "2"))
+
+
 def _engine_kwargs_for(url: str) -> tuple[dict, dict]:
     """connect_args/engine_kwargs correctos segun el dialecto de esa URL
     especifica (DATABASE_URL y DATABASE_URL_APP pueden ser dialectos
@@ -46,7 +61,15 @@ def _engine_kwargs_for(url: str) -> tuple[dict, dict]:
     if url.startswith("sqlite://"):
         # SQLite necesita check_same_thread=False para usar en hilos
         return {"check_same_thread": False}, {"pool_pre_ping": True}
-    return {}, {"pool_pre_ping": True, "pool_recycle": 300, "pool_size": 5, "max_overflow": 10}
+    return {}, {
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+        "pool_size": POOL_SIZE,
+        "max_overflow": MAX_OVERFLOW,
+        # Si el pool esta lleno, esperar en vez de fallar de inmediato: una
+        # peticion que tarda un segundo de mas es mejor que un error 500.
+        "pool_timeout": 30,
+    }
 
 
 connect_args, engine_kwargs = _engine_kwargs_for(SQLALCHEMY_DATABASE_URL)
@@ -388,6 +411,44 @@ class AuditLog(Base):
         Index("ix_audit_log_empresa_created", "empresa_id", "created_at"),
         Index("ix_audit_log_category_action", "category", "action"),
     )
+
+
+class SesionJWT(Base):
+    """Sesiones emitidas y revocadas, compartidas por todos los procesos.
+
+    Antes esto vivia solo en memoria del proceso. Con un unico worker
+    funcionaba, pero significaba dos cosas malas: al reiniciar (cada
+    despliegue) se perdia la lista de sesiones revocadas, de modo que un
+    token del que se habia hecho logout volvia a ser valido; y con mas de
+    un worker cada proceso tenia su propia lista, asi que revocar una
+    sesion en uno no la revocaba en los demas. Eso es lo que impedia subir
+    el numero de workers.
+
+    No lleva empresa_id ni politica RLS: es infraestructura de sesion, la
+    consulta la app antes de saber a que empresa pertenece el token.
+    """
+    __tablename__ = "sesiones_jwt"
+    jti = Column(String(64), primary_key=True)
+    usuario_id = Column(String(40), nullable=False, index=True)
+    expira_en = Column(Integer, nullable=False, index=True)
+    emitida_en = Column(Integer, nullable=False)
+    ip = Column(String(45), nullable=True)
+    revocada = Column(Boolean, default=False, nullable=False, index=True)
+
+
+class ContadorRateLimit(Base):
+    """Ventanas del rate limit, compartidas por todos los procesos.
+
+    Con el contador en memoria, N workers permiten N veces el limite
+    configurado: 10 intentos de login por minuto se vuelven 40 con cuatro
+    workers. Aqui la ventana es una fila unica por (regla, cliente), asi
+    que el limite es el mismo sin importar cuantos procesos haya.
+    """
+    __tablename__ = "rate_limit_ventanas"
+    clave = Column(String(200), primary_key=True)
+    ventana_inicio = Column(Integer, nullable=False)
+    conteo = Column(Integer, nullable=False, default=0)
+    actualizado_en = Column(Integer, nullable=False, index=True)
 
 
 def init_db():

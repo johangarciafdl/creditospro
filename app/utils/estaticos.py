@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import shutil
+import os
 from pathlib import Path
 
 from app.utils.minificar import minificar_css, minificar_js
@@ -48,8 +48,11 @@ def construir(base_dir: Path) -> dict[str, str]:
     origen = base_dir / "static"
     destino = origen / "dist"
 
-    if destino.exists():
-        shutil.rmtree(destino, ignore_errors=True)
+    # No se borra la carpeta: con varios workers cada proceso llama a esta
+    # funcion al arrancar, y uno borrando mientras otro sirve dejaria
+    # peticiones sin archivo. Como el nombre incluye el hash del contenido,
+    # reescribir el mismo nombre es inofensivo y los nombres viejos que
+    # sobren no los referencia ninguna plantilla.
     destino.mkdir(parents=True, exist_ok=True)
 
     manifiesto: dict[str, str] = {}
@@ -77,15 +80,22 @@ def construir(base_dir: Path) -> dict[str, str]:
             datos = minificado.encode("utf-8")
             nombre = f"{archivo.stem}.{_hash_corto(datos)}{archivo.suffix}"
             (destino / carpeta).mkdir(parents=True, exist_ok=True)
-            (destino / carpeta / nombre).write_bytes(datos)
+            final = destino / carpeta / nombre
+            if not final.exists():
+                # Escritura atomica: si dos procesos construyen a la vez,
+                # nadie puede leer un archivo a medio escribir.
+                temporal = final.with_suffix(final.suffix + f".{os.getpid()}.tmp")
+                temporal.write_bytes(datos)
+                os.replace(temporal, final)
 
             manifiesto[f"{carpeta}/{archivo.name}"] = f"{carpeta}/{nombre}"
             total_antes += len(texto.encode("utf-8"))
             total_despues += len(datos)
 
-    (destino / "manifiesto.json").write_text(
-        json.dumps(manifiesto, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    manifiesto_json = destino / "manifiesto.json"
+    temporal = manifiesto_json.with_suffix(f".{os.getpid()}.tmp")
+    temporal.write_text(json.dumps(manifiesto, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(temporal, manifiesto_json)
     _manifiesto = manifiesto
 
     if total_antes:

@@ -74,14 +74,6 @@ async def lifespan(app: FastAPI):
     """Inicialización segura de la aplicación con manejo de errores."""
     logger.info("Iniciando CreditosPro...")
 
-    # Antes que nada: los estaticos minificados y versionados. Si esto falla
-    # las plantillas siguen funcionando (estatico() cae a la ruta sin
-    # versionar), asi que un fallo aqui nunca deja la app sin arrancar.
-    try:
-        construir_estaticos(BASE_DIR)
-    except Exception:
-        logger.exception("No se pudieron construir los estaticos; se sirven sin minificar")
-
     required_vars = ["DATABASE_URL", "SECRET_KEY"]
     missing = [v for v in required_vars if not os.getenv(v)]
     if missing:
@@ -157,6 +149,17 @@ app.add_middleware(
 )
 app.add_middleware(AuditMiddleware)
 app.add_middleware(RequestIDMiddleware)
+
+# Los estaticos se construyen antes de montarlos: la carpeta static/dist no
+# esta en el repositorio (se genera), y StaticFiles exige que exista en el
+# momento del montaje. Si la construccion falla, las plantillas siguen
+# funcionando porque estatico() cae a la ruta sin versionar.
+try:
+    construir_estaticos(BASE_DIR)
+except Exception:
+    logger.exception("No se pudieron construir los estaticos; se sirven sin minificar")
+    (BASE_DIR / "static" / "dist").mkdir(parents=True, exist_ok=True)
+
 
 class EstaticosConCache(StaticFiles):
     """StaticFiles con la cabecera Cache-Control que corresponda.

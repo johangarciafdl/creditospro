@@ -1,4 +1,17 @@
-"""Rate limit en memoria. Adecuado para 1 worker. Para multi-worker usar Redis."""
+"""Rate limit por IP, compartido entre todos los procesos.
+
+Las ventanas se guardan en la tabla `rate_limit_ventanas` con un UPSERT
+atomico. Con el contador en memoria de cada proceso, N workers permitian N
+veces el limite configurado -- 10 intentos de login por minuto se volvian
+40 con cuatro workers, que es justo lo contrario de lo que el limite
+pretende. En la base de datos la ventana es una sola fila por (regla,
+cliente), asi que el limite no depende de cuantos procesos haya.
+
+Solo se consulta en metodos que escriben (POST/PUT/PATCH/DELETE), asi que
+no añade ninguna consulta a la navegacion normal. Si la base de datos no
+responde se vuelve al contador en memoria: es preferible un limite por
+proceso a quedarse sin limite.
+"""
 import logging
 import re
 import time
@@ -47,6 +60,84 @@ def _client_ip(request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+_bd_disponible = True
+
+
+def _sin_bd(exc: Exception) -> None:
+    global _bd_disponible
+    if _bd_disponible:
+        logger.warning(
+            "Rate limit sin base de datos (%s); cada proceso cuenta por su cuenta", exc
+        )
+    _bd_disponible = False
+
+
+def _check_compartido(clave: str, limit: int, window: int):
+    """Cuenta la peticion en la ventana compartida.
+
+    Devuelve True si pasa, False si esta bloqueada, y None si la base de
+    datos no esta disponible (entonces el llamador usa el contador local).
+
+    El UPSERT hace todo en una sola sentencia atomica: si la ventana
+    guardada ya caduco la reinicia, y si no, incrementa. Hacerlo en dos
+    pasos (leer y despues escribir) dejaria una carrera por la que dos
+    procesos podrian pasar ambos el ultimo intento permitido.
+    """
+    if not _bd_disponible:
+        return None
+    try:
+        from sqlalchemy import text as _text
+
+        from app.database import SessionLocal
+
+        ahora = int(time.time())
+        db = SessionLocal()
+        try:
+            fila = db.execute(
+                _text(
+                    """
+                    INSERT INTO rate_limit_ventanas (clave, ventana_inicio, conteo, actualizado_en)
+                    VALUES (:clave, :ahora, 1, :ahora)
+                    ON CONFLICT (clave) DO UPDATE SET
+                      ventana_inicio = CASE
+                        WHEN rate_limit_ventanas.ventana_inicio <= :corte THEN :ahora
+                        ELSE rate_limit_ventanas.ventana_inicio END,
+                      conteo = CASE
+                        WHEN rate_limit_ventanas.ventana_inicio <= :corte THEN 1
+                        ELSE rate_limit_ventanas.conteo + 1 END,
+                      actualizado_en = :ahora
+                    RETURNING conteo
+                    """
+                ),
+                {"clave": clave[:200], "ahora": ahora, "corte": ahora - window},
+            ).first()
+            db.commit()
+            return bool(fila) and fila[0] <= limit
+        finally:
+            db.close()
+    except Exception as exc:
+        _sin_bd(exc)
+        return None
+
+
+def limpiar_ventanas_viejas(db, antiguedad_segundos: int = 3600) -> int:
+    """Borra ventanas que ya no puede consultar nadie. La llama el scheduler."""
+    from sqlalchemy import text as _text
+
+    corte = int(time.time()) - antiguedad_segundos
+    r = db.execute(
+        _text("DELETE FROM rate_limit_ventanas WHERE actualizado_en < :corte"),
+        {"corte": corte},
+    )
+    db.commit()
+    return r.rowcount or 0
+
+
+def estado() -> dict:
+    """Resumen para el panel de monitoreo."""
+    return {"compartido": _bd_disponible}
+
+
 class InMemoryRateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, rules=None):
         super().__init__(app)
@@ -56,6 +147,9 @@ class InMemoryRateLimitMiddleware(BaseHTTPMiddleware):
 
     def _check(self, path: str, client: str, limit: int, window: int) -> bool:
         """Devuelve True si la peticion pasa el rate limit, False si esta bloqueada."""
+        compartido = _check_compartido(f"{path}|{client}", limit, window)
+        if compartido is not None:
+            return compartido
         key = (path, client)
         now = time.monotonic()
         with self.lock:
