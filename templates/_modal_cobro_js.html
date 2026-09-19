@@ -19,6 +19,14 @@ function abrirCobro(cuotaId,cliente,valor,numCuota){
   quitarFoto();
   setMetodo('Efectivo');
   document.getElementById('mc-obs').value='';
+  // La fecha arranca en hoy; el aviso solo sale si el usuario la cambia.
+  const hoy=new Date(); const iso=new Date(hoy.getTime()-hoy.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const campoFecha=document.getElementById('mc-fecha');
+  campoFecha.value=iso; campoFecha.max=iso;
+  campoFecha.oninput=()=>{
+    document.getElementById('mc-fecha-aviso').style.display = campoFecha.value<iso ? 'block' : 'none';
+  };
+  document.getElementById('mc-fecha-aviso').style.display='none';
   document.getElementById('modal-cobro').classList.add('open');
   setTimeout(()=>document.getElementById('mc-valor').focus(),300);
   // Auto-capturar GPS
@@ -114,6 +122,7 @@ async function confirmarCobro(){
   fd.append('valor_cobrado',valor);
   fd.append('metodo_pago',metodo_pago);
   fd.append('observaciones',observaciones);
+  fd.append('fecha_cobro',document.getElementById('mc-fecha').value||'');
   fd.append('lat',lat);
   fd.append('lng',lng);
   if(fotoFile)fd.append('foto',fotoFile);

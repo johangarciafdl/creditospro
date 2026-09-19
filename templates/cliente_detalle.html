@@ -176,12 +176,25 @@
       <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:500;">Ver plan de cuotas ({{ p.num_cuotas }})</summary>
       <div class="table-wrap" style="margin-top:10px;max-height:200px;overflow-y:auto;overflow-x:auto;">
         <table>
-          <thead><tr><th>#</th><th>Vencimiento</th><th>Valor</th><th>Pagado</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Se debía pagar</th><th>Se pagó</th><th>Valor</th><th>Pagado</th><th>Estado</th><th></th></tr></thead>
           <tbody>
             {% for c in p.cuotas %}
             <tr>
               <td class="num text-2">{{ c.numero }}</td>
               <td class="fs-12">{{ c.fecha_vencimiento }}</td>
+              <td class="fs-12">
+                {# Se debia pagar el X y se pago el Y: sin las dos fechas no
+                   hay forma de ver si la cuota entro a tiempo o con retraso. #}
+                {% if c.fecha_pago %}
+                  <span class="{% if c.dias_tarde > 0 %}text-red{% else %}text-green{% endif %}">{{ c.fecha_pago }}</span>
+                  {% if c.dias_tarde > 0 %}<div class="fs-11 text-red">{{ c.dias_tarde }} día{{ 's' if c.dias_tarde != 1 }} tarde</div>{% endif %}
+                {% else %}<span class="text-3">—</span>{% endif %}
+                {% if c.no_pagos %}
+                  <div class="fs-11 text-2" title="Días en que se visitó y no pagó">
+                    no pagó: {{ c.no_pagos | join(', ') }}
+                  </div>
+                {% endif %}
+              </td>
               <td class="num">{{ c.valor | cop }}</td>
               <td class="num {% if c.valor_pagado > 0 %}text-green{% endif %}">{{ c.valor_pagado | cop }}</td>
               <td>

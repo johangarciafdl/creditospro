@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
-from app.database import get_db, Cliente, Prestamo, Usuario, Zona
+from app.database import get_db, Cliente, NoPago, Prestamo, Usuario, Zona
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
@@ -465,6 +465,17 @@ async def detalle_cliente(
     zona = db.query(Zona).filter(Zona.id == cliente.zona_id).first() if cliente.zona_id else None
     zonas = visible_zonas_query(db, user).all()
 
+    # Visitas en las que se fue a cobrar y el cliente no pago. Se traen de una
+    # sola consulta para no hacer una por cuota.
+    no_pagos_por_cuota: dict[int, list] = {}
+    for np in (
+        db.query(NoPago)
+        .filter(NoPago.cliente_id == cliente.id, NoPago.empresa_id == user.empresa_id)
+        .order_by(NoPago.fecha)
+        .all()
+    ):
+        no_pagos_por_cuota.setdefault(np.cuota_id, []).append(np.fecha)
+
     prestamos_data = []
     for p in prestamos:
         pagado = sum(c.valor_pagado or 0 for c in p.cuotas)
@@ -485,6 +496,12 @@ async def detalle_cliente(
                 "numero": c.numero, "valor": c.valor or 0,
                 "valor_pagado": c.valor_pagado or 0,
                 "fecha_vencimiento": c.fecha_vencimiento.strftime("%d/%m/%Y") if c.fecha_vencimiento else "—",
+                # Cuando se pago de verdad, que puede no ser el dia que vencia.
+                "fecha_pago": c.fecha_pago.strftime("%d/%m/%Y") if c.fecha_pago else "",
+                "dias_tarde": ((c.fecha_pago - c.fecha_vencimiento).days
+                               if c.fecha_pago and c.fecha_vencimiento
+                               and c.fecha_pago > c.fecha_vencimiento else 0),
+                "no_pagos": [f.strftime("%d/%m/%Y") for f in no_pagos_por_cuota.get(c.id, [])],
                 "estado": c.estado or "Pendiente",
             } for c in sorted(p.cuotas, key=lambda x: x.numero)],
         })

@@ -10,12 +10,13 @@ import uuid
 from pathlib import Path
 
 from app.database import (
-    get_db, Cobro, Cuota, Prestamo, Cliente, Zona, IS_SQLITE,
+    get_db, Cobro, Cuota, NoPago, Prestamo, Cliente, Zona, IS_SQLITE,
     dia_semana_local, hoy_local,
 )
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import get_estado_prestamo
-from app.utils.money import money
+from app.utils.audit import log_action
+from app.utils.money import cop, money, money_int
 from app.utils.validators import (
     sanitizar_imagen_subida, validar_metodo_pago, sin_html, limpiar_texto,
     filtro_busqueda,
@@ -26,6 +27,11 @@ from app.utils.zone_permissions import (
 )
 
 router = APIRouter()
+
+# Hasta cuantos dias atras se puede fechar un cobro. Permite registrar lo que
+# se recibio ayer o la semana pasada sin abrir la puerta a reescribir meses
+# de historia.
+MAX_DIAS_RETROACTIVO = 60
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent.parent.parent
@@ -38,7 +44,8 @@ def _lock_for_update(query):
     return query if IS_SQLITE else query.with_for_update()
 
 
-def aplicar_cobro_atomico(db: Session, cuota: Cuota, valor_cobrado: Decimal) -> bool:
+def aplicar_cobro_atomico(db: Session, cuota: Cuota, valor_cobrado: Decimal,
+                          fecha_pago: datetime.date | None = None) -> bool:
     """Actualiza valor_pagado de la cuota usando UPDATE condicional.
 
     Devuelve True si la actualizacion afecto exactamente una fila (sin race
@@ -46,6 +53,9 @@ def aplicar_cobro_atomico(db: Session, cuota: Cuota, valor_cobrado: Decimal) -> 
     cuota entre la lectura y la escritura (otra peticion gano la carrera).
     Funciona en SQLite y PostgreSQL porque no depende de SELECT FOR UPDATE.
     """
+    # La fecha del pago puede no ser hoy: un cobro que no se pudo registrar
+    # el dia que se recibio se registra despues con su fecha real.
+    fecha_pago = fecha_pago or hoy_local()
     valor_pagado_actual = money(cuota.valor_pagado)
     nuevo_pagado = valor_pagado_actual + valor_cobrado
     nuevo_estado = "Pagada" if nuevo_pagado >= money(cuota.valor) else (
@@ -61,14 +71,14 @@ def aplicar_cobro_atomico(db: Session, cuota: Cuota, valor_cobrado: Decimal) -> 
         )
         .values(
             valor_pagado=nuevo_pagado,
-            fecha_pago=datetime.date.today(),
+            fecha_pago=fecha_pago,
             estado=nuevo_estado,
         )
     )
     result = db.execute(stmt)
     if result.rowcount == 1:
         cuota.valor_pagado = nuevo_pagado
-        cuota.fecha_pago = datetime.date.today()
+        cuota.fecha_pago = fecha_pago
         cuota.estado = nuevo_estado
         return True
     return False
@@ -190,6 +200,8 @@ async def registrar_cobro(
     valor_cobrado: float = Form(...),
     metodo_pago: str = Form("Efectivo"),
     observaciones: str = Form(""),
+    # Fecha real del pago (AAAA-MM-DD). Vacio = hoy.
+    fecha_cobro: str = Form(""),
     lat: str = Form(""),
     lng: str = Form(""),
     # La manda la PWA: la genera el celular al registrar el cobro, incluso sin
@@ -253,8 +265,56 @@ async def registrar_cobro(
     restante = money(cuota.valor) - money(cuota.valor_pagado)
     if restante <= 0:
         return JSONResponse({"error": "La cuota ya esta pagada"}, 400)
-    if valor_cobrado_dec > restante:
-        return JSONResponse({"error": "El valor supera el saldo de la cuota"}, 400)
+
+    # Fecha real del pago. Por defecto hoy; se permite hacia atras para
+    # registrar un cobro que se recibio otro dia, nunca hacia adelante.
+    hoy = hoy_local()
+    if fecha_cobro.strip():
+        try:
+            fecha_pago = datetime.date.fromisoformat(fecha_cobro.strip())
+        except ValueError:
+            return JSONResponse({"error": "Fecha invalida. Usa el formato AAAA-MM-DD."}, 400)
+        if fecha_pago > hoy:
+            return JSONResponse({"error": "La fecha del pago no puede ser futura"}, 400)
+        if (hoy - fecha_pago).days > MAX_DIAS_RETROACTIVO:
+            return JSONResponse(
+                {"error": f"No se puede registrar un pago de hace mas de {MAX_DIAS_RETROACTIVO} dias"},
+                400,
+            )
+    else:
+        fecha_pago = hoy
+
+    # Si pagan de mas, el excedente va a las cuotas siguientes del MISMO
+    # prestamo en orden. Antes se rechazaba el cobro entero: si la cuota era
+    # de 50.000 y el cliente daba 60.000, el cobrador no podia registrarlo y
+    # terminaba anotando 50.000 y quedandose con la diferencia sin registrar.
+    reparto = [(cuota, min(valor_cobrado_dec, restante))]
+    excedente = valor_cobrado_dec - restante
+    if excedente > 0:
+        siguientes = _lock_for_update(
+            db.query(Cuota).filter(
+                Cuota.prestamo_id == cuota.prestamo_id,
+                Cuota.empresa_id == user.empresa_id,
+                Cuota.id != cuota.id,
+                Cuota.numero > cuota.numero,
+                Cuota.estado.in_(["Pendiente", "Vencida", "Parcial"]),
+            )
+        ).order_by(Cuota.numero.asc()).all()
+        for siguiente in siguientes:
+            if excedente <= 0:
+                break
+            saldo_sig = money(siguiente.valor) - money(siguiente.valor_pagado)
+            if saldo_sig <= 0:
+                continue
+            aplicar = min(excedente, saldo_sig)
+            reparto.append((siguiente, aplicar))
+            excedente -= aplicar
+        if excedente > 0:
+            return JSONResponse(
+                {"error": f"El valor supera lo que resta del prestamo por {cop(excedente)}. "
+                          f"Registra como maximo el saldo pendiente."},
+                400,
+            )
 
     # Coordenadas opcionales: validar antes de tocar la base
     try:
@@ -278,12 +338,13 @@ async def registrar_cobro(
         foto_path = nombre
 
     try:
-        if not aplicar_cobro_atomico(db, cuota, valor_cobrado_dec):
-            db.rollback()
-            return JSONResponse(
-                {"error": "La cuota fue actualizada por otra operacion. Recarga e intenta de nuevo."},
-                status_code=409,
-            )
+        for cuota_destino, importe in reparto:
+            if not aplicar_cobro_atomico(db, cuota_destino, importe, fecha_pago):
+                db.rollback()
+                return JSONResponse(
+                    {"error": "La cuota fue actualizada por otra operacion. Recarga e intenta de nuevo."},
+                    status_code=409,
+                )
 
         cobro = Cobro(
             empresa_id=user.empresa_id,
@@ -292,7 +353,7 @@ async def registrar_cobro(
             cliente_id=cliente.id,
             zona_id=prestamo.zona_id,
             valor_cobrado=valor_cobrado_dec,
-            fecha=datetime.date.today(),
+            fecha=fecha_pago,
             hora=datetime.datetime.now(),
             cobrador=user.nombre or user.username,
             metodo_pago=metodo_pago,
@@ -457,9 +518,110 @@ async def registrar_cobro_cliente_rapido(
                          cliente_id, user.username)
         return JSONResponse({"error": "No se pudo registrar el cobro"}, status_code=500)
 
+    # Si el pago se repartio entre varias cuotas hay que decirlo: el cobrador
+    # entrego un importe y tiene que poder comprobar donde quedo aplicado.
+    detalle = [
+        {"cuota": c.numero, "valor": float(v)} for c, v in reparto
+    ]
+    mensaje = f"Cobro registrado a {cliente.nombre}: {cop(valor_cobrado_dec)}"
+    if len(reparto) > 1:
+        partes = ", ".join(f"cuota {c.numero}: {cop(v)}" for c, v in reparto)
+        mensaje += f" (se repartio en {partes})"
+    if fecha_pago != hoy:
+        mensaje += f" con fecha {fecha_pago.strftime('%d/%m/%Y')}"
+
     return JSONResponse({
         "ok": True,
-        "mensaje": f"Cobro registrado a {cliente.nombre}: ${float(valor_cobrado):,.0f}",
+        "mensaje": mensaje,
         "cuota_id": cuota.id,
         "valor_cobrado": float(valor_cobrado),
+        "fecha": fecha_pago.isoformat(),
+        "reparto": detalle,
+    })
+
+
+@router.post("/no-pago")
+async def registrar_no_pago(
+    request: Request,
+    cuota_id: int = Form(...),
+    fecha: str = Form(""),
+    motivo: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Deja constancia de que se visito al cliente y no pago.
+
+    Un dia sin cobro no dice nada por si solo: puede ser que el cobrador
+    fuera y el cliente no tuviera, o que nadie pasara. Esto distingue las dos
+    cosas y queda en el historial de la cuota junto a los pagos.
+    """
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, 401)
+    try:
+        motivo = sin_html(motivo, "Motivo", 300)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    hoy = hoy_local()
+    if fecha.strip():
+        try:
+            dia = datetime.date.fromisoformat(fecha.strip())
+        except ValueError:
+            return JSONResponse({"error": "Fecha invalida. Usa el formato AAAA-MM-DD."}, 400)
+        if dia > hoy:
+            return JSONResponse({"error": "La fecha no puede ser futura"}, 400)
+        if (hoy - dia).days > MAX_DIAS_RETROACTIVO:
+            return JSONResponse(
+                {"error": f"No se puede registrar hace mas de {MAX_DIAS_RETROACTIVO} dias"}, 400)
+    else:
+        dia = hoy
+
+    cuota = db.query(Cuota).filter(
+        Cuota.id == cuota_id, Cuota.empresa_id == user.empresa_id
+    ).first()
+    if not cuota:
+        return JSONResponse({"error": "Cuota no encontrada"}, 404)
+    if cuota.estado == "Pagada":
+        return JSONResponse({"error": "Esa cuota ya esta pagada"}, 400)
+
+    prestamo = db.query(Prestamo).filter(
+        Prestamo.id == cuota.prestamo_id, Prestamo.empresa_id == user.empresa_id
+    ).first()
+    if not prestamo:
+        return JSONResponse({"error": "Prestamo no encontrado"}, 404)
+    if not require_zone_access(db, user, prestamo.zona_id):
+        return JSONResponse({"error": "No tienes permisos para esa zona"}, 403)
+
+    ya = db.query(NoPago).filter(
+        NoPago.cuota_id == cuota.id, NoPago.fecha == dia
+    ).first()
+    if ya:
+        return JSONResponse({
+            "ok": True, "duplicado": True,
+            "mensaje": f"Ya estaba registrado que no pago el {dia.strftime('%d/%m/%Y')}",
+        })
+
+    db.add(NoPago(
+        empresa_id=user.empresa_id,
+        cuota_id=cuota.id,
+        prestamo_id=prestamo.id,
+        cliente_id=prestamo.cliente_id,
+        zona_id=prestamo.zona_id,
+        fecha=dia,
+        motivo=motivo or None,
+        usuario_id=user.id,
+        registrado_por=user.nombre or user.username,
+    ))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("[NO-PAGO] Error registrando cuota=%s", cuota_id)
+        return JSONResponse({"error": "No se pudo registrar"}, 500)
+
+    log_action(db, user, "no_pago", "cobros", f"cuota_id={cuota.id} fecha={dia}")
+    return JSONResponse({
+        "ok": True,
+        "mensaje": f"Registrado: no pago el {dia.strftime('%d/%m/%Y')}",
+        "fecha": dia.isoformat(),
     })

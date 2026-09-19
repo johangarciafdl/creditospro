@@ -71,6 +71,18 @@
       <div id="foto-placeholder" style="font-size:11px;color:var(--t3);">Opcional — evidencia del pago</div>
     </div>
 
+    <!-- Fecha del pago -->
+    <div class="form-group">
+      <label>Fecha del pago</label>
+      {# Por defecto hoy. Se puede poner una fecha anterior para registrar un
+         cobro que se recibio otro dia; asi la cuota queda con "se debia el X,
+         se pago el Y" en vez de fingir que se pago hoy. #}
+      <input type="date" id="mc-fecha">
+      <div class="fs-11 text-3" id="mc-fecha-aviso" style="margin-top:4px;display:none;">
+        Se registrara con fecha anterior a hoy.
+      </div>
+    </div>
+
     <!-- Observaciones -->
     <div class="form-group">
       <label>Observaciones</label>

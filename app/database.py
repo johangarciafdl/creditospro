@@ -285,6 +285,35 @@ class Usuario(Base):
     __table_args__ = (UniqueConstraint("empresa_id", "username", name="uq_user_empresa"),)
 
 
+class NoPago(Base):
+    """Visita en la que el cliente no pago: queda constancia del intento.
+
+    Sin esto, un dia sin cobro es indistinguible de un dia sin visita: la
+    cuota simplemente sigue pendiente y no hay forma de saber si el cobrador
+    paso y el cliente no tenia, o si nadie fue. Cada fila es una visita
+    fallida concreta, con su fecha y su motivo.
+    """
+    __tablename__ = "no_pagos"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
+    cuota_id = Column(Integer, ForeignKey("cuotas.id", ondelete="CASCADE"), nullable=False, index=True)
+    prestamo_id = Column(Integer, ForeignKey("prestamos.id", ondelete="CASCADE"), nullable=False, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False, index=True)
+    zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="SET NULL"), nullable=True, index=True)
+    fecha = Column(Date, nullable=False)
+    motivo = Column(String(300), nullable=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True, index=True)
+    registrado_por = Column(String(200), nullable=True)
+    creado = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        # Una visita fallida por cuota y dia: pulsar dos veces el boton no
+        # debe inventar dos visitas.
+        UniqueConstraint("cuota_id", "fecha", name="uq_no_pago_cuota_fecha"),
+        Index("ix_no_pagos_empresa_fecha", "empresa_id", "fecha"),
+    )
+
+
 class RutaCobro(Base):
     """Que zonas puede cobrar un cobrador en cada dia de la semana.
 

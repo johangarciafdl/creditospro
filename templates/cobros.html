@@ -199,6 +199,7 @@ function renderPendientes(items){
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0;">
           <button onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(p.cliente||''))},${saldo},${Number(p.cuota_num||0)})" class="btn btn-gold btn-sm">Cobrar</button>
+          <button onclick="marcarNoPago(${Number(p.cuota_id)||0},${attr(JSON.stringify(p.cliente||''))})" class="btn btn-sm" style="margin-left:6px;">No pagó</button>
           ${waDigits?`<a href="https://wa.me/57${attr(waDigits)}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;">WA</a>`:''}
         </div>
       </div>
@@ -221,6 +222,30 @@ function renderHistorial(items){
     </tr>`).join('');
   document.getElementById('tabla-historial').style.display='block';
 }
+// ── NO PAGO ────────────────────────────────────────────────────────────────
+// Un dia sin cobro no dice nada por si solo: puede ser que el cobrador fuera
+// y el cliente no tuviera, o que nadie pasara. Esto deja constancia de la
+// visita fallida, con su fecha, junto al historial de pagos de la cuota.
+async function marcarNoPago(cuotaId, cliente){
+  if(!cuotaId) return;
+  const motivo = prompt(`${cliente} no pagó hoy.
+
+Motivo (opcional):`, '');
+  if(motivo === null) return;              // cancelo
+  const fd = new FormData();
+  fd.append('cuota_id', cuotaId);
+  fd.append('motivo', motivo || '');
+  try{
+    const r = await window.fetch('/cobros/no-pago',{method:'POST',body:fd});
+    const d = await leerRespuesta(r);
+    if(d.ok){ toast(d.mensaje, d.duplicado ? 'warn' : 'success'); setTimeout(buscar,600); }
+    else toast(d.error || d.detail || 'No se pudo registrar', 'error');
+  }catch(e){
+    console.error('[Cobros] Error registrando no pago:', e);
+    toast('No hay conexión. Intenta de nuevo.', 'error');
+  }
+}
+
 </script>
 
 {% include "_modal_cobro_js.html" %}
