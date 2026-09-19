@@ -20,7 +20,7 @@ function abrirCobro(cuotaId,cliente,valor,numCuota){
   setMetodo('Efectivo');
   document.getElementById('mc-obs').value='';
   // La fecha arranca en hoy; el aviso solo sale si el usuario la cambia.
-  const hoy=new Date(); const iso=new Date(hoy.getTime()-hoy.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const iso=hoyLocal();  // fecha del cobrador, no UTC
   const campoFecha=document.getElementById('mc-fecha');
   campoFecha.value=iso; campoFecha.max=iso;
   campoFecha.oninput=()=>{

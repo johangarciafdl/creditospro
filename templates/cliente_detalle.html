@@ -380,7 +380,7 @@
 <script nonce="{{ csp_nonce }}">
 const fechaInicioPrest = document.getElementById('fecha-inicio-prest');
 if (fechaInicioPrest) {
-  fechaInicioPrest.value = new Date().toISOString().split('T')[0];
+  fechaInicioPrest.value = hoyLocal();
 }
 
 function abrirModalPrestamo() {

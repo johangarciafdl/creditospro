@@ -148,7 +148,7 @@
 {% block extra_scripts %}
 <script nonce="{{ csp_nonce }}">
 // Fecha hoy por defecto
-document.getElementById('np-fecha').value = new Date().toISOString().split('T')[0];
+document.getElementById('np-fecha').value = hoyLocal();
 
 let _deb = null, _clienteDeb = null, _calcDeb = null;
 

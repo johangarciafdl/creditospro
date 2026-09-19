@@ -81,7 +81,7 @@ async function cargarRuta() {
 
   const [rRes, cRes] = await Promise.all([
     fetch('/cobros/pendientes-ajax?'+params),
-    fetch('/cobros/buscar-ajax?fecha='+new Date().toISOString().split('T')[0]+((_zona?'&zona_id='+_zona:''))),
+    fetch('/cobros/buscar-ajax?fecha='+hoyLocal()+((_zona?'&zona_id='+_zona:''))),
   ]);
   const rData = await rRes.json();
   const cData = await cRes.json();

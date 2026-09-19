@@ -44,3 +44,27 @@ def test_inicio_dia_negocio_es_comparable_con_marcas_guardadas():
     assert inicio.tzinfo is None, "mezclar naive y aware revienta la comparacion"
     assert inicio <= datetime.datetime.now(), "el dia no puede empezar en el futuro"
     assert datetime.datetime.now() - inicio < datetime.timedelta(days=2)
+
+
+PLANTILLAS = pathlib.Path(__file__).resolve().parent.parent / "templates"
+ESTATICOS = pathlib.Path(__file__).resolve().parent.parent / "static" / "js"
+
+
+def test_el_navegador_tampoco_fecha_en_utc():
+    """toISOString() pasa por UTC antes de recortar la fecha.
+
+    En Colombia eso adelanta el cambio de dia a las 19:00: el filtro de
+    cobros amanece en manana y un prestamo creado por la noche nace con
+    todo su calendario corrido un dia. Para una fecha de calendario va
+    hoyLocal(); toISOString() completo (con hora) sigue valiendo para
+    marcas de tiempo, que si son instantes.
+    """
+    culpables = []
+    for carpeta in (PLANTILLAS, ESTATICOS):
+        for ruta in list(carpeta.rglob("*.html")) + list(carpeta.rglob("*.js")):
+            for n, linea in enumerate(ruta.read_text(encoding="utf-8").splitlines(), 1):
+                if re.search(r"toISOString\(\)\s*\.\s*(split\('T'\)|slice\(0,\s*10\))", linea):
+                    culpables.append(f"{ruta.name}:{n}: {linea.strip()[:90]}")
+    assert not culpables, (
+        "Usa hoyLocal() en vez de recortar toISOString():\n  " + "\n  ".join(culpables)
+    )

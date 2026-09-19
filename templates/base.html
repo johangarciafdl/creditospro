@@ -194,6 +194,17 @@ window.fmtCOP = function (valor) {
 };
 // Alias historico usado por el modulo de Cobros.
 window.cop = window.fmtCOP;
+
+// toISOString() convierte a UTC antes de recortar la fecha, asi que a partir
+// de las 19:00 en Colombia devolvia el dia siguiente: el filtro de cobros
+// amanecia en manana y los prestamos nuevos nacian fechados un dia tarde.
+// Esta version lee el calendario del propio navegador, que es el del cobrador.
+window.hoyLocal = function (fecha) {
+  const d = fecha ? new Date(fecha) : new Date();
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' + mes + '-' + dia;
+};
 </script>
 
 <script nonce="{{ csp_nonce }}">

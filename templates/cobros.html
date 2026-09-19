@@ -98,7 +98,7 @@
 
 {% block extra_scripts %}
 <script nonce="{{ csp_nonce }}">
-document.getElementById('sel-fecha').value = new Date().toISOString().split('T')[0];
+document.getElementById('sel-fecha').value = hoyLocal();
 document.getElementById('fecha-display').textContent = new Date().toLocaleDateString('es-CO',{day:'2-digit',month:'long',year:'numeric'});
 
 let _tab='pendientes', _deb=null;
