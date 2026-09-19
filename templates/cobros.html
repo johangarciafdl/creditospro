@@ -7,7 +7,7 @@
 <div class="stats-grid stats-grid-3 mb-4">
   <div class="stat-card gold card-anim">
     <div class="stat-label">Cobrado hoy</div>
-    <div class="stat-val gold num">${{ "{:,.0f}".format(total_hoy) }}</div>
+    <div class="stat-val gold num">{{ total_hoy | cop }}</div>
     <div class="stat-sub">{{ num_hoy }} cobros realizados</div>
   </div>
   <div class="stat-card red card-anim">

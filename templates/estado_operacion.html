@@ -17,7 +17,7 @@
   <div class="stat-card {% if vencidas_num %}red{% endif %}">
     <div class="stat-label">Cuotas vencidas sin cubrir</div>
     <div class="stat-val {% if vencidas_num %}red{% endif %}" style="font-size:22px;">{{ vencidas_num }}</div>
-    <div class="fs-11 text-2">${{ '{:,.0f}'.format(vencidas_monto).replace(',', '.') }} por recuperar</div>
+    <div class="fs-11 text-2">{{ vencidas_monto | cop }} por recuperar</div>
   </div>
   <div class="stat-card {% if whatsapp.fallidos %}red{% else %}green{% endif %}">
     <div class="stat-label">Recordatorios de WhatsApp</div>

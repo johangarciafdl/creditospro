@@ -191,3 +191,27 @@ def sanitizar_imagen_subida(filename: str, contenido: bytes, max_bytes: int = 5 
     if len(data) > max_bytes:
         raise HTTPException(400, "Imagen demasiado grande tras procesarla")
     return ext_normalizada, data
+
+
+def filtro_busqueda(texto: str, *columnas):
+    """Condicion SQL para buscar una persona por nombre o cedula.
+
+    Busca por PALABRAS, no por la cadena literal. Escribir "JOHAN RO" tenia
+    que encontrar a "JOHAN ROJAS", pero con un unico ILIKE '%JOHAN RO%' no lo
+    encontraba si el nombre guardado trae dos espacios ("JOHAN  ROJAS"), que
+    es el caso de casi un tercio de los clientes importados. Tampoco
+    encontraba nada si el usuario escribia los apellidos primero.
+
+    Cada palabra tiene que aparecer en alguna de las columnas, en cualquier
+    orden y en cualquier posicion. Devuelve None si no hay nada que buscar.
+    """
+    from sqlalchemy import and_, or_
+
+    palabras = (texto or "").split()
+    if not palabras or not columnas:
+        return None
+    condiciones = [
+        or_(*[col.ilike(f"%{palabra}%") for col in columnas])
+        for palabra in palabras
+    ]
+    return and_(*condiciones)

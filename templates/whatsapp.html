@@ -50,7 +50,7 @@
             <td class="fw-600 fs-13">{{ p.cliente }}</td>
             <td class="fs-12 text-2">{{ p.tel }}</td>
             <td class="num fs-12">{{ p.num_cuota }}</td>
-            <td class="num">${{ "{:,.0f}".format(p.valor) }}</td>
+            <td class="num">{{ p.valor | cop }}</td>
             <td class="fs-12">{{ p.vencimiento }}</td>
             <td>
               {% if p.dias == 0 %}<span class="badge badge-red">Hoy</span>

@@ -18,6 +18,7 @@ from app.services.prestamo_service import get_estado_prestamo
 from app.utils.money import money
 from app.utils.validators import (
     sanitizar_imagen_subida, validar_metodo_pago, sin_html, limpiar_texto,
+    filtro_busqueda,
 )
 from app.utils.zone_permissions import (
     DIAS_SEMANA, get_allowed_zone_ids, require_zone_access, ruta_semanal,
@@ -129,7 +130,7 @@ async def buscar_cobros(request: Request, q: str="", zona_id: int=None, fecha: s
         .join(Cuota, Cobro.cuota_id==Cuota.id)
         .filter(Cobro.empresa_id==eid, Cobro.fecha==fecha_f))
     if q:
-        query = query.filter(Cliente.nombre.ilike(f"%{q}%")|Cliente.cedula.ilike(f"%{q}%"))
+        query = query.filter(filtro_busqueda(q, Cliente.nombre, Cliente.cedula))
     if zona_id:
         query = query.filter(Cobro.zona_id==zona_id)
     if allowed_zones is not None:
@@ -164,7 +165,7 @@ async def pendientes(request: Request, zona_id: int=None, q: str="", db: Session
                 Cuota.estado.in_(["Pendiente","Vencida"]),
                 Cuota.fecha_vencimiento<=hoy+datetime.timedelta(days=3)))
     if q:
-        query = query.filter(Cliente.nombre.ilike(f"%{q}%")|Cliente.cedula.ilike(f"%{q}%"))
+        query = query.filter(filtro_busqueda(q, Cliente.nombre, Cliente.cedula))
     if zona_id:
         query = query.filter(Prestamo.zona_id==zona_id)
     if allowed_zones is not None:

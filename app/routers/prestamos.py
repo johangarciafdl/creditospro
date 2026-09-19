@@ -23,7 +23,8 @@ from app.services.prestamo_service import calcular_cuotas
 from app.utils.money import money
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
-    validar_numero_positivo, validar_entero_positivo, limpiar_texto, sin_html
+    validar_numero_positivo, validar_entero_positivo, limpiar_texto, sin_html,
+    filtro_busqueda,
 )
 
 # Ventana para considerar dos prestamos identicos como la misma peticion
@@ -106,7 +107,7 @@ async def buscar_ajax(
 
     if q:
         query = query.filter(
-            Cliente.nombre.ilike(f"%{q}%") | Cliente.cedula.ilike(f"%{q}%")
+            filtro_busqueda(q, Cliente.nombre, Cliente.cedula)
         )
     if estado:
         query = query.filter(Prestamo.estado.ilike(f"%{estado}%"))

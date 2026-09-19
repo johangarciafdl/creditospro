@@ -182,6 +182,21 @@ window.attr = window.esc;
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="{{ estatico('js/pwa.js') }}"></script>
 <script nonce="{{ csp_nonce }}">
+// Formato de pesos colombianos para todo el navegador: 200.000, 2.000.000.
+//
+// fmtCOP se usaba en el resumen del prestamo pero no estaba definida en
+// ninguna parte, asi que lanzaba ReferenceError; como la llamada estaba
+// dentro de un try/catch vacio, el recuadro "Resumen del prestamo" aparecia
+// con las etiquetas y los valores en blanco, sin ningun error visible.
+window.fmtCOP = function (valor) {
+  const n = Math.round(Number(valor) || 0);
+  return '$' + n.toLocaleString('es-CO', { maximumFractionDigits: 0 });
+};
+// Alias historico usado por el modulo de Cobros.
+window.cop = window.fmtCOP;
+</script>
+
+<script nonce="{{ csp_nonce }}">
 // Bloqueo del fondo mientras haya un modal abierto.
 //
 // Los modales se abren y cierran con classList.add/remove('open') desde una

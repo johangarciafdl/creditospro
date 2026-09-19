@@ -128,15 +128,15 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
           <div style="background:var(--bg);border-radius:8px;padding:12px;">
             <div class="fs-11 text-2 mb-1">Total prestado</div>
-            <div class="num fw-600 fs-13">${{ "{:,.0f}".format(total_prestado.v) }}</div>
+            <div class="num fw-600 fs-13">{{ total_prestado.v | cop }}</div>
           </div>
           <div style="background:var(--bg);border-radius:8px;padding:12px;">
             <div class="fs-11 text-2 mb-1">Total pagado</div>
-            <div class="num fw-600 fs-13 text-green">${{ "{:,.0f}".format(total_pagado_t.v) }}</div>
+            <div class="num fw-600 fs-13 text-green">{{ total_pagado_t.v | cop }}</div>
           </div>
           <div style="background:#fef2f2;border-radius:8px;padding:12px;">
             <div class="fs-11 text-2 mb-1">Saldo pendiente</div>
-            <div class="num fw-600 fs-13 text-red">${{ "{:,.0f}".format(total_saldo.v) }}</div>
+            <div class="num fw-600 fs-13 text-red">{{ total_saldo.v | cop }}</div>
           </div>
           <div style="background:var(--bg);border-radius:8px;padding:12px;">
             <div class="fs-11 text-2 mb-1">Préstamos totales</div>
@@ -148,7 +148,7 @@
   </div>
 </div>
 
-<!-- HISTORIAL DE PRÃ‰STAMOS -->
+<!-- HISTORIAL DE PRÉSTAMOS -->
 {% for p in prestamos %}
 <div class="card mb-3">
   <div class="card-header">
@@ -167,10 +167,10 @@
   </div>
   <div class="card-body">
     <div class="stats-grid mb-3" style="gap:10px;">
-      <div><div class="fs-11 text-2">Capital</div><div class="num fw-600">${{ "{:,.0f}".format(p.capital) }}</div></div>
-      <div><div class="fs-11 text-2">Total a pagar</div><div class="num fw-600">${{ "{:,.0f}".format(p.total) }}</div></div>
-      <div><div class="fs-11 text-2">Pagado</div><div class="num fw-600 text-green">${{ "{:,.0f}".format(p.pagado) }}</div></div>
-      <div><div class="fs-11 text-2">Saldo</div><div class="num fw-600 text-red">${{ "{:,.0f}".format(p.saldo) }}</div></div>
+      <div><div class="fs-11 text-2">Capital</div><div class="num fw-600">{{ p.capital | cop }}</div></div>
+      <div><div class="fs-11 text-2">Total a pagar</div><div class="num fw-600">{{ p.total | cop }}</div></div>
+      <div><div class="fs-11 text-2">Pagado</div><div class="num fw-600 text-green">{{ p.pagado | cop }}</div></div>
+      <div><div class="fs-11 text-2">Saldo</div><div class="num fw-600 text-red">{{ p.saldo | cop }}</div></div>
     </div>
     <details>
       <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:500;">Ver plan de cuotas ({{ p.num_cuotas }})</summary>
@@ -182,8 +182,8 @@
             <tr>
               <td class="num text-2">{{ c.numero }}</td>
               <td class="fs-12">{{ c.fecha_vencimiento }}</td>
-              <td class="num">${{ "{:,.0f}".format(c.valor) }}</td>
-              <td class="num {% if c.valor_pagado > 0 %}text-green{% endif %}">${{ "{:,.0f}".format(c.valor_pagado) }}</td>
+              <td class="num">{{ c.valor | cop }}</td>
+              <td class="num {% if c.valor_pagado > 0 %}text-green{% endif %}">{{ c.valor_pagado | cop }}</td>
               <td>
                 {% if c.estado=='Pagada' %}<span class="badge badge-gold">Pagada</span>
                 {% elif c.estado=='Vencida' %}<span class="badge badge-red">Vencida</span>
@@ -287,12 +287,12 @@
 </div>
 </div>
 
-<!-- MODAL NUEVO PRÃ‰STAMO -->
+<!-- MODAL NUEVO PRÉSTAMO -->
 <div class="modal-overlay" id="modal-prestamo" onclick="if(event.target===this)this.classList.remove('open')">
 <div class="modal" onclick="event.stopPropagation()">
   <div class="modal-header">
-    <div class="modal-title">Nuevo Préstamo â€” {{ cliente.nombre }}</div>
-    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-prestamo').classList.remove('open')">âœ•</button>
+    <div class="modal-title">Nuevo Préstamo — {{ cliente.nombre }}</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-prestamo').classList.remove('open')">✕</button>
   </div>
   <div class="modal-body">
     <form id="form-prestamo">
@@ -328,7 +328,17 @@
         </div>
         <div class="form-group">
           <label>Cobrador</label>
-          <input type="text" name="cobrador" value="{{ zona.cobrador_nombre if zona else '' }}">
+          {# Lista real de usuarios, no texto libre: escribirlo a mano creaba
+             cobradores inexistentes por un error de tecleo. #}
+          <select name="cobrador">
+            <option value="">— Sin asignar —</option>
+            {% for c in cobradores %}
+            <option value="{{ c.nombre }}"
+              {% if zona and zona.cobrador_nombre == c.nombre %}selected{% endif %}>
+              {{ c.nombre }} ({{ c.rol }})
+            </option>
+            {% endfor %}
+          </select>
         </div>
         <div class="form-group full">
           <label>Observaciones</label>
@@ -456,11 +466,16 @@ async function calcularPrev() {
   try {
     const r = await window.fetch(`/prestamos/calcular?capital=${capital}&tasa=${tasa}&cuotas=${cuotas}`);
     const d = await leerRespuesta(r);
-    document.getElementById('preview-calc').style.display = 'block';
     document.getElementById('pv-int').textContent = fmtCOP(d.interes_total);
     document.getElementById('pv-tot').textContent = fmtCOP(d.total_pagar);
     document.getElementById('pv-cuo').textContent = fmtCOP(d.valor_cuota);
-  } catch(e) {}
+    // El recuadro se muestra DESPUES de llenarlo: si algo falla, no queda
+    // un resumen visible y vacio como si el prestamo no costara nada.
+    document.getElementById('preview-calc').style.display = 'block';
+  } catch(e) {
+    console.error('[Prestamo] No se pudo calcular el resumen:', e);
+    document.getElementById('preview-calc').style.display = 'none';
+  }
 }
 
 async function guardarPrestamo() {

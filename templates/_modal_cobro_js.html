@@ -152,7 +152,7 @@ async function guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat
   }
 }
 
-function cop(n){return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0,maximumFractionDigits:0}).format(n||0)}
+// cop()/fmtCOP viven en base.html: una sola definicion para toda la app.
 </script>
 <style>
 .metodo-btn{padding:8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);font-size:12px;font-weight:500;color:var(--t2);cursor:pointer;transition:all .15s}

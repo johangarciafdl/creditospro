@@ -9,8 +9,8 @@
   <div class="stat-card gold card-anim">
     <div class="stat-icon">💰</div>
     <div class="stat-label">Cobrado hoy</div>
-    <div class="stat-val gold">${{ "{:,.0f}".format(stats.cobrado_hoy) }}</div>
-    <div class="stat-sub">Mes: ${{ "{:,.0f}".format(stats.cobrado_mes) }}</div>
+    <div class="stat-val gold">{{ stats.cobrado_hoy | cop }}</div>
+    <div class="stat-sub">Mes: {{ stats.cobrado_mes | cop }}</div>
   </div>
   <div class="stat-card green card-anim">
     <div class="stat-icon">◉</div>
@@ -27,7 +27,7 @@
   <div class="stat-card blue card-anim">
     <div class="stat-icon">◈</div>
     <div class="stat-label">Capital en cartera</div>
-    <div class="stat-val" style="font-size:18px;">${{ "{:,.0f}".format(stats.capital_activo) }}</div>
+    <div class="stat-val" style="font-size:18px;">{{ stats.capital_activo | cop }}</div>
     <div class="stat-sub">Total préstamos activos</div>
   </div>
 </div>
@@ -60,7 +60,7 @@
           <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ c.cliente }}</div>
           <div style="font-size:11px;color:var(--t3);">{{ c.metodo }} · {{ c.fecha }}</div>
         </div>
-        <div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--green);white-space:nowrap;">+${{ "{:,.0f}".format(c.valor) }}</div>
+        <div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--green);white-space:nowrap;">+{{ c.valor | cop }}</div>
       </div>
       {% else %}
       <div class="empty" style="padding:30px;">
@@ -104,7 +104,7 @@
           </td>
           <td style="text-align:center;color:var(--t2);">{{ z.clientes }}</td>
           <td style="text-align:center;color:var(--t2);">{{ z.prestamos }}</td>
-          <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--green);">${{ "{:,.0f}".format(z.cobrado) }}</td>
+          <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--green);">{{ z.cobrado | cop }}</td>
           <td style="width:160px;">
             <div class="progress" style="height:4px;">
               <div class="progress-fill gold" style="width:{{ [[(z.cobrado/max_cobro*100)|int, 100]|min, 0]|max }}%;"></div>

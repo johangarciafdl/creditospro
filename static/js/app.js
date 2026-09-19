@@ -1,4 +1,4 @@
-if(!window.anime){window.anime=(opts)=>{const raw=opts.targets;const targets=typeof raw==='string'?document.querySelectorAll(raw):raw&&raw.length!==undefined?raw:[raw];Array.from(targets||[]).forEach(el=>{if(el&&el.style){el.style.opacity='1';el.style.transform='none';}});if(opts.complete)opts.complete();return {add(){return this}}};anime.stagger=()=>0;}
+if(!window.anime){window.anime=(opts)=>{const raw=opts.targets;const targets=typeof raw==='string'?document.querySelectorAll(raw):raw&&raw.length!==undefined?raw:[raw];Array.from(targets||[]).forEach(el=>{if(el&&el.style){el.style.opacity='1';el.style.removeProperty('transform');}});if(opts.complete)opts.complete();return {add(){return this}}};anime.stagger=()=>0;}
 // ── SIDEBAR ──
 function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('backdrop').classList.toggle('open')}
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('backdrop').classList.remove('open')}
@@ -153,7 +153,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     document.querySelectorAll('#nav .nav-item, .stat-card, .card-anim, #page-content').forEach(el=>{
       if(el.style.opacity==='0'||el.style.opacity===''){
         el.style.opacity='1';
-        el.style.transform='none';
+        el.style.removeProperty('transform');
       }
     });
   },1500);
@@ -161,22 +161,34 @@ document.addEventListener('DOMContentLoaded',()=>{
   // Intentar animación con Anime.js
   if(window.anime&&typeof anime==='function'){
     try{
-      anime({targets:'#nav .nav-item',translateX:[-12,0],opacity:[0,1],delay:anime.stagger(50,{start:100}),duration:400,easing:'easeOutQuart'});
-      anime({targets:'.stat-card,.card-anim',translateY:[16,0],opacity:[0,1],delay:anime.stagger(60,{start:200}),duration:450,easing:'easeOutQuart'});
-      anime({targets:'#page-content',opacity:[0,1],translateY:[8,0],duration:400,easing:'easeOutQuart',delay:150});
+      // Al terminar hay que QUITAR el transform que deja anime.js, no dejarlo
+      // en translateY(0). Un elemento con transform se convierte en el marco
+      // de referencia de todo position:fixed que tenga dentro, asi que el
+      // transform residual de #page-content hacia que los modales se anclaran
+      // al alto del contenido en vez de a la pantalla: en paginas largas
+      // (Cobros, Clientes) el modal se abria cientos de pixeles mas abajo del
+      // area visible y solo se veia el fondo oscurecido. En las tarjetas
+      // ademas pisaba el efecto de elevacion al pasar el raton, porque un
+      // estilo en linea gana a la hoja de estilos.
+      const limpiarTransform = (anim) => {
+        anim.animatables.forEach(a => a.target.style.removeProperty('transform'));
+      };
+      anime({targets:'#nav .nav-item',translateX:[-12,0],opacity:[0,1],delay:anime.stagger(50,{start:100}),duration:400,easing:'easeOutQuart',complete:limpiarTransform});
+      anime({targets:'.stat-card,.card-anim',translateY:[16,0],opacity:[0,1],delay:anime.stagger(60,{start:200}),duration:450,easing:'easeOutQuart',complete:limpiarTransform});
+      anime({targets:'#page-content',opacity:[0,1],translateY:[8,0],duration:400,easing:'easeOutQuart',delay:150,complete:limpiarTransform});
     }catch(e){
       console.warn('[CreditosPro] Anime.js error:',e);
       // Fallback inmediato
       document.querySelectorAll('#nav .nav-item, .stat-card, .card-anim, #page-content').forEach(el=>{
         el.style.opacity='1';
-        el.style.transform='none';
+        el.style.removeProperty('transform');
       });
     }
   }else{
     // Anime.js no cargó, mostrar todo inmediatamente
     document.querySelectorAll('#nav .nav-item, .stat-card, .card-anim, #page-content').forEach(el=>{
       el.style.opacity='1';
-      el.style.transform='none';
+      el.style.removeProperty('transform');
     });
   }
 });

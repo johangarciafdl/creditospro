@@ -20,12 +20,12 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
-from app.database import get_db, Cliente, Prestamo, Zona
+from app.database import get_db, Cliente, Prestamo, Usuario, Zona
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
     validar_cedula, validar_nombre, validar_telefono, validar_whatsapp, limpiar_texto,
-    sanitizar_imagen_subida, sin_html
+    sanitizar_imagen_subida, sin_html, filtro_busqueda,
 )
 
 BASE_DIR = Path(__file__).parent.parent.parent
@@ -110,10 +110,11 @@ async def buscar_ajax(
         query = query.filter(Cliente.zona_id.in_(allowed_zones or [-1]))
 
     if q:
-        # ilike usa parametros — SQLAlchemy previene SQL injection
-        query = query.filter(
-            Cliente.nombre.ilike(f"%{q}%") | Cliente.cedula.ilike(f"%{q}%")
-        )
+        # Busqueda por palabras: ver filtro_busqueda(). ilike usa
+        # parametros -- SQLAlchemy previene SQL injection.
+        condicion = filtro_busqueda(q, Cliente.nombre, Cliente.cedula)
+        if condicion is not None:
+            query = query.filter(condicion)
     if zona_id:
         query = query.filter(Cliente.zona_id == zona_id)
 
@@ -488,8 +489,23 @@ async def detalle_cliente(
             } for c in sorted(p.cuotas, key=lambda x: x.numero)],
         })
 
+    # El cobrador del prestamo se escribia a mano en un campo de texto: un
+    # error de tecleo creaba un "cobrador" que no existe y los informes por
+    # cobrador dejaban de cuadrar. Se envia la lista real para elegir.
+    cobradores = (
+        db.query(Usuario)
+        .filter(
+            Usuario.empresa_id == user.empresa_id,
+            Usuario.activo == True,
+            Usuario.rol.in_(("cobrador", "supervisor", "admin")),
+        )
+        .order_by(Usuario.nombre)
+        .all()
+    )
+
     return templates.TemplateResponse(request, "cliente_detalle.html", {
         "page": "clientes", "current_user": user,
         "cliente": cliente, "zona": zona, "zonas": zonas,
         "prestamos": prestamos_data,
+        "cobradores": cobradores,
     })

@@ -22,3 +22,22 @@ templates = Jinja2Templates(directory="templates", context_processors=[_csp_cont
 # habria que escribir la ruta con hash a mano en cada plantilla y actualizarla
 # en cada despliegue.
 templates.env.globals["estatico"] = estatico
+
+
+def cop(valor) -> str:
+    """Formato de pesos colombianos: 200.000, 2.000.000 -- punto de millar.
+
+    Las plantillas usaban "{:,.0f}", que es el formato de Estados Unidos y
+    escribe 2,000,000. En Colombia el punto separa los miles y la coma los
+    decimales, asi que una cifra como 2,000,000 se lee mal. Los pesos no
+    manejan centavos en la practica, por eso se redondea al peso.
+    """
+    try:
+        entero = int(round(float(valor or 0)))
+    except (TypeError, ValueError):
+        return "$0"
+    return "$" + f"{entero:,}".replace(",", ".")
+
+
+templates.env.filters["cop"] = cop
+templates.env.globals["cop"] = cop
