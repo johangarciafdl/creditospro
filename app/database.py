@@ -164,6 +164,31 @@ if app_engine is not engine:
     event.listen(app_engine, "after_cursor_execute", _acumular_consulta)
 
 
+# ── Fecha del negocio, no la del servidor ────────────────────────────────────
+# El contenedor corre en UTC y los usuarios estan en Colombia (UTC-5): a las
+# 7 de la tarde hora local el servidor ya cree que es el dia siguiente. Para
+# "cobros de hoy" eso descuadra un informe; para la ruta del dia cambiaria la
+# zona habilitada al cobrador en plena jornada. TZ_NEGOCIO permite ajustarlo
+# si algun dia hay un cliente en otro huso.
+TZ_NEGOCIO = os.getenv("TZ_NEGOCIO", "America/Bogota")
+
+
+def hoy_local() -> datetime.date:
+    """La fecha de hoy donde trabaja el usuario, no donde corre el servidor."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.datetime.now(ZoneInfo(TZ_NEGOCIO)).date()
+    except Exception:  # zona horaria desconocida o sin tzdata: no romper
+        logger.warning("TZ_NEGOCIO=%s no disponible; se usa la hora del servidor", TZ_NEGOCIO)
+        return datetime.date.today()
+
+
+def dia_semana_local() -> int:
+    """0=lunes .. 6=domingo, en la hora local del negocio."""
+    return hoy_local().weekday()
+
+
 def set_tenant_context(db: Session, empresa_id: int) -> None:
     """Fija el tenant para RLS usando solo un ID validado por autenticacion."""
     if not isinstance(empresa_id, int) or empresa_id <= 0:
@@ -258,6 +283,33 @@ class Usuario(Base):
     empresa = relationship("Empresa", back_populates="usuarios")
     zonas_asignadas = relationship("Zona", secondary=usuario_zonas, back_populates="usuarios_asignados")
     __table_args__ = (UniqueConstraint("empresa_id", "username", name="uq_user_empresa"),)
+
+
+class RutaCobro(Base):
+    """Que zonas puede cobrar un cobrador en cada dia de la semana.
+
+    Sin filas para un usuario, ese usuario cobra en todas las zonas que tenga
+    asignadas (comportamiento de siempre). En cuanto el administrador le
+    configura una ruta, pasa a regir la ruta: cada dia solo se le habilitan
+    las zonas de ese dia. El limite de 3 zonas por dia se valida en la
+    aplicacion, donde se puede devolver un mensaje entendible.
+    """
+    __tablename__ = "rutas_cobro"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="CASCADE"), nullable=False, index=True)
+    # 0=lunes .. 6=domingo (coincide con date.weekday() de Python)
+    dia_semana = Column(Integer, nullable=False)
+    creado = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "dia_semana", "zona_id", name="uq_ruta_usuario_dia_zona"),
+        CheckConstraint("dia_semana >= 0 AND dia_semana <= 6", name="ck_ruta_dia_semana"),
+        # La consulta que se hace en CADA peticion de un cobrador es
+        # "sus zonas de hoy": indice compuesto con usuario primero.
+        Index("ix_rutas_cobro_usuario_dia", "usuario_id", "dia_semana"),
+    )
 
 
 class Zona(Base):

@@ -32,6 +32,9 @@
           <td>{% if u.activo %}<span class="badge badge-green">Activo</span>{% else %}<span class="badge badge-gray">Inactivo</span>{% endif %}</td>
           <td>
             <button class="btn btn-ghost btn-xs" data-uid="{{ u.id }}" data-username="{{ u.username }}" data-nombre="{{ u.nombre }}" data-rol="{{ u.rol }}" data-zonas="{% if u.zonas_asignadas %}{% for z in u.zonas_asignadas %}{{ z.id }}{% if not loop.last %},{% endif %}{% endfor %}{% elif u.zona_id %}{{ u.zona_id }}{% endif %}" data-activo="{{ 'true' if u.activo else 'false' }}" onclick="editarUsuarioBtn(this)">Editar</button>
+            {% if u.rol in ('cobrador', 'supervisor') %}
+            <button class="btn btn-ghost btn-xs" data-uid="{{ u.id }}" data-nombre="{{ u.nombre }}" onclick="abrirRuta(this)" title="Que zonas cobra cada dia">Ruta</button>
+            {% endif %}
             {% if u.id != current_user.id %}
             <button class="btn btn-danger btn-xs" data-uid="{{ u.id }}" data-nombre="{{ u.nombre }}" onclick="eliminarUsuarioBtn(this)">✕</button>
             {% endif %}
@@ -206,6 +209,135 @@ async function eliminarUsuario(id, nombre){
   const d = await r.json();
   if(d.ok) location.reload();
 }
+
+// ── RUTA SEMANAL DE COBRO ───────────────────────────────────────────────────
+let _rutaUid = null, _rutaMax = 3;
+
+async function abrirRuta(btn) {
+  _rutaUid = parseInt(btn.dataset.uid, 10);
+  document.getElementById('ruta-usuario').textContent = btn.dataset.nombre || '';
+  const cont = document.getElementById('ruta-dias');
+  cont.innerHTML = '<div class="fs-12 text-3">Cargando...</div>';
+  document.getElementById('modal-ruta').classList.add('open');
+
+  try {
+    const r = await window.fetch(`/auth/usuarios/${_rutaUid}/ruta`);
+    const d = await leerRespuesta(r);
+    if (!d.ok) { toast(d.error || 'No se pudo cargar la ruta', 'error'); return; }
+
+    _rutaMax = d.max_por_dia;
+    document.getElementById('ruta-max').textContent = d.max_por_dia;
+    const sinZonas = !d.zonas.length;
+    document.getElementById('ruta-sin-zonas').style.display = sinZonas ? 'block' : 'none';
+    document.getElementById('btn-ruta').disabled = sinZonas;
+    if (sinZonas) { cont.innerHTML = ''; return; }
+
+    cont.innerHTML = d.dias.map((nombreDia, dia) => {
+      const marcadas = d.ruta[String(dia)] || [];
+      const casillas = d.zonas.map(z => `
+        <label class="ruta-zona">
+          <input type="checkbox" data-dia="${dia}" value="${z.id}"
+                 ${marcadas.includes(z.id) ? 'checked' : ''} onchange="validarDia(${dia})">
+          <span>${esc(z.nombre)}</span>
+        </label>`).join('');
+      return `
+        <div class="ruta-dia">
+          <div class="ruta-dia-nombre">${esc(nombreDia)}
+            <span class="fs-11 text-3" id="cuenta-${dia}"></span>
+          </div>
+          <div class="ruta-zonas">${casillas}</div>
+        </div>`;
+    }).join('');
+    for (let dia = 0; dia < 7; dia++) validarDia(dia);
+  } catch (e) {
+    console.error('[Ruta] Error cargando:', e);
+    toast('No hay conexion. Intenta de nuevo.', 'error');
+  }
+}
+
+// El limite se aplica tambien en el servidor; esto es para que el admin lo
+// vea al instante en vez de descubrirlo al guardar.
+function validarDia(dia) {
+  const casillas = [...document.querySelectorAll(`#ruta-dias input[data-dia="${dia}"]`)];
+  const marcadas = casillas.filter(c => c.checked);
+  casillas.forEach(c => { c.disabled = !c.checked && marcadas.length >= _rutaMax; });
+  const cuenta = document.getElementById('cuenta-' + dia);
+  if (cuenta) {
+    cuenta.textContent = marcadas.length ? `${marcadas.length}/${_rutaMax}` : 'libre';
+    cuenta.style.color = marcadas.length >= _rutaMax ? 'var(--amber)' : 'var(--t3)';
+  }
+}
+
+async function guardarRuta() {
+  if (!_rutaUid) return;
+  const ruta = {};
+  for (let dia = 0; dia < 7; dia++) {
+    const ids = [...document.querySelectorAll(`#ruta-dias input[data-dia="${dia}"]:checked`)]
+      .map(c => parseInt(c.value, 10));
+    if (ids.length) ruta[String(dia)] = ids;
+  }
+  const fd = new FormData();
+  fd.append('ruta', JSON.stringify(ruta));
+
+  await conBoton(document.getElementById('btn-ruta'), 'Guardando...', async () => {
+    try {
+      const r = await window.fetch(`/auth/usuarios/${_rutaUid}/ruta`, { method: 'POST', body: fd });
+      const d = await leerRespuesta(r);
+      if (d.ok) {
+        document.getElementById('modal-ruta').classList.remove('open');
+        toast(d.mensaje, 'success');
+      } else {
+        toast(d.error || 'No se pudo guardar la ruta', 'error');
+      }
+    } catch (e) {
+      console.error('[Ruta] Error guardando:', e);
+      toast('No hay conexion. Intenta de nuevo.', 'error');
+    }
+  });
+}
 </script>
+
+<!-- MODAL RUTA SEMANAL -->
+<div class="modal-overlay" id="modal-ruta" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal modal-lg" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div>
+      <div class="modal-title">Ruta semanal de cobro</div>
+      <div class="fs-12 text-3" id="ruta-usuario">—</div>
+    </div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-ruta').classList.remove('open')">&#x2715;</button>
+  </div>
+  <div class="modal-body">
+    <p class="fs-12 text-2" style="margin-bottom:12px;">
+      Marca que zonas cobra cada dia. Maximo <b id="ruta-max">3</b> por dia.
+      Si no marcas ningun dia, el cobrador vuelve a ver todas sus zonas
+      asignadas sin restriccion de dia.
+    </p>
+    <div id="ruta-dias"></div>
+    <div id="ruta-sin-zonas" class="fs-12 text-2" style="display:none;padding:14px 0;">
+      Este usuario no tiene zonas asignadas todavia. Asignale zonas con el
+      boton Editar antes de armarle la ruta.
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-ruta').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-primary" id="btn-ruta" onclick="guardarRuta()">Guardar ruta</button>
+  </div>
+</div>
+</div>
+
 {% endblock %}
 
+
+<style>
+.ruta-dia{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border)}
+.ruta-dia:last-child{border-bottom:none}
+.ruta-dia-nombre{flex:0 0 110px;font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:2px}
+.ruta-zonas{flex:1;display:flex;flex-wrap:wrap;gap:6px 14px;min-width:0}
+.ruta-zona{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t2);cursor:pointer}
+.ruta-zona input:disabled + span{opacity:.4}
+@media(max-width:600px){
+  .ruta-dia{flex-direction:column;gap:4px}
+  .ruta-dia-nombre{flex:none;flex-direction:row;gap:8px;align-items:baseline}
+}
+</style>

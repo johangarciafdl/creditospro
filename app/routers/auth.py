@@ -9,6 +9,7 @@ Auth v2.1 - BUG FIX:
 """
 import os
 import datetime
+import json
 import logging
 from typing import Optional, List
 
@@ -17,7 +18,10 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from app.templates import templates
 from sqlalchemy.orm import Session
 
-from app.database import get_db, get_db_system, Usuario, Zona, Empresa, ConfiguracionApp, SessionLocal, set_tenant_context
+from app.database import (
+    get_db, get_db_system, Usuario, Zona, Empresa, ConfiguracionApp, RutaCobro,
+    SessionLocal, set_tenant_context,
+)
 from app.repositories.usuario_repository import UsuarioRepository
 
 logger = logging.getLogger(__name__)
@@ -47,6 +51,9 @@ from app.utils.rate_limit import is_rate_limited
 from app.utils.roles import normalize_role
 from app.utils.zone_permissions import validate_user_zones
 from app.utils.plan_limits import limite_cobradores, tiene_funcion
+from app.utils.zone_permissions import (
+    DIAS_SEMANA, MAX_ZONAS_POR_DIA, ruta_semanal, zonas_asignadas_ids,
+)
 from app.utils.validators import validar_nombre, validar_username
 
 router = APIRouter()
@@ -682,6 +689,130 @@ async def stats_publicos(request: Request, db: Session = Depends(get_db)):
 
 
 # ── CAMBIO DE CONTRASEÑA PROPIO ────────────────────────────────────────────────
+
+# ── RUTA SEMANAL DE COBRO ─────────────────────────────────────────────────────
+
+@router.get("/usuarios/{user_id}/ruta")
+async def ver_ruta(request: Request, user_id: int, db: Session = Depends(get_db)):
+    """Que zonas tiene asignadas este cobrador y cuales le tocan cada dia."""
+    actual = get_current_user(request, db)
+    if not actual:
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    if actual.rol not in ("admin", "superadmin"):
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    objetivo = db.query(Usuario).filter(
+        Usuario.id == user_id, Usuario.empresa_id == actual.empresa_id
+    ).first()
+    if not objetivo:
+        return JSONResponse({"error": "Usuario no encontrado"}, status_code=404)
+
+    ids = zonas_asignadas_ids(objetivo)
+    zonas = db.query(Zona).filter(Zona.id.in_(ids)).all() if ids else []
+    ruta = ruta_semanal(db, objetivo.id)
+
+    return JSONResponse({
+        "ok": True,
+        "usuario": objetivo.nombre,
+        "dias": list(DIAS_SEMANA),
+        "max_por_dia": MAX_ZONAS_POR_DIA,
+        "zonas": [{"id": z.id, "nombre": z.nombre} for z in zonas],
+        "ruta": {str(d): ruta.get(d, []) for d in range(7)},
+        "configurada": bool(ruta),
+    })
+
+
+@router.post("/usuarios/{user_id}/ruta")
+async def guardar_ruta(
+    request: Request,
+    user_id: int,
+    ruta: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Guarda la ruta semanal completa (se reemplaza, no se acumula).
+
+    `ruta` llega como JSON {"0": [zona_id, ...], ... "6": [...]}. Se manda
+    entera en vez de dia por dia para que no pueda quedar a medias si falla
+    una peticion intermedia.
+    """
+    actual = get_current_user(request, db)
+    if not actual:
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    if actual.rol not in ("admin", "superadmin"):
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    objetivo = db.query(Usuario).filter(
+        Usuario.id == user_id, Usuario.empresa_id == actual.empresa_id
+    ).first()
+    if not objetivo:
+        return JSONResponse({"error": "Usuario no encontrado"}, status_code=404)
+    if objetivo.rol in ("admin", "superadmin"):
+        return JSONResponse(
+            {"error": "Un administrador ve todas las zonas; la ruta es para cobradores y supervisores"},
+            status_code=400,
+        )
+
+    try:
+        datos = json.loads(ruta or "{}")
+        if not isinstance(datos, dict):
+            raise ValueError
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "Ruta invalida"}, status_code=400)
+
+    permitidas = set(zonas_asignadas_ids(objetivo))
+    limpio: dict[int, list[int]] = {}
+    for clave, zonas in datos.items():
+        try:
+            dia = int(clave)
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "Dia invalido en la ruta"}, status_code=400)
+        if not 0 <= dia <= 6:
+            return JSONResponse({"error": "Dia invalido en la ruta"}, status_code=400)
+        if not isinstance(zonas, list):
+            return JSONResponse({"error": "Ruta invalida"}, status_code=400)
+
+        ids: list[int] = []
+        for z in zonas:
+            try:
+                zid = int(z)
+            except (TypeError, ValueError):
+                return JSONResponse({"error": "Zona invalida en la ruta"}, status_code=400)
+            if zid not in permitidas:
+                return JSONResponse(
+                    {"error": f"La zona {zid} no esta asignada a {objetivo.nombre}"},
+                    status_code=400,
+                )
+            if zid not in ids:
+                ids.append(zid)
+
+        if len(ids) > MAX_ZONAS_POR_DIA:
+            return JSONResponse(
+                {"error": f"{DIAS_SEMANA[dia]}: maximo {MAX_ZONAS_POR_DIA} zonas por dia"},
+                status_code=400,
+            )
+        if ids:
+            limpio[dia] = ids
+
+    db.query(RutaCobro).filter(RutaCobro.usuario_id == objetivo.id).delete(synchronize_session=False)
+    for dia, ids in limpio.items():
+        for zid in ids:
+            db.add(RutaCobro(
+                empresa_id=objetivo.empresa_id,
+                usuario_id=objetivo.id,
+                zona_id=zid,
+                dia_semana=dia,
+            ))
+    db.commit()
+
+    total = sum(len(v) for v in limpio.values())
+    log_action(db, actual, "ruta_update", "users",
+               f"usuario_id={objetivo.id} dias={len(limpio)} zonas={total}")
+    return JSONResponse({
+        "ok": True,
+        "mensaje": ("Ruta guardada: " + str(total) + " asignaciones en " + str(len(limpio)) + " dias")
+                   if total else "Ruta borrada: el cobrador vuelve a ver todas sus zonas",
+    })
+
 
 @router.post("/cambiar-password")
 async def cambiar_password(

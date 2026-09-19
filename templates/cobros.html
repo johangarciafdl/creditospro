@@ -27,6 +27,21 @@
   <button onclick="setTab('historial')" id="tab-historial" class="tab-btn">Historial del dia</button>
 </div>
 
+{% if ruta_activa %}
+<div class="card mb-3" style="border-left:3px solid var(--gold);">
+  <div class="card-body fs-12" style="padding:10px 16px;">
+    <b>{{ dia_hoy }}:</b>
+    {% if zonas %}
+      hoy te corresponde
+      {% for z in zonas %}<b>{{ z.nombre }}</b>{% if not loop.last %}, {% endif %}{% endfor %}.
+      Las demas zonas de tu ruta se habilitan el dia que les toca.
+    {% else %}
+      hoy no tienes ninguna zona asignada en tu ruta. Consulta con tu administrador.
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 <div class="card mb-3">
   <div class="card-body" style="padding:10px 16px;">
     <div class="flex gap-2 flex-wrap" style="align-items:flex-end;">

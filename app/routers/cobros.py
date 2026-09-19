@@ -9,14 +9,20 @@ import logging
 import uuid
 from pathlib import Path
 
-from app.database import get_db, Cobro, Cuota, Prestamo, Cliente, Zona, IS_SQLITE
+from app.database import (
+    get_db, Cobro, Cuota, Prestamo, Cliente, Zona, IS_SQLITE,
+    dia_semana_local, hoy_local,
+)
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import get_estado_prestamo
 from app.utils.money import money
 from app.utils.validators import (
     sanitizar_imagen_subida, validar_metodo_pago, sin_html, limpiar_texto,
 )
-from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
+from app.utils.zone_permissions import (
+    DIAS_SEMANA, get_allowed_zone_ids, require_zone_access, ruta_semanal,
+    visible_zonas_query,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -74,7 +80,10 @@ async def listar_cobros(request: Request, db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse("/auth/login", 302)
     eid = user.empresa_id
-    hoy = datetime.date.today()
+    # Fecha del negocio, no la del servidor: en UTC, a partir de las 7pm hora
+    # de Colombia "hoy" ya seria manana y los cobros de la tarde saldrian del
+    # resumen del dia.
+    hoy = hoy_local()
     allowed_zones = get_allowed_zone_ids(db, user)
     zonas = visible_zonas_query(db, user).all()
     total_q = db.query(func.sum(Cobro.valor_cobrado)).filter(Cobro.empresa_id==eid, Cobro.fecha==hoy)
@@ -87,11 +96,17 @@ async def listar_cobros(request: Request, db: Session = Depends(get_db)):
     total_hoy = total_q.scalar() or 0
     num_hoy = num_q.scalar() or 0
     vencidas = venc_q.scalar() or 0
+    # Si al cobrador le armaron una ruta semanal, las zonas que ve hoy no son
+    # todas las suyas. Hay que decirselo: si no, parece que le desaparecieron.
+    ruta = ruta_semanal(db, user.id) if user.rol not in ("admin", "superadmin") else {}
+
     return templates.TemplateResponse(request, "cobros.html", {
         "page": "cobros", "current_user": user,
         "cuotas_vencidas_nav": vencidas,
         "zonas": zonas, "total_hoy": total_hoy,
         "num_hoy": num_hoy, "vencidas": vencidas,
+        "ruta_activa": bool(ruta),
+        "dia_hoy": DIAS_SEMANA[dia_semana_local()],
     })
 
 @router.get("/buscar-ajax")
