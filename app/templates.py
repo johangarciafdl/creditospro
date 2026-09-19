@@ -9,6 +9,7 @@ tenga que pasarlo explicitamente en el contexto.
 from fastapi.templating import Jinja2Templates
 
 from app.utils.estaticos import estatico
+from app.utils.money import cop
 
 
 def _csp_context(request):
@@ -24,20 +25,11 @@ templates = Jinja2Templates(directory="templates", context_processors=[_csp_cont
 templates.env.globals["estatico"] = estatico
 
 
-def cop(valor) -> str:
-    """Formato de pesos colombianos: 200.000, 2.000.000 -- punto de millar.
-
-    Las plantillas usaban "{:,.0f}", que es el formato de Estados Unidos y
-    escribe 2,000,000. En Colombia el punto separa los miles y la coma los
-    decimales, asi que una cifra como 2,000,000 se lee mal. Los pesos no
-    manejan centavos en la practica, por eso se redondea al peso.
-    """
-    try:
-        entero = int(round(float(valor or 0)))
-    except (TypeError, ValueError):
-        return "$0"
-    return "$" + f"{entero:,}".replace(",", ".")
-
-
+# Un solo formateador de pesos en todo el proyecto. Habia dos: este, que
+# redondeaba al peso entero, y el de app/utils/money.py, que no. Como las
+# plantillas usaban uno y los mensajes de las respuestas el otro, la misma
+# cuota de 0,10 salia como "$0" en la tabla de cuotas y como "$0,10" en el
+# formulario de cobro. Dos implementaciones del mismo concepto siempre
+# terminan separandose; la de money.py es la unica.
 templates.env.filters["cop"] = cop
 templates.env.globals["cop"] = cop
