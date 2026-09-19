@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 from sqlalchemy import case, func
-from app.database import Cobro, Prestamo, Cliente, Cuota, Zona
+from app.database import Cobro, Prestamo, Cliente, Cuota, Zona, hoy_local
 
 
 # Paleta de colores
@@ -90,7 +90,7 @@ def encabezado_reporte(ws, titulo: str, subtitulo: str, empresa: str):
 
 def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = None, fecha: datetime.date = None, zona_ids: list[int] | None = None) -> bytes:
     if fecha is None:
-        fecha = datetime.date.today()
+        fecha = hoy_local()
 
     wb = Workbook()
     ws = wb.active

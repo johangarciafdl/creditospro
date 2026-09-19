@@ -5,7 +5,7 @@ import datetime
 import time
 import logging
 
-from app.database import SessionLocal, Cuota, Empresa, IS_SQLITE
+from app.database import SessionLocal, Cuota, Empresa, IS_SQLITE, hoy_local, inicio_dia_negocio
 from sqlalchemy import and_, text
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ def actualizar_estados_cuotas():
     db = SessionLocal()
 
     def _run():
-        hoy = datetime.date.today()
+        hoy = hoy_local()
         cuotas = db.query(Cuota).filter(
             and_(Cuota.estado == "Pendiente", Cuota.fecha_vencimiento < hoy)
         ).all()
@@ -71,7 +71,7 @@ def _ya_se_enviaron_hoy(db) -> bool:
     """
     from app.database import AuditLog
 
-    inicio = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
+    inicio = inicio_dia_negocio()
     return db.query(AuditLog.id).filter(
         AuditLog.action == ACCION_RECORDATORIOS,
         AuditLog.created_at >= inicio,

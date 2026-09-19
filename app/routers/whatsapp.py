@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from app.templates import templates
 from sqlalchemy.orm import Session
 
-from app.database import get_db, Empresa, NotificacionWP, ConfiguracionApp, Cliente, Cuota, Prestamo
+from app.database import get_db, Empresa, NotificacionWP, ConfiguracionApp, Cliente, Cuota, Prestamo, hoy_local
 from app.routers.auth import get_current_user
 from app.services.whatsapp_service import ejecutar_recordatorios, enviar_notificacion, get_config_by_empresa
 from app.utils.plan_limits import tiene_funcion
@@ -28,7 +28,7 @@ async def panel_whatsapp(request: Request, db: Session = Depends(get_db)):
     eid = user.empresa_id
     allowed_zones = get_allowed_zone_ids(db, user)
     config = get_config_by_empresa(db, eid)
-    hoy = datetime.date.today()
+    hoy = hoy_local()
     limite = hoy + datetime.timedelta(days=config.dias_aviso_vencimiento)
 
     notifs_q = db.query(NotificacionWP).filter(

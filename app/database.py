@@ -189,6 +189,26 @@ def dia_semana_local() -> int:
     return hoy_local().weekday()
 
 
+def inicio_dia_negocio() -> datetime.datetime:
+    """Medianoche del dia de negocio, en la hora del servidor.
+
+    Las marcas de tiempo (AuditLog.created_at, Cobro.hora) se guardan con
+    datetime.now(), es decir en la hora del servidor. Para preguntar "¿paso
+    esto hoy?" hay que comparar contra la medianoche local del negocio
+    traducida a esa misma escala; usar la medianoche del servidor corre el
+    corte del dia cinco horas y parte la jornada en dos.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        medianoche = datetime.datetime.combine(
+            hoy_local(), datetime.time.min, tzinfo=ZoneInfo(TZ_NEGOCIO)
+        )
+        return medianoche.astimezone().replace(tzinfo=None)
+    except Exception:
+        return datetime.datetime.combine(datetime.date.today(), datetime.time.min)
+
+
 def set_tenant_context(db: Session, empresa_id: int) -> None:
     """Fija el tenant para RLS usando solo un ID validado por autenticacion."""
     if not isinstance(empresa_id, int) or empresa_id <= 0:

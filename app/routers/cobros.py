@@ -129,7 +129,7 @@ async def buscar_cobros(request: Request, q: str="", zona_id: int=None, fecha: s
     allowed_zones = get_allowed_zone_ids(db, user)
     if allowed_zones is not None and zona_id and zona_id not in allowed_zones:
         return JSONResponse({"cobros": [], "total": 0})
-    hoy = datetime.date.today()
+    hoy = hoy_local()
     try:
         fecha_f = datetime.date.fromisoformat(fecha) if fecha else hoy
     except ValueError:
@@ -166,7 +166,7 @@ async def pendientes(request: Request, zona_id: int=None, q: str="", db: Session
     allowed_zones = get_allowed_zone_ids(db, user)
     if allowed_zones is not None and zona_id and zona_id not in allowed_zones:
         return JSONResponse({"pendientes": []})
-    hoy = datetime.date.today()
+    hoy = hoy_local()
 
     query = (db.query(Cuota, Prestamo, Cliente)
         .join(Prestamo, Cuota.prestamo_id==Prestamo.id)
@@ -378,10 +378,21 @@ async def registrar_cobro(
                          cuota_id, user.username)
         return JSONResponse({"error": "No se pudo registrar el cobro"}, status_code=500)
 
+    # Si el pago se repartio entre varias cuotas hay que decirlo: el cobrador
+    # entrego un importe y tiene que poder comprobar donde quedo aplicado.
+    mensaje = f"Cobro de {cop(valor_cobrado_dec)} registrado"
+    if len(reparto) > 1:
+        partes = ", ".join(f"cuota {c.numero}: {cop(v)}" for c, v in reparto)
+        mensaje += f" — se repartio en {partes}"
+    if fecha_pago != hoy:
+        mensaje += f" — con fecha {fecha_pago.strftime('%d/%m/%Y')}"
+
     return JSONResponse({
         "ok": True,
-        "mensaje": f"Cobro de ${float(valor_cobrado_dec):,.0f} registrado",
+        "mensaje": mensaje,
         "cuota_estado": cuota.estado,
+        "fecha": fecha_pago.isoformat(),
+        "reparto": [{"cuota": c.numero, "valor": float(v)} for c, v in reparto],
     })
 
 
@@ -454,7 +465,7 @@ async def registrar_cobro_cliente_rapido(
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
 
-    hoy = datetime.date.today()
+    hoy = hoy_local()
     base_query = (
         db.query(Cuota, Prestamo, Cliente)
         .join(Prestamo, Cuota.prestamo_id == Prestamo.id)
@@ -518,25 +529,11 @@ async def registrar_cobro_cliente_rapido(
                          cliente_id, user.username)
         return JSONResponse({"error": "No se pudo registrar el cobro"}, status_code=500)
 
-    # Si el pago se repartio entre varias cuotas hay que decirlo: el cobrador
-    # entrego un importe y tiene que poder comprobar donde quedo aplicado.
-    detalle = [
-        {"cuota": c.numero, "valor": float(v)} for c, v in reparto
-    ]
-    mensaje = f"Cobro registrado a {cliente.nombre}: {cop(valor_cobrado_dec)}"
-    if len(reparto) > 1:
-        partes = ", ".join(f"cuota {c.numero}: {cop(v)}" for c, v in reparto)
-        mensaje += f" (se repartio en {partes})"
-    if fecha_pago != hoy:
-        mensaje += f" con fecha {fecha_pago.strftime('%d/%m/%Y')}"
-
     return JSONResponse({
         "ok": True,
-        "mensaje": mensaje,
+        "mensaje": f"Cobro registrado a {cliente.nombre}: {cop(valor_cobrado)}",
         "cuota_id": cuota.id,
         "valor_cobrado": float(valor_cobrado),
-        "fecha": fecha_pago.isoformat(),
-        "reparto": detalle,
     })
 
 

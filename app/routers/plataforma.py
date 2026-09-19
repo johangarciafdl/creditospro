@@ -16,6 +16,7 @@ from sqlalchemy import func
 
 from app.database import (
     get_db_system, AuditLog, Cobro, Empresa, SesionJWT, Usuario, ConfiguracionApp, Zona,
+    hoy_local,
 )
 from app.routers.auth import get_current_user, SESSION_COOKIE, IS_PRODUCTION
 from app.templates import templates
@@ -369,7 +370,7 @@ async def panel_monitoreo(request: Request, db: Session = Depends(get_db_system)
         destino = "/plataforma/login" if not get_current_user(request, db) else "/dashboard"
         return RedirectResponse(url=destino, status_code=302)
 
-    hoy = datetime.date.today()
+    hoy = hoy_local()
     hace_24h = datetime.datetime.now() - datetime.timedelta(hours=24)
 
     # Actividad real del negocio, leida de la base de datos: estas cifras si

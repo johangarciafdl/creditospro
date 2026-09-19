@@ -17,7 +17,7 @@ from app.templates import templates
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
-from app.database import get_db, Prestamo, Cliente, Cuota, Zona
+from app.database import get_db, Prestamo, Cliente, Cuota, Zona, hoy_local
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import calcular_cuotas
 from app.utils.money import money
@@ -164,7 +164,7 @@ async def calcular_preview(
         plazo = validar_entero_positivo(plazo, "plazo", minimo=1, maximo=365)
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
-    calc = calcular_cuotas(capital, tasa, cuotas, datetime.date.today(), plazo)
+    calc = calcular_cuotas(capital, tasa, cuotas, hoy_local(), plazo)
     return {
         "interes_total": float(calc.get("interes_total") or 0),
         "total_pagar": float(calc.get("total_pagar") or 0),

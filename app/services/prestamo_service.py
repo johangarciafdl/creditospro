@@ -2,7 +2,7 @@
 import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List
-from app.database import Prestamo, Cuota
+from app.database import Prestamo, Cuota, hoy_local
 
 
 def _money(value) -> Decimal:
@@ -44,7 +44,7 @@ def calcular_cuotas(capital: float, tasa: float, num_cuotas: int,
 
 
 def get_estado_prestamo(prestamo: Prestamo) -> str:
-    hoy = datetime.date.today()
+    hoy = hoy_local()
     if len([c for c in prestamo.cuotas if c.estado == "Vencida"]) >= 3:
         return "Mora"
     if any(c.fecha_vencimiento < hoy and c.estado == "Pendiente" for c in prestamo.cuotas):
@@ -62,7 +62,7 @@ def get_saldo_prestamo(prestamo: Prestamo) -> float:
 def get_cuotas_proximas_vencer(db, empresa_id: int, dias: int = 2) -> List[dict]:
     """FIX: filtra por empresa_id"""
     from app.database import Cliente
-    hoy = datetime.date.today()
+    hoy = hoy_local()
     limite = hoy + datetime.timedelta(days=dias)
 
     cuotas = (
@@ -75,7 +75,7 @@ def get_cuotas_proximas_vencer(db, empresa_id: int, dias: int = 2) -> List[dict]
             Cuota.notificado_wp == False,
         ).all()
     )
-    hoy_ = datetime.date.today()
+    hoy_ = hoy_local()
     return [{
         "cuota_id": c.id, "cliente_id": c.prestamo.cliente.id,
         "nombre": c.prestamo.cliente.nombre,
@@ -90,7 +90,7 @@ def get_cuotas_vencidas_hoy(db, empresa_id: int) -> List[dict]:
     """FIX: filtra por empresa_id y evita notificar dos veces el mismo dia
     si el scheduler y un "enviar ahora" manual coinciden."""
     from app.database import Cliente, NotificacionWP
-    hoy = datetime.date.today()
+    hoy = hoy_local()
 
     ya_notificadas_hoy = db.query(NotificacionWP.cuota_id).filter(
         NotificacionWP.empresa_id == empresa_id,

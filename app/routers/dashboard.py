@@ -7,6 +7,7 @@ import datetime, json
 
 from app.database import (
     get_db, Cliente, NotificacionWP, Prestamo, Cuota, Cobro, Usuario, Zona,
+    hoy_local,
 )
 from app.routers.auth import get_current_user
 from app.utils.estado_sistema import VERSION
@@ -23,7 +24,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
     eid = user.empresa_id
     allowed_zones = get_allowed_zone_ids(db, user)
-    hoy = datetime.date.today()
+    hoy = hoy_local()
     inicio_mes = hoy.replace(day=1)
 
     zone_filter = None
@@ -228,7 +229,7 @@ async def estado_operacion(request: Request, db: Session = Depends(get_db)):
     if user.rol not in ("admin", "superadmin"):
         return RedirectResponse("/dashboard", 302)
 
-    hoy = datetime.date.today()
+    hoy = hoy_local()
     hace_7d = hoy - datetime.timedelta(days=7)
 
     # Cobradores y cuando registraron su ultimo cobro. Un cobrador activo
