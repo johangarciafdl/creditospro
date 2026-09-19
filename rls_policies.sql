@@ -48,6 +48,7 @@ ALTER TABLE notificaciones_wp ENABLE ROW LEVEL SECURITY;
 ALTER TABLE configuracion ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usuario_zonas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rutas_cobro ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS empresa_isolation_empresas ON empresas;
 CREATE POLICY empresa_isolation_empresas ON empresas
@@ -110,6 +111,26 @@ CREATE POLICY empresa_isolation_usuario_zonas ON usuario_zonas
     SELECT 1 FROM usuarios u
     WHERE u.id = usuario_zonas.usuario_id AND u.empresa_id = public.current_empresa_id()
   ));
+
+-- rutas_cobro si tiene empresa_id propio, pero se valida ademas contra el
+-- usuario: una fila con el empresa_id correcto pero apuntando al cobrador de
+-- otra empresa daria a ese cobrador una ruta que su administrador no puso.
+DROP POLICY IF EXISTS empresa_isolation_rutas_cobro ON rutas_cobro;
+CREATE POLICY empresa_isolation_rutas_cobro ON rutas_cobro
+  USING (
+    empresa_id = public.current_empresa_id()
+    AND EXISTS (
+      SELECT 1 FROM usuarios u
+      WHERE u.id = rutas_cobro.usuario_id AND u.empresa_id = public.current_empresa_id()
+    )
+  )
+  WITH CHECK (
+    empresa_id = public.current_empresa_id()
+    AND EXISTS (
+      SELECT 1 FROM usuarios u
+      WHERE u.id = rutas_cobro.usuario_id AND u.empresa_id = public.current_empresa_id()
+    )
+  );
 
 COMMIT;
 
