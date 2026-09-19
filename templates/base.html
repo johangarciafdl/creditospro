@@ -181,6 +181,60 @@ window.attr = window.esc;
 <script src="{{ estatico('js/app.js') }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
 <script src="{{ estatico('js/pwa.js') }}"></script>
+<script nonce="{{ csp_nonce }}">
+// Bloqueo del fondo mientras haya un modal abierto.
+//
+// Los modales se abren y cierran con classList.add/remove('open') desde una
+// veintena de sitios distintos; en vez de tocarlos todos (y que el proximo
+// que se escriba se olvide), se observa el DOM y se congela el fondo cuando
+// aparece el primer modal abierto y se libera cuando se cierra el ultimo.
+(function () {
+  let scrollGuardado = 0;
+
+  function hayModalAbierto() {
+    return !!document.querySelector('.modal-overlay.open');
+  }
+
+  function sincronizar() {
+    const body = document.body;
+    const bloqueado = body.classList.contains('modal-abierto');
+    if (hayModalAbierto() === bloqueado) return;
+
+    if (!bloqueado) {
+      scrollGuardado = window.scrollY || document.documentElement.scrollTop || 0;
+      body.style.top = `-${scrollGuardado}px`;
+      body.classList.add('modal-abierto');
+    } else {
+      body.classList.remove('modal-abierto');
+      body.style.top = '';
+      // Devolver al usuario exactamente donde estaba leyendo.
+      window.scrollTo(0, scrollGuardado);
+    }
+  }
+
+  const observador = new MutationObserver(sincronizar);
+  function arrancar() {
+    observador.observe(document.body, {
+      subtree: true, attributes: true, attributeFilter: ['class'],
+      childList: true,
+    });
+    sincronizar();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', arrancar);
+  } else {
+    arrancar();
+  }
+
+  // Cerrar con Escape: si el fondo esta bloqueado, el usuario tiene que poder
+  // salir sin buscar la X con el raton.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const abiertos = document.querySelectorAll('.modal-overlay.open');
+    if (abiertos.length) abiertos[abiertos.length - 1].classList.remove('open');
+  });
+})();
+</script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

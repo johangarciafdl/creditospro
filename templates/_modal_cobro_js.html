@@ -1,0 +1,161 @@
+{# JS del modal de cobro compartido por Cobros y Clientes.
+   Cada pantalla se refresca a su manera, asi que en vez de llamar a buscar()
+   (que aqui no existe) se llama a window.alRegistrarCobro, que cada pagina
+   define. Sin eso, este archivo solo serviria en Cobros. #}
+<script nonce="{{ csp_nonce }}">
+function refrescarTrasCobro(){
+  if (typeof window.alRegistrarCobro === 'function') window.alRegistrarCobro();
+}
+
+function abrirCobro(cuotaId,cliente,valor,numCuota){
+  document.getElementById('mc-cuota-id').value=cuotaId;
+  document.getElementById('mc-titulo').textContent=cliente;
+  document.getElementById('mc-subtitulo').textContent=`Cuota #${numCuota}  ·  ${cop(valor)}`;
+  document.getElementById('mc-valor').value=valor;
+  document.getElementById('mc-lat').value='';
+  document.getElementById('mc-lng').value='';
+  document.getElementById('gps-status').textContent='Sin ubicacion';
+  document.getElementById('gps-status').style.color='var(--t3)';
+  quitarFoto();
+  setMetodo('Efectivo');
+  document.getElementById('mc-obs').value='';
+  document.getElementById('modal-cobro').classList.add('open');
+  setTimeout(()=>document.getElementById('mc-valor').focus(),300);
+  // Auto-capturar GPS
+  captureGPS();
+}
+
+// GPS
+function captureGPS(){
+  const status=document.getElementById('gps-status');
+  const btn=document.getElementById('btn-gps');
+  status.textContent='Obteniendo ubicacion...';
+  btn.disabled=true;
+  if(!navigator.geolocation){status.textContent='GPS no disponible';btn.disabled=false;return;}
+  navigator.geolocation.getCurrentPosition(
+    async pos=>{
+      const lat=pos.coords.latitude, lng=pos.coords.longitude;
+      document.getElementById('mc-lat').value=lat;
+      document.getElementById('mc-lng').value=lng;
+      // Coordenadas como respaldo inmediato; un cobrador no puede validar
+      // "6.28521, -75.56153", asi que se traducen a una direccion legible.
+      status.textContent='Ubicacion capturada · buscando direccion...';
+      status.style.color='var(--green)';btn.disabled=false;
+      const dir=await direccionDesdeCoords(lat,lng);
+      status.textContent = dir ? ('📍 '+dir) : `Ubicacion capturada (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+    },
+    err=>{status.textContent='No se pudo obtener ubicacion';status.style.color='var(--amber)';btn.disabled=false;},
+    {timeout:8000,enableHighAccuracy:true}
+  );
+}
+
+// FOTO
+function tomarFoto(tipo){
+  if(tipo==='camara')document.getElementById('mc-foto-camara').click();
+  else document.getElementById('mc-foto-input').click();
+}
+
+function previewFoto(input){
+  const file=input.files[0];
+  if(!file)return;
+  if(file.size>5*1024*1024){toast('La foto no puede superar 5MB','error');return;}
+  const reader=new FileReader();
+  reader.onload=e=>{
+    document.getElementById('foto-img').src=e.target.result;
+    document.getElementById('foto-preview').style.display='block';
+    document.getElementById('foto-placeholder').style.display='none';
+  };
+  reader.readAsDataURL(file);
+}
+
+function quitarFoto(){
+  document.getElementById('mc-foto-input').value='';
+  document.getElementById('mc-foto-camara').value='';
+  document.getElementById('foto-preview').style.display='none';
+  document.getElementById('foto-placeholder').style.display='block';
+}
+
+// METODO
+function setMetodo(m){
+  document.getElementById('mc-metodo').value=m;
+  document.querySelectorAll('.metodo-btn').forEach(b=>{
+    b.classList.toggle('active',b.dataset.m===m);
+  });
+}
+
+// CONFIRMAR COBRO
+async function confirmarCobro(){
+  const cuota_id=document.getElementById('mc-cuota-id').value;
+  const valor=document.getElementById('mc-valor').value;
+  limpiarErroresCampos(document.getElementById('modal-cobro'));
+  if(!valor||parseFloat(valor)<=0){errorCampo('mc-valor','Ingresa un valor mayor a 0');return;}
+
+  const btn=document.getElementById('btn-confirmar');
+  if(btn.disabled) return;               // ya hay un cobro registrandose
+  const textoBtn=btn.innerHTML;
+  btn.disabled=true;btn.innerHTML='<span class="btn-spinner"></span>Registrando...';
+
+  const metodo_pago=document.getElementById('mc-metodo').value;
+  const observaciones=document.getElementById('mc-obs').value;
+  const lat=document.getElementById('mc-lat').value;
+  const lng=document.getElementById('mc-lng').value;
+  const fotoInput=document.getElementById('mc-foto-camara');
+  const fotoInput2=document.getElementById('mc-foto-input');
+  const fotoFile=(fotoInput.files[0]||fotoInput2.files[0]);
+
+  if(!navigator.onLine&&window.pwa){
+    await guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat,lng,fotoFile});
+    btn.disabled=false;btn.innerHTML=textoBtn;
+    return;
+  }
+
+  const fd=new FormData();
+  fd.append('cuota_id',cuota_id);
+  fd.append('valor_cobrado',valor);
+  fd.append('metodo_pago',metodo_pago);
+  fd.append('observaciones',observaciones);
+  fd.append('lat',lat);
+  fd.append('lng',lng);
+  if(fotoFile)fd.append('foto',fotoFile);
+
+  try{
+    const r=await window.fetch('/cobros/registrar',{method:'POST',body:fd});
+    const d=await leerRespuesta(r);
+    if(d.ok){
+      document.getElementById('modal-cobro').classList.remove('open');
+      toast(d.mensaje,'success');
+      setTimeout(refrescarTrasCobro,600);
+    }else{toast(d.error||d.detail||'No se pudo registrar el cobro','error');}
+  }catch(e){
+    if(window.pwa){
+      await guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat,lng,fotoFile});
+    }else{
+      toast('Error de conexión. Intenta nuevamente.','error');
+    }
+  }
+  btn.disabled=false;btn.innerHTML=textoBtn;
+}
+
+async function guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat,lng,fotoFile}){
+  try{
+    await window.pwa.saveCobro({
+      cuota_id,valor_cobrado:valor,metodo_pago,
+      observaciones:observaciones||'Cobro registrado sin conexion',
+      lat,lng,foto:fotoFile||null,
+    });
+    document.getElementById('modal-cobro').classList.remove('open');
+    toast('Sin conexion: cobro guardado en el celular, se enviara solo al recuperar señal','warn');
+    setTimeout(refrescarTrasCobro,600);
+  }catch(err){
+    console.error('[Cobros] Error guardando cobro offline:',err);
+    toast('No se pudo guardar el cobro ni siquiera en el celular. Anótalo a mano por seguridad.','error',8000);
+  }
+}
+
+function cop(n){return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0,maximumFractionDigits:0}).format(n||0)}
+</script>
+<style>
+.metodo-btn{padding:8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);font-size:12px;font-weight:500;color:var(--t2);cursor:pointer;transition:all .15s}
+.metodo-btn.active{background:var(--black);color:#fff;border-color:var(--black)}
+.metodo-btn:hover:not(.active){background:var(--bg)}
+</style>

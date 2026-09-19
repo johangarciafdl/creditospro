@@ -155,6 +155,13 @@ tbody tr:hover{background:var(--surface-2)}
 
 /* MODAL */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px;overflow-y:auto;overscroll-behavior:contain}
+/* Con un modal abierto la pagina de fondo se congela: antes seguia teniendo
+   su propia barra de desplazamiento, asi que girando la rueda o arrastrando
+   el dedo se movia el listado de atras mientras se llenaba el formulario, y
+   al cerrar el modal el usuario aparecia en otro punto de la lista.
+   position:fixed (y no overflow:hidden) es lo unico que tambien detiene el
+   arrastre tactil en iOS; el top negativo conserva donde estaba leyendo. */
+body.modal-abierto{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .modal-overlay.open{display:flex}
 /* El que hace scroll es el cuerpo, no el modal entero: asi el encabezado y
    los botones quedan siempre a la vista y el dedo no arrastra la pagina de

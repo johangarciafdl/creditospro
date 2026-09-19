@@ -107,6 +107,10 @@
 <script nonce="{{ csp_nonce }}">
 let _debounce = null;
 
+// El modal de cobro compartido llama aqui al registrar, para refrescar la
+// lista respetando el filtro que el usuario tenga puesto.
+window.alRegistrarCobro = () => buscar({ todos: _verTodosActivo });
+
 // La pantalla arranca vacia a proposito: cargar todos los clientes al entrar
 // hacia lento el modulo. El usuario elige zona, escribe una busqueda, o pide
 // "Ver todos" explicitamente.
@@ -244,85 +248,39 @@ function abrirModalNuevoCliente() {
   document.getElementById('modal-cliente').classList.add('open');
 }
 
-let _cobrarId = null;
+// El boton "Cobrar" de cada tarjeta abre el MISMO modal que el modulo de
+// Cobros (valor, metodo, GPS, foto, observaciones). Antes abria uno reducido
+// que solo pedia el metodo de pago y cobraba a ciegas la proxima cuota: la
+// misma operacion se comportaba distinto segun la pantalla desde la que se
+// hiciera, y desde Clientes no quedaba ni evidencia ni ubicacion.
+async function cobrarCliente(clienteId) {
+  if (!clienteId || isNaN(clienteId)) { toast('Cliente invalido', 'error'); return; }
 
-function cobrarCliente(clienteId) {
-  if (!clienteId || isNaN(clienteId)) {
-    toast('Cliente inválido', 'error');
-    return;
-  }
-  _cobrarId = clienteId;
-  document.getElementById('modal-cobro-r').classList.add('open');
-}
-
-async function confirmarCobroR() {
-  if (!_cobrarId) return;
-
-  const btn = document.getElementById('btn-cr');
-  const metodo = document.getElementById('cobro-metodo-r').value;
-
-  if (!metodo) {
-    errorCampo('cobro-metodo-r', 'Selecciona un método de pago');
-    return;
-  }
-  limpiarErroresCampos(document.getElementById('modal-cobro-r'));
-
-  const fd = new FormData();
-  fd.append('metodo_pago', metodo);
-
-  await conBoton(btn, 'Registrando...', async () => {
-    // Sin señal el servidor no puede elegir la cuota, asi que se elige la
-    // misma que elegiria el (la mas proxima a vencer de ese cliente) con los
-    // datos guardados en el celular, y el cobro queda en la cola. Antes este
-    // boton no tenia respaldo offline: sin señal solo decia "Error de
-    // conexion" y el cobro se perdia.
-    if (!navigator.onLine && window.pwa) { await cobrarSinSenal(metodo); return; }
+  // Sin señal se resuelve la cuota con los datos guardados en el celular,
+  // igual que hacia el boton anterior, para no perder el respaldo offline.
+  if (!navigator.onLine && window.pwa) {
     try {
-      const r = await window.fetch(`/cobros/registrar-cliente/${_cobrarId}`, {
-        method: 'POST',
-        body: fd
-      });
-      const d = await leerRespuesta(r);
-      if (d.ok) {
-        document.getElementById('modal-cobro-r').classList.remove('open');
-        toast(d.mensaje || 'Cobro registrado');
-        setTimeout(buscar, 500);
-      } else {
-        toast(d.error || d.detail || 'No se pudo registrar el cobro', 'error');
-      }
-    } catch(e) {
-      console.error('[Cobros] Error registrar:', e);
-      // Se cayo la red durante el envio: tampoco se pierde el cobro.
-      if (window.pwa) { await cobrarSinSenal(metodo); return; }
-      toast('No hay conexión. Revisa tu internet e intenta de nuevo.', 'error');
+      const c = await window.pwa.getProximaCuotaCliente(clienteId);
+      if (!c) { toast('Sin señal no se encontro una cuota pendiente de este cliente en el celular', 'error'); return; }
+      abrirCobro(c.cuota_id, c.cliente || 'Cliente', c.saldo, c.cuota_num || 0);
+    } catch (e) {
+      console.error('[Clientes] Error buscando cuota sin señal:', e);
+      toast('No se pudo preparar el cobro sin conexion', 'error');
     }
-  });
-}
+    return;
+  }
 
-async function cobrarSinSenal(metodo) {
   try {
-    // Misma regla que el servidor: la cuota pendiente mas antigua del
-    // cliente, sin ventana de fechas. Con getPendientesOffline (que solo ve
-    // los proximos 3 dias) el cobro sin señal se rechazaba si la cuota
-    // vencia mas adelante, aunque con señal si se registraba.
-    const cuota = await window.pwa.getProximaCuotaCliente(_cobrarId);
-    if (!cuota) {
-      toast('Sin señal no se encontró una cuota pendiente de este cliente en el celular', 'error');
-      return;
-    }
-    const saldo = cuota.saldo;
-    await window.pwa.saveCobro({
-      cuota_id: cuota.cuota_id, valor_cobrado: saldo, metodo_pago: metodo,
-      observaciones: 'Cobro rapido sin conexion', lat: '', lng: '', foto: null,
-    });
-    document.getElementById('modal-cobro-r').classList.remove('open');
-    toast('Sin conexión: cobro guardado en el celular, se enviará solo al recuperar señal', 'warn');
-    setTimeout(buscar, 500);
+    const r = await window.fetch(`/cobros/proxima-cuota/${clienteId}`);
+    const d = await leerRespuesta(r);
+    if (!d.ok) { toast(d.error || d.detail || 'No se pudo preparar el cobro', 'error'); return; }
+    abrirCobro(d.cuota_id, d.cliente, d.saldo, d.numero);
   } catch (e) {
-    console.error('[Cobros] Error guardando sin señal:', e);
-    toast('No se pudo guardar el cobro sin conexión. Anótalo a mano.', 'error');
+    console.error('[Clientes] Error preparando cobro:', e);
+    toast('No hay conexion. Revisa tu internet e intenta de nuevo.', 'error');
   }
 }
+
 
 async function guardarCliente() {
   const cedula = document.getElementById('nc-cedula').value.trim();
@@ -380,29 +338,7 @@ async function guardarCliente() {
 }
 </script>
 
-<!-- MODAL COBRO RAPIDO -->
-<div class="modal-overlay" id="modal-cobro-r" onclick="if(event.target===this)this.classList.remove('open')">
-<div class="modal" style="max-width:360px;" onclick="event.stopPropagation()">
-  <div class="modal-header">
-    <div class="modal-title">Registrar Cobro</div>
-    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cobro-r').classList.remove('open')">&#x2715;</button>
-  </div>
-  <div class="modal-body">
-    <p style="font-size:13px;color:var(--t2);margin-bottom:14px;">Se registrara la proxima cuota pendiente del cliente.</p>
-    <div class="form-group">
-      <label>Metodo de pago</label>
-      <select id="cobro-metodo-r">
-        <option value="Efectivo">Efectivo</option>
-        <option value="Nequi">Nequi</option>
-        <option value="Daviplata">Daviplata</option>
-        <option value="Transferencia">Transferencia</option>
-      </select>
-    </div>
-  </div>
-  <div class="modal-footer">
-    <button class="btn" onclick="document.getElementById('modal-cobro-r').classList.remove('open')">Cancelar</button>
-    <button class="btn btn-gold" id="btn-cr" onclick="confirmarCobroR()">Registrar Cobro</button>
-  </div>
-</div>
-</div>
+{% include "_modal_cobro.html" %}
+{% include "_modal_cobro_js.html" %}
+
 {% endblock %}

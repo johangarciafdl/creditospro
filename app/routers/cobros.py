@@ -308,6 +308,60 @@ async def registrar_cobro(
     })
 
 
+@router.get("/proxima-cuota/{cliente_id}")
+async def proxima_cuota_cliente(
+    request: Request,
+    cliente_id: int,
+    db: Session = Depends(get_db),
+):
+    """Cual es la siguiente cuota a cobrar de este cliente -- sin cobrarla.
+
+    El boton "Cobrar" de la pantalla de Clientes abre el mismo modal completo
+    que el modulo de Cobros (valor, metodo, GPS, foto). Ese modal necesita
+    saber de antemano que cuota es y cuanto se debe, cosa que antes no hacia
+    falta porque el boton registraba a ciegas la proxima cuota con solo el
+    metodo de pago. La seleccion es identica a la de registrar-cliente para
+    que lo que muestra el modal sea exactamente lo que se va a cobrar.
+    """
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+
+    q = (
+        db.query(Cuota, Prestamo, Cliente)
+        .join(Prestamo, Cuota.prestamo_id == Prestamo.id)
+        .join(Cliente, Prestamo.cliente_id == Cliente.id)
+        .filter(
+            Cliente.id == cliente_id,
+            Cliente.empresa_id == user.empresa_id,
+            Prestamo.empresa_id == user.empresa_id,
+            Cuota.empresa_id == user.empresa_id,
+            Cuota.estado.in_(["Pendiente", "Vencida", "Parcial"]),
+        )
+    )
+    allowed_zones = get_allowed_zone_ids(db, user)
+    if allowed_zones is not None:
+        q = q.filter(Prestamo.zona_id.in_(allowed_zones or [-1]))
+
+    row = q.order_by(Cuota.fecha_vencimiento.asc(), Cuota.numero.asc()).first()
+    if not row:
+        return JSONResponse({"error": "Este cliente no tiene cuotas pendientes"}, status_code=404)
+    cuota, prestamo, cliente = row
+
+    saldo = money(cuota.valor) - money(cuota.valor_pagado)
+    if saldo <= 0:
+        return JSONResponse({"error": "La cuota ya esta pagada"}, status_code=400)
+
+    return JSONResponse({
+        "ok": True,
+        "cuota_id": cuota.id,
+        "numero": cuota.numero,
+        "saldo": float(saldo),
+        "cliente": cliente.nombre,
+        "vencimiento": cuota.fecha_vencimiento.strftime("%d/%m/%Y") if cuota.fecha_vencimiento else "",
+    })
+
+
 @router.post("/registrar-cliente/{cliente_id}")
 async def registrar_cobro_cliente_rapido(
     request: Request,

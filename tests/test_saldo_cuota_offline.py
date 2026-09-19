@@ -49,10 +49,20 @@ def test_perfil_no_trunca_los_centavos_del_saldo():
 
 
 def test_cobro_rapido_sin_senal_usa_la_regla_del_servidor():
-    """El boton Cobrar de Clientes debe elegir la misma cuota con y sin señal."""
+    """El boton Cobrar de Clientes debe elegir la misma cuota con y sin señal.
+
+    La funcion que lo resuelve paso de llamarse cobrarSinSenal a ser la rama
+    sin conexion de cobrarCliente, cuando Clientes adopto el modal de cobro
+    completo que ya usaba el modulo de Cobros. Lo que se exige aqui no es el
+    nombre sino la garantia: con y sin señal debe elegirse la misma cuota.
+    """
     html = (RAIZ / "templates" / "clientes.html").read_text(encoding="utf-8").replace(chr(13), "")
     assert "getProximaCuotaCliente" in html
-    cuerpo_js = html.split("async function cobrarSinSenal")[1].split(FIN_FUNCION)[0]
+    cuerpo_js = html.split("async function cobrarCliente")[1].split(FIN_FUNCION)[0]
+    assert "getProximaCuotaCliente" in cuerpo_js, (
+        "la rama sin conexion de cobrarCliente debe usar la misma regla que "
+        "el servidor para elegir la cuota"
+    )
     assert "pwa.getPendientesOffline" not in cuerpo_js, (
         "getPendientesOffline solo ve los proximos 3 dias; el servidor no "
         "aplica ventana de fechas al cobro rapido"

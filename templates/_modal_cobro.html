@@ -1,0 +1,85 @@
+{# Modal de cobro COMPLETO (valor, metodo, GPS, foto, observaciones).
+   Lo incluyen Cobros y Clientes: antes Clientes tenia su propia version
+   reducida (solo metodo de pago) y las dos pantallas se comportaban
+   distinto para la misma operacion. El JS vive en _modal_cobro_js.html. #}
+<!-- MODAL COBRO CON FOTO Y GPS -->
+<div class="modal-overlay" id="modal-cobro" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div>
+      <div class="modal-title" id="mc-titulo">Registrar Cobro</div>
+      <div style="font-size:12px;color:var(--t3);margin-top:2px;" id="mc-subtitulo">—</div>
+    </div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cobro').classList.remove('open')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="modal-body">
+    <input type="hidden" id="mc-cuota-id">
+
+    <!-- Valor -->
+    <div class="form-group">
+      <label>Valor cobrado (COP)</label>
+      <input type="number" id="mc-valor" placeholder="0" min="0" step="1000"
+             style="font-size:20px;font-weight:700;text-align:right;font-family:var(--mono);">
+    </div>
+
+    <!-- Metodo pago -->
+    <div class="form-group">
+      <label>Metodo de pago</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;" id="metodo-grid">
+        <button type="button" onclick="setMetodo('Efectivo')" class="metodo-btn active" data-m="Efectivo">Efectivo</button>
+        <button type="button" onclick="setMetodo('Nequi')" class="metodo-btn" data-m="Nequi">Nequi</button>
+        <button type="button" onclick="setMetodo('Daviplata')" class="metodo-btn" data-m="Daviplata">Daviplata</button>
+        <button type="button" onclick="setMetodo('Transferencia')" class="metodo-btn" data-m="Transferencia">Transferencia</button>
+      </div>
+      <input type="hidden" id="mc-metodo" value="Efectivo">
+    </div>
+
+    <!-- GPS -->
+    <div style="background:var(--bg);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:12px;">
+      <div class="flex-between">
+        <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+          Ubicacion GPS
+        </div>
+        <button type="button" onclick="captureGPS()" class="btn btn-xs btn-ghost" id="btn-gps">Capturar</button>
+      </div>
+      <div style="font-size:11px;color:var(--t3);margin-top:4px;" id="gps-status">Sin ubicacion</div>
+      <input type="hidden" id="mc-lat">
+      <input type="hidden" id="mc-lng">
+    </div>
+
+    <!-- FOTO -->
+    <div style="background:var(--bg);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:12px;">
+      <div class="flex-between mb-2">
+        <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Foto del cobro
+        </div>
+        <div style="display:flex;gap:4px;">
+          <button type="button" onclick="tomarFoto('camara')" class="btn btn-xs btn-ghost">Camara</button>
+          <button type="button" onclick="tomarFoto('galeria')" class="btn btn-xs btn-ghost">Galeria</button>
+        </div>
+      </div>
+      <input type="file" id="mc-foto-input" accept="image/*" style="display:none;" onchange="previewFoto(this)">
+      <input type="file" id="mc-foto-camara" accept="image/*" capture="environment" style="display:none;" onchange="previewFoto(this)">
+      <div id="foto-preview" style="display:none;margin-top:6px;">
+        <img id="foto-img" style="width:100%;border-radius:var(--r-sm);max-height:160px;object-fit:cover;">
+        <button type="button" onclick="quitarFoto()" class="btn btn-xs btn-ghost" style="margin-top:4px;">Quitar foto</button>
+      </div>
+      <div id="foto-placeholder" style="font-size:11px;color:var(--t3);">Opcional — evidencia del pago</div>
+    </div>
+
+    <!-- Observaciones -->
+    <div class="form-group">
+      <label>Observaciones</label>
+      <input type="text" id="mc-obs" placeholder="Opcional...">
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-cobro').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-gold" id="btn-confirmar" onclick="confirmarCobro()">Registrar Cobro</button>
+  </div>
+</div>
+</div>
