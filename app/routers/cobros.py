@@ -365,6 +365,25 @@ async def registrar_cobro(
         )
         db.add(cobro)
 
+        # Un pago con fecha atrasada puede dejar detras registros de "no pago"
+        # posteriores a esa fecha. Si la cuota queda saldada, esos registros
+        # afirman que el cliente no pago un dia en que la cuota ya estaba
+        # pagada, lo cual no pudo ocurrir: se retiran y se avisa, para que el
+        # historial no diga dos cosas contrarias sobre la misma cuota.
+        no_pagos_retirados = 0
+        for cuota_destino, _ in reparto:
+            if cuota_destino.estado != "Pagada":
+                continue
+            no_pagos_retirados += (
+                db.query(NoPago)
+                .filter(
+                    NoPago.cuota_id == cuota_destino.id,
+                    NoPago.empresa_id == user.empresa_id,
+                    NoPago.fecha > fecha_pago,
+                )
+                .delete(synchronize_session=False)
+            )
+
         cuotas_pend = db.query(func.count(Cuota.id)).filter(
             Cuota.prestamo_id == prestamo.id,
             Cuota.estado.in_(["Pendiente", "Vencida", "Parcial"]),
@@ -386,12 +405,16 @@ async def registrar_cobro(
         mensaje += f" — se repartio en {partes}"
     if fecha_pago != hoy:
         mensaje += f" — con fecha {fecha_pago.strftime('%d/%m/%Y')}"
+    if no_pagos_retirados:
+        mensaje += (f" — se quitaron {no_pagos_retirados} registro(s) de 'no pago'"
+                    f" posteriores a esa fecha")
 
     return JSONResponse({
         "ok": True,
         "mensaje": mensaje,
         "cuota_estado": cuota.estado,
         "fecha": fecha_pago.isoformat(),
+        "no_pagos_retirados": no_pagos_retirados,
         "reparto": [{"cuota": c.numero, "valor": float(v)} for c, v in reparto],
     })
 
