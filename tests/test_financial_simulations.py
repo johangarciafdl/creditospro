@@ -44,9 +44,28 @@ def test_simulacion_rechaza_parametros_invalidos():
 
 
 def test_simulacion_caso_con_residuo_ajusta_ultima_cuota():
+    """1200 entre 7 no da exacto: el residuo va a la ultima cuota.
+
+    Los valores son pesos enteros porque el peso colombiano no circula en
+    centavos: una cuota de 171,43 no se puede entregar en mano, y al
+    mostrarla redondeada la pantalla dejaba de coincidir con lo que el
+    sistema cobraba.
+    """
     resultado = calcular_cuotas(1000, 20, 7, datetime.date(2026, 1, 1), 1)
 
     valores = [c["valor"] for c in resultado["cuotas"]]
-    assert sum(valores) == Decimal("1200.00")
-    assert valores[:-1] == [Decimal("171.43")] * 6
-    assert valores[-1] == Decimal("171.42")
+    assert sum(valores) == Decimal("1200"), "las cuotas deben sumar el total"
+    assert valores[:-1] == [Decimal("171")] * 6
+    assert valores[-1] == Decimal("174")  # 1200 - 6*171, el residuo al final
+
+
+def test_ninguna_cuota_lleva_centavos():
+    """Ningun plan de pagos puede pedir una fraccion de peso."""
+    casos = [(1000, 20, 7), (200_000, 20, 10), (50_000, 10, 30),
+             (1_000_000, 15, 7), (333_333, 33, 3)]
+    for capital, tasa, num in casos:
+        r = calcular_cuotas(capital, tasa, num, datetime.date(2026, 1, 1), 1)
+        valores = [c["valor"] for c in r["cuotas"]]
+        assert sum(valores) == r["total_pagar"], f"{capital}/{tasa}/{num} no cuadra"
+        for v in valores:
+            assert v == v.to_integral_value(), f"cuota con centavos: {v}"

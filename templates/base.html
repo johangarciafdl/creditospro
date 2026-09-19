@@ -188,9 +188,19 @@ window.attr = window.esc;
 // ninguna parte, asi que lanzaba ReferenceError; como la llamada estaba
 // dentro de un try/catch vacio, el recuadro "Resumen del prestamo" aparecia
 // con las etiquetas y los valores en blanco, sin ningun error visible.
+//
+// Los centavos se muestran solo cuando los hay, y nunca se redondean: la
+// tarjeta de una cuota de 933,36 anunciaba "$933" mientras el formulario
+// cobraba 933,36, y esa diferencia no cuadraba en el arqueo del dia. Tiene
+// que coincidir con cop() de app/utils/money.py, que hace lo mismo en el
+// servidor.
 window.fmtCOP = function (valor) {
-  const n = Math.round(Number(valor) || 0);
-  return '$' + n.toLocaleString('es-CO', { maximumFractionDigits: 0 });
+  const n = Number(valor) || 0;
+  const centavos = Math.round(Math.abs(n) * 100) % 100;
+  return '$' + n.toLocaleString('es-CO', {
+    minimumFractionDigits: centavos === 0 ? 0 : 2,
+    maximumFractionDigits: centavos === 0 ? 0 : 2,
+  });
 };
 // Alias historico usado por el modulo de Cobros.
 window.cop = window.fmtCOP;

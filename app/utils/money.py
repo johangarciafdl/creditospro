@@ -1,4 +1,4 @@
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 
 
 CENT = Decimal("0.01")
@@ -13,11 +13,20 @@ def money_int(value) -> Decimal:
 
 
 def cop(value) -> str:
-    """Pesos colombianos para mensajes al usuario: $1.500, $2.000.000.
+    """Pesos colombianos para el usuario: $1.500, $2.000.000, $933,36.
 
-    El punto separa los miles, como se escribe en Colombia. Sin esto los
-    mensajes de error mostraban Decimal('10000.00'), que no dice nada a un
-    cobrador.
+    El punto separa los miles y la coma los decimales, como se escribe en
+    Colombia. Sin esto los mensajes de error mostraban Decimal('10000.00'),
+    que no dice nada a un cobrador.
+
+    Los centavos solo aparecen cuando los hay. Redondearlos siempre hacia el
+    peso entero hacia que la pantalla y el cobro discreparan: la tarjeta de
+    una cuota de 933,36 anunciaba "$933" y el formulario cobraba 933,36, y
+    esa diferencia de 36 centavos por cuota no cuadraba en ningun arqueo. Lo
+    que se muestra tiene que ser exactamente lo que se cobra.
     """
-    entero = int(money_int(value))
-    return "$" + f"{entero:,}".replace(",", ".")
+    d = money(value)
+    entero = int(d.to_integral_value(rounding=ROUND_DOWN))
+    centavos = int((abs(d) - abs(Decimal(entero))) * 100)
+    texto = "$" + f"{entero:,}".replace(",", ".")
+    return texto if centavos == 0 else f"{texto},{centavos:02d}"

@@ -9,25 +9,35 @@ def _money(value) -> Decimal:
     return Decimal(str(value or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def _peso(value) -> Decimal:
+    """Pesos enteros: la moneda colombiana no tiene centavos en circulacion."""
+    return Decimal(str(value or "0")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
 def calcular_cuotas(capital: float, tasa: float, num_cuotas: int,
                     fecha_inicio: datetime.date, plazo_dias: int = 30) -> dict:
     if num_cuotas <= 0:
         raise ValueError("num_cuotas debe ser mayor que cero")
     if plazo_dias <= 0:
         raise ValueError("plazo_dias debe ser mayor que cero")
-    capital = _money(capital)
+    capital = _peso(capital)
     tasa = _money(tasa)
     if capital < 0:
         raise ValueError("capital no puede ser negativo")
     if tasa < 0:
         raise ValueError("tasa no puede ser negativa")
-    interes = _money(capital * (tasa / Decimal("100")))
+    # El peso colombiano no circula en centavos: una cuota de 933,36 no se
+    # puede entregar ni recibir, y al mostrarla redondeada la pantalla y el
+    # cobro dejaban de coincidir. Todo el plan se calcula en pesos enteros y
+    # el sobrante se acumula en la ultima cuota, que es donde el cliente
+    # espera el ajuste.
+    interes = _peso(capital * (tasa / Decimal("100")))
     total = capital + interes
-    valor_cuota = (total / Decimal(num_cuotas)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    valor_cuota = (total / Decimal(num_cuotas)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     cuotas = []
     acumulado = Decimal("0.00")
     for i in range(1, num_cuotas + 1):
-        valor = valor_cuota if i < num_cuotas else _money(total - acumulado)
+        valor = valor_cuota if i < num_cuotas else _peso(total - acumulado)
         cuotas.append({
             "numero": i,
             "valor": valor,
