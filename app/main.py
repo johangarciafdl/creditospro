@@ -36,7 +36,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.templates import templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.database import BASE_DIR, Cliente, IS_SQLITE, get_db, init_db
+from app.database import BASE_DIR, Cliente, IS_SQLITE, get_db, init_db, revisar_presupuesto_de_conexiones
 from app.routers import (
     auth,
     clientes,
@@ -83,6 +83,11 @@ async def lifespan(app: FastAPI):
         logger.error(f"Faltan variables de entorno requeridas: {', '.join(missing)}")
         logger.error("Crea un archivo .env a partir de .env.example")
         sys.exit(1)
+
+    # El techo de procesos lo pone el pool contra el limite del servidor de
+    # base de datos, no la CPU. Se comprueba al arrancar para que quede en el
+    # registro antes de que empiecen los errores de conexion agotada.
+    revisar_presupuesto_de_conexiones()
 
     try:
         logger.info("Conectando a la base de datos...")

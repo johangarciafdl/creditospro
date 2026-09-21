@@ -162,10 +162,19 @@ async function buscar(opciones) {
     }
     try {
       const r = await window.fetch('/clientes/buscar-ajax?' + params.toString());
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      // Un error del servidor no es una caida de red. Tratarlos igual
+      // hacia que un 403 de permisos o un 500 se anunciaran como "sin
+      // conexion", con datos viejos presentados como buenos: el usuario
+      // iba a mirar su senal y el fallo real quedaba sin rastro.
+      if (!r.ok) {
+        let motivo = `El servidor respondio ${r.status}`;
+        try { const d = await r.json(); motivo = d.error || d.detail || motivo; } catch (_) {}
+        throw new Error(motivo);
+      }
       return await r.json();
     } catch (e) {
-      if (!window.pwa) throw e;
+      const falloDeRed = (e instanceof TypeError);   // fetch no llego a salir
+      if (!falloDeRed || !window.pwa) throw e;
       const clientes = await window.pwa.getClientesOffline(q, zona_id);
       if (typeof toast === 'function') toast('Sin conexion: mostrando datos guardados en el celular', 'warn');
       return { clientes };

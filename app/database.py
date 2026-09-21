@@ -56,6 +56,44 @@ POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "3"))
 MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "2"))
 
 
+# El servidor de base de datos admite un numero fijo de conexiones. Se
+# configura porque depende del plan contratado.
+MAX_CONEXIONES_SERVIDOR = int(os.getenv("DB_MAX_CONEXIONES", "60"))
+
+
+def revisar_presupuesto_de_conexiones(workers: int | None = None) -> tuple[int, int]:
+    """Compara el consumo maximo de conexiones con el limite del servidor.
+
+    El techo de procesos rara vez lo pone la CPU: lo pone el pool contra el
+    limite del servidor. La cuenta estaba escrita en un comentario, que solo
+    protege si alguien lo lee antes de subir WEB_CONCURRENCY. Aqui se hace
+    al arrancar y se deja dicho en el registro, que es donde se mira cuando
+    la aplicacion empieza a dar errores de conexion agotada.
+
+    Devuelve (consumo_maximo, limite) y avisa si no cabe.
+    """
+    if IS_SQLITE:
+        return (0, 0)
+    if workers is None:
+        workers = int(os.getenv("WEB_CONCURRENCY", "2"))
+    motores = 2  # el de sistema y el restringido con RLS
+    consumo = workers * motores * (POOL_SIZE + MAX_OVERFLOW)
+    if consumo > MAX_CONEXIONES_SERVIDOR:
+        logger.error(
+            "Presupuesto de conexiones excedido: %s workers x %s motores x "
+            "(%s+%s) = %s, y el servidor admite %s. Baja WEB_CONCURRENCY o "
+            "DB_POOL_SIZE, o la aplicacion agotara las conexiones bajo carga.",
+            workers, motores, POOL_SIZE, MAX_OVERFLOW, consumo,
+            MAX_CONEXIONES_SERVIDOR,
+        )
+    else:
+        logger.info(
+            "Conexiones: hasta %s de %s (%s workers x %s motores x (%s+%s))",
+            consumo, MAX_CONEXIONES_SERVIDOR, workers, motores, POOL_SIZE, MAX_OVERFLOW,
+        )
+    return (consumo, MAX_CONEXIONES_SERVIDOR)
+
+
 def _engine_kwargs_for(url: str) -> tuple[dict, dict]:
     """connect_args/engine_kwargs correctos segun el dialecto de esa URL
     especifica (DATABASE_URL y DATABASE_URL_APP pueden ser dialectos

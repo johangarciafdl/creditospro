@@ -205,10 +205,19 @@ async function buscar(opciones) {
     }
     try {
       const r = await window.fetch('/prestamos/buscar-ajax?' + params.toString());
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      // Un error del servidor no es una caida de red. Tratarlos igual
+      // hacia que un 403 de permisos o un 500 se anunciaran como "sin
+      // conexion", con datos viejos presentados como buenos: el usuario
+      // iba a mirar su senal y el fallo real quedaba sin rastro.
+      if (!r.ok) {
+        let motivo = `El servidor respondio ${r.status}`;
+        try { const d = await r.json(); motivo = d.error || d.detail || motivo; } catch (_) {}
+        throw new Error(motivo);
+      }
       return await r.json();
     } catch (e) {
-      if (!window.pwa) throw e;
+      const falloDeRed = (e instanceof TypeError);   // fetch no llego a salir
+      if (!falloDeRed || !window.pwa) throw e;
       const prestamos = await window.pwa.getPrestamosOffline(q, estado, zona_id);
       if (typeof toast === 'function') toast('Sin conexion: mostrando datos guardados en el celular', 'warn');
       return { prestamos };
@@ -349,7 +358,16 @@ function calcPreview() {
       document.getElementById('np-prev-total').textContent = cop(d.total_pagar);
       document.getElementById('np-prev-cuota').textContent = cop(d.valor_cuota);
       document.getElementById('np-preview').style.display  = 'block';
-    } catch(e) {}
+    } catch(e) {
+      // Este catch estaba vacio: cuando el calculo fallaba, el recuadro del
+      // resumen se quedaba en blanco sin ningun aviso y sin nada en la
+      // consola, que es como paso desapercibido que faltaba el formateador
+      // de pesos. Un fallo mudo cuesta mas de encontrar que uno ruidoso.
+      console.error('[Prestamos] No se pudo calcular el resumen:', e);
+      const caja = document.getElementById('np-preview');
+      caja.innerHTML = '<div style="color:var(--red);font-size:12px;">No se pudo calcular el resumen. Revisa los datos.</div>';
+      caja.style.display = 'block';
+    }
   }, 500);
 }
 
