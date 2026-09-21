@@ -59,16 +59,17 @@ from app.utils.audit_middleware import AuditMiddleware
 from app.utils.request_id import RequestIDMiddleware
 from app.utils.license_middleware import LicenseMiddleware
 from app.utils.rate_limit import InMemoryRateLimitMiddleware
+from app.utils import registro_logs
 from app.utils.almacen_imagenes import leer_imagen
 from app.utils.security_headers import SecurityHeadersMiddleware
 from app.utils.seed import seed_data_demo
 from app.utils.settings import settings
 from app.utils.zone_permissions import require_zone_access
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+# Lo normal por stdout y los problemas por stderr: el recolector de Railway
+# clasifica por el canal, y basicConfig() mandaba TODO a stderr, asi que el
+# panel pintaba en rojo hasta "Base de datos conectada correctamente".
+registro_logs.configurar(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -83,6 +84,11 @@ async def lifespan(app: FastAPI):
         logger.error(f"Faltan variables de entorno requeridas: {', '.join(missing)}")
         logger.error("Crea un archivo .env a partir de .env.example")
         sys.exit(1)
+
+    # uvicorn monta sus propios manejadores al iniciarse, asi que hay que
+    # reconducirlos aqui y no al importar: si no, sus mensajes de arranque
+    # siguen saliendo por stderr y el panel los marca como errores.
+    registro_logs.adoptar_uvicorn()
 
     # El techo de procesos lo pone el pool contra el limite del servidor de
     # base de datos, no la CPU. Se comprueba al arrancar para que quede en el
