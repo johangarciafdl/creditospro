@@ -230,6 +230,37 @@ En producción, CreditosPro corre contra PostgreSQL (Supabase). El contenedor Do
 - **Pendiente de tu parte:** varios documentos antiguos (ya eliminados de este repo) tenían contraseñas reales de usuarios en texto plano. Si `julian` o `marcos` siguen usando las contraseñas que aparecían en esos archivos, cámbialas desde el panel de usuarios lo antes posible.
 - Para detalles de arquitectura de seguridad (RLS, roles, auditoría), ver [CLAUDE.md](CLAUDE.md).
 
+### Comprobaciones automáticas
+
+Las revisiones de seguridad corren con las pruebas, no cuando uno se acuerda:
+
+```bash
+pip install -r requirements-dev.txt
+
+pytest          # incluye Bandit, el buscador de secretos y el ataque entre empresas
+pytest -m red   # además, pip-audit contra la base de vulnerabilidades (necesita internet)
+```
+
+Lo que vigila cada una:
+
+| Prueba | Qué comprueba |
+|---|---|
+| `test_aislamiento_entre_empresas.py` | Que una empresa no alcance los datos de otra cambiando un identificador, en 14 caminos distintos |
+| `test_seguridad_herramientas.py` | Bandit sobre el código, y que ninguna clave acabe en un fichero versionado |
+| `test_paridad_rls.py` | Que ninguna tabla con `empresa_id` se quede sin RLS ni política |
+| `test_fecha_del_negocio.py` | Que nada decida "hoy" con el reloj del servidor en vez del de Colombia |
+| `test_formato_pesos.py` | Que solo exista un formateador de pesos y que lo mostrado sea lo cobrado |
+
+Para el fuzzing del API hace falta una instancia levantada con una base
+desechable. **Nunca contra producción**, y al preparar el entorno hay que
+*apuntar* `DATABASE_URL` y `DATABASE_URL_APP` al destino de pruebas, no
+borrarlas: la aplicación carga `.env` como respaldo y una variable borrada
+acaba resolviendo a la base real.
+
+```bash
+schemathesis run http://127.0.0.1:8099/openapi.json --url http://127.0.0.1:8099
+```
+
 ## Estructura del proyecto
 
 ```

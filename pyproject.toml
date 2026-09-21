@@ -81,9 +81,16 @@ ignore = [
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra --strict-markers --strict-config"
 testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning:jose.*",
     "ignore::DeprecationWarning:passlib.*",
 ]
+markers = [
+    # Necesita salir a internet (consultar la base de vulnerabilidades).
+    # Fuera de la suite normal para que `pytest` siga funcionando sin red y
+    # sin tardar minutos; se ejecuta con: pytest -m red
+    "red: la prueba necesita conexion a internet",
+]
+# Las que necesitan red no corren salvo que se pidan expresamente.
+addopts = "-ra --strict-markers --strict-config -m 'not red'"

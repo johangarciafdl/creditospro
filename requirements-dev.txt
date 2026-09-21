@@ -1,0 +1,28 @@
+# Herramientas de desarrollo y de seguridad. No hacen falta para que la
+# aplicacion funcione, solo para trabajar sobre ella:
+#
+#     pip install -r requirements-dev.txt
+#
+# Una vez instaladas, `pytest` incluye los analisis de seguridad. Los que
+# necesitan internet quedan fuera de la suite normal y se lanzan aparte:
+#
+#     pytest            # todo lo local, incluido Bandit y el buscador de secretos
+#     pytest -m red     # ademas, pip-audit contra la base de vulnerabilidades
+#
+-r requirements.txt
+
+# Analisis estatico de seguridad del codigo Python.
+bandit[toml]==1.8.6
+
+# Contrasta las dependencias con la base de vulnerabilidades publicada.
+# Necesita internet, por eso su prueba va marcada "red".
+pip-audit==2.9.0
+
+# Genera casos de prueba a partir del esquema OpenAPI y los lanza contra la
+# aplicacion. No va atado a pytest porque necesita una instancia levantada;
+# ver la seccion de seguridad del README para como ejecutarlo.
+schemathesis==4.4.0
+
+# Detecta nombres no definidos que el interprete solo descubriria al pasar
+# por esa linea, que en un router es en produccion.
+pyflakes==3.2.0
