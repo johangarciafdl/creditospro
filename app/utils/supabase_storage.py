@@ -82,6 +82,24 @@ def subir(ruta: str, datos: bytes, mime: str) -> None:
         raise ErrorStorage(f"Storage respondio {r.status_code}: {r.text[:200]}")
 
 
+def _es_no_encontrado(r: httpx.Response) -> bool:
+    """Storage responde 400 -- no 404 -- cuando el objeto no existe.
+
+    El codigo real viaja en el cuerpo: {"statusCode":"404","code":"NoSuchKey"}.
+    Sin mirarlo, cada imagen que falta se registraba como incidencia y el
+    registro se llenaba de avisos que no lo eran, escondiendo los de verdad.
+    """
+    if r.status_code == 404:
+        return True
+    if r.status_code != 400:
+        return False
+    try:
+        cuerpo = r.json()
+    except ValueError:
+        return False
+    return str(cuerpo.get("statusCode")) == "404"
+
+
 def descargar(ruta: str) -> bytes | None:
     """Devuelve los bytes, o None si no estan."""
     if not disponible():
@@ -93,8 +111,9 @@ def descargar(ruta: str) -> bytes | None:
         return None
     if r.status_code == 200:
         return r.content
-    if r.status_code != 404:
-        logger.warning("Storage devolvio %s al pedir %s", r.status_code, ruta)
+    if not _es_no_encontrado(r):
+        logger.warning("Storage devolvio %s al pedir %s: %s",
+                       r.status_code, ruta, r.text[:200])
     return None
 
 
@@ -107,7 +126,8 @@ def borrar(ruta: str) -> bool:
     except httpx.HTTPError as e:
         logger.warning("Storage no respondio al borrar %s: %s", ruta, e)
         return False
-    if r.status_code >= 400 and r.status_code != 404:
-        logger.warning("Storage devolvio %s al borrar %s", r.status_code, ruta)
+    if r.status_code >= 400 and not _es_no_encontrado(r):
+        logger.warning("Storage devolvio %s al borrar %s: %s",
+                       r.status_code, ruta, r.text[:200])
         return False
     return True
