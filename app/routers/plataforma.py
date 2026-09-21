@@ -7,10 +7,12 @@ actual -- el unico caso legitimo de acceso cross-empresa junto con el
 scheduler, la activacion de licencia y el selector de empresa.
 """
 import datetime
+import logging
+import secrets
 import time
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -21,20 +23,28 @@ from app.database import (
 from app.routers.auth import get_current_user, SESSION_COOKIE, IS_PRODUCTION
 from app.templates import templates
 from app.utils.audit import log_action
-from app.utils.company_activation import assign_company_key
+from app.utils.company_activation import (
+    assign_company_key,
+    is_valid_key_format,
+    normalize_company_key,
+)
 from app.utils.csrf import CSRF_COOKIE, generate_csrf_token
 from app.utils.password_policy import validar_password
 from app.utils.plan_limits import PLANES_VALIDOS
 from app.utils import estado_sistema, metricas, token_blacklist
 from app.utils.rate_limit import estado as rate_limit_estado, is_rate_limited
 from app.utils.security import (
+    activation_key_hash,
     create_access_token,
     decrypt_secret,
+    encrypt_secret,
     get_password_hash,
     verify_password_with_timing_safety,
 )
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 def _requiere_superadmin(request: Request, db: Session):
@@ -229,10 +239,137 @@ async def ver_clave(
 
     clave = decrypt_secret(empresa.activation_key_encrypted)
     if not clave:
-        return JSONResponse({"error": "No se pudo recuperar la clave. Genera una nueva."}, status_code=500)
+        # La copia legible se cifra con SECRET_KEY. Si esa clave se rota, las
+        # copias anteriores dejan de descifrarse -- la activacion sigue
+        # funcionando, porque eso va por hash, pero el superadmin ya no puede
+        # volver a leerlas. Antes se respondia "genera una nueva", que invalida
+        # la clave en uso y obliga al cliente a reactivar. Casi siempre la
+        # clave no se ha perdido: esta en manos del cliente, y basta con
+        # volver a guardarla.
+        return JSONResponse(
+            {"error": "La copia legible de esta clave se cifro con una SECRET_KEY "
+                      "anterior y ya no se puede descifrar. La clave sigue siendo "
+                      "valida: si la tienes, usa \"Restaurar copia\" para volver a "
+                      "guardarla sin invalidarla.",
+             "recuperable": True,
+             "hint": empresa.activation_key_hint},
+            status_code=409,
+        )
 
     log_action(db, user, "empresa_clave_ver", "empresas", f"empresa_id={empresa_id}")
     return JSONResponse({"ok": True, "clave": clave})
+
+
+@router.get("/respaldos")
+async def listar_copias(request: Request, db: Session = Depends(get_db_system)):
+    """Las copias de seguridad disponibles."""
+    user = _requiere_superadmin(request, db)
+    if not user:
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+    from app.services.respaldo import DIAS_A_CONSERVAR, listar_respaldos
+    from app.utils import supabase_storage
+
+    return JSONResponse({
+        "ok": True,
+        "configurado": supabase_storage.disponible(),
+        "conserva_dias": DIAS_A_CONSERVAR,
+        "respaldos": listar_respaldos(),
+    })
+
+
+@router.post("/respaldos/ahora")
+async def respaldar_ahora(request: Request, db: Session = Depends(get_db_system)):
+    """Lanza una copia en el momento, sin esperar a la de la madrugada."""
+    user = _requiere_superadmin(request, db)
+    if not user:
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+    from app.services.respaldo import crear_respaldo
+
+    try:
+        resumen = crear_respaldo(db)
+    except Exception as e:
+        logger.exception("Respaldo manual fallido")
+        return JSONResponse({"error": str(e)[:300]}, status_code=500)
+    log_action(db, user, "respaldo_manual", "sistema", resumen["nombre"])
+    db.commit()
+    return JSONResponse({"ok": True, **resumen})
+
+
+@router.get("/respaldos/{nombre}")
+async def descargar_copia(request: Request, nombre: str,
+                          db: Session = Depends(get_db_system)):
+    """Baja una copia al equipo del dueno.
+
+    Es lo que convierte esto en un respaldo de verdad: la copia vive en el
+    mismo proyecto de Supabase que la base, asi que protege de un borrado
+    por error pero no de perder la cuenta entera. Bajarse una de vez en
+    cuando cubre ese hueco.
+    """
+    user = _requiere_superadmin(request, db)
+    if not user:
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+    from app.services.respaldo import descargar_respaldo
+
+    datos = descargar_respaldo(nombre)
+    if datos is None:
+        return JSONResponse({"error": "No se encontro esa copia"}, status_code=404)
+    log_action(db, user, "respaldo_descarga", "sistema", nombre)
+    db.commit()
+    return Response(
+        content=datos,
+        media_type="application/gzip",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )
+
+
+@router.post("/empresas/{empresa_id}/clave/restaurar")
+async def restaurar_copia_clave(
+    request: Request, empresa_id: int,
+    clave: str = Form(...),
+    db: Session = Depends(get_db_system)
+):
+    """Vuelve a guardar la copia legible de una clave que sigue en uso.
+
+    No genera nada ni cambia el hash: solo comprueba que la clave escrita es
+    de verdad la de esta empresa y, si lo es, guarda su copia cifrada con la
+    SECRET_KEY actual. Sirve para el caso en que se roto SECRET_KEY y las
+    copias viejas quedaron ilegibles, sin obligar al cliente a reactivar con
+    una clave nueva.
+
+    La comprobacion es contra el hash, que es la misma que usa la activacion:
+    una clave equivocada no puede colarse.
+    """
+    user = _requiere_superadmin(request, db)
+    if not user:
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    empresa = db.query(Empresa).filter(Empresa.id == empresa_id).first()
+    if not empresa:
+        return JSONResponse({"error": "Empresa no encontrada"}, status_code=404)
+    if not empresa.activation_key_hash:
+        return JSONResponse(
+            {"error": "Esta empresa no tiene clave asignada; genera una."}, status_code=404)
+
+    escrita = normalize_company_key(clave)
+    if not is_valid_key_format(escrita):
+        return JSONResponse({"error": "El formato de la clave no es valido"}, status_code=400)
+    if not secrets.compare_digest(activation_key_hash(escrita), empresa.activation_key_hash):
+        log_action(db, user, "empresa_clave_restaurar_fallida", "empresas",
+                   f"empresa_id={empresa_id}")
+        db.commit()
+        return JSONResponse(
+            {"error": "Esa no es la clave de esta empresa."}, status_code=400)
+
+    empresa.activation_key_encrypted = encrypt_secret(escrita)
+    empresa.activation_key_hint = f"...{escrita[-8:]}"
+    db.commit()
+    log_action(db, user, "empresa_clave_restaurar", "empresas", f"empresa_id={empresa_id}")
+    db.commit()
+    return JSONResponse({
+        "ok": True,
+        "mensaje": "Copia restaurada. La clave sigue siendo la misma y no hubo que reactivar.",
+        "hint": empresa.activation_key_hint,
+    })
 
 
 @router.post("/empresas/{empresa_id}/clave")

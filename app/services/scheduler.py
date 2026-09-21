@@ -5,7 +5,8 @@ import datetime
 import time
 import logging
 
-from app.database import SessionLocal, Cuota, Empresa, IS_SQLITE, hoy_local, inicio_dia_negocio
+from app.database import (SessionLocal, Cuota, Empresa, IS_SQLITE, ahora_local,
+                          hoy_local, inicio_dia_negocio)
 from sqlalchemy import and_, text
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 # No tienen efecto en SQLite (dev), donde solo corre un proceso de todos modos.
 _LOCK_KEY_ESTADOS = 987001
 _LOCK_KEY_RECORDATORIOS = 987002
+_LOCK_KEY_RESPALDO = 987003
 
 
 def _con_advisory_lock(db, key: int, nombre: str, fn) -> bool:
@@ -60,6 +62,57 @@ def actualizar_estados_cuotas():
 
 
 ACCION_RECORDATORIOS = "recordatorios_wp_enviados"
+ACCION_RESPALDO = "respaldo_diario"
+
+
+def _ya_se_respaldo_hoy(db) -> bool:
+    """La marca es duradera y compartida, no una variable de este proceso.
+
+    Un lock impide que dos procesos respalden a la vez, no que respalden uno
+    detras de otro: en cuanto el primero suelta el lock, el segundo entra
+    dentro de la misma ventana y se genera la copia dos veces. Por eso hacen
+    falta las dos cosas.
+    """
+    from app.database import AuditLog
+
+    return db.query(AuditLog.id).filter(
+        AuditLog.action == ACCION_RESPALDO,
+        AuditLog.created_at >= inicio_dia_negocio(),
+    ).first() is not None
+
+
+def respaldo_diario():
+    """Genera la copia de seguridad del dia, una sola vez entre todos."""
+    from app.database import SessionLocal
+    from app.database import AuditLog
+    from app.services.respaldo import crear_respaldo
+
+    db = SessionLocal()
+
+    def _run():
+        if _ya_se_respaldo_hoy(db):
+            logger.debug("Respaldo: ya se hizo hoy")
+            return
+        try:
+            resumen = crear_respaldo(db)
+        except Exception as e:
+            logger.error("Respaldo diario fallido: %s", e, exc_info=True)
+            # No se marca como hecho: en la siguiente vuelta se reintenta.
+            return
+        db.add(AuditLog(
+            action=ACCION_RESPALDO,
+            category="scheduler",
+            details=(f"{resumen['nombre']}: {resumen['tablas']} tablas, "
+                     f"{resumen['filas']} filas, {resumen['bytes'] // 1024} KB"),
+        ))
+        db.commit()
+
+    try:
+        _con_advisory_lock(db, _LOCK_KEY_RESPALDO, "respaldo_diario", _run)
+    except Exception as e:
+        logger.error("Scheduler error respaldo: %s", e, exc_info=True)
+    finally:
+        db.close()
 
 
 def _ya_se_enviaron_hoy(db) -> bool:
@@ -195,6 +248,16 @@ def loop_scheduler():
             except Exception as e:
                 logger.warning("No se pudieron limpiar las ventanas del rate limit: %s", e)
             ultimo_limpieza = ahora
+
+        # Cada dia de madrugada: copia de seguridad. A las 3 porque no hay
+        # nadie cobrando y la base esta ociosa. La hora es la del negocio,
+        # no la del contenedor, que corre en UTC.
+        local = ahora_local()
+        if local.hour == 3 and local.minute < 5:
+            try:
+                respaldo_diario()
+            except Exception as e:
+                logger.error(f"Error ejecutando el respaldo: {e}", exc_info=True)
 
         # Cada día a las 8:00 AM: enviar recordatorios WhatsApp
         if (ahora.hour == 8 and ahora.minute < 5 and

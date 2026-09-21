@@ -199,8 +199,36 @@ async function generarClave(empresaId, tieneClave, nombre) {
 async function verClave(empresaId, nombre) {
   const r = await window.fetch(`/plataforma/empresas/${empresaId}/clave`);
   const d = await r.json();
-  if (d.ok) _abrirModalClave(nombre, d.clave, { unaVezSola: false });
-  else toast(d.error || 'Error', 'error');
+  if (d.ok) { _abrirModalClave(nombre, d.clave, { unaVezSola: false }); return; }
+  // La copia legible se cifro con una SECRET_KEY anterior. La clave sigue
+  // siendo valida, asi que se ofrece volver a guardarla en vez de empujar a
+  // generar una nueva, que obligaria al cliente a reactivar.
+  if (d.recuperable) { restaurarCopiaClave(empresaId, nombre, d.hint); return; }
+  toast(d.error || 'Error', 'error');
+}
+
+async function restaurarCopiaClave(empresaId, nombre, pista) {
+  const clave = prompt(
+    `La copia guardada de la clave de ${nombre} ya no se puede leer, pero la clave
+` +
+    `sigue siendo valida y no hay que reactivar nada.
+
+` +
+    `Si la tienes a mano${pista ? ' (termina en ' + pista.replace('...', '') + ')' : ''}, escribela aqui y se vuelve a guardar:`,
+    '');
+  if (clave === null || !clave.trim()) return;
+  const fd = new FormData();
+  fd.append('clave', clave.trim());
+  try {
+    const r = await window.fetch(`/plataforma/empresas/${empresaId}/clave/restaurar`,
+                                 { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.ok) { toast(d.mensaje); setTimeout(() => location.reload(), 1200); }
+    else toast(d.error || 'No se pudo restaurar', 'error');
+  } catch (e) {
+    console.error('[Plataforma] Error restaurando la copia de la clave:', e);
+    toast('No hay conexion. Intenta de nuevo.', 'error');
+  }
 }
 
 function copiarClave() {

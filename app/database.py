@@ -222,6 +222,22 @@ def hoy_local() -> datetime.date:
         return datetime.date.today()
 
 
+def ahora_local() -> datetime.datetime:
+    """La hora de pared donde trabaja el usuario, sin zona horaria adjunta.
+
+    Para decidir "son las tres de la madrugada" hay que preguntar por el
+    reloj del negocio. Restar medianoches, que fue el primer intento, falla
+    justo cuando la fecha local y la del servidor coinciden: la diferencia
+    sale cero y queda la hora UTC.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.datetime.now(ZoneInfo(TZ_NEGOCIO)).replace(tzinfo=None)
+    except Exception:
+        return datetime.datetime.now()
+
+
 def dia_semana_local() -> int:
     """0=lunes .. 6=domingo, en la hora local del negocio."""
     return hoy_local().weekday()
