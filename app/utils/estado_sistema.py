@@ -23,6 +23,28 @@ from functools import lru_cache
 
 from sqlalchemy import text
 
+# Instante en que se importo este modulo, es decir en que arranco el proceso.
+# Sin este dato no hay forma de distinguir "la aplicacion va lenta" de "la
+# aplicacion se esta reiniciando cada pocos minutos": las dos se ven igual
+# desde fuera, como peticiones que a veces tardan mucho o no llegan.
+_ARRANQUE_PROCESO = time.time()
+
+
+def _memoria_mb() -> float | None:
+    """Memoria residente del proceso, si el sistema la expone.
+
+    En Linux se lee de /proc sin dependencias; en Windows no existe y se
+    devuelve None. Un contenedor que se acerca a su limite de memoria acaba
+    muriendo sin dejar rastro en los registros de la aplicacion, asi que
+    conviene poder mirarlo antes de que ocurra.
+    """
+    try:
+        with open("/proc/self/statm") as f:
+            paginas = int(f.read().split()[1])
+        return round(paginas * os.sysconf("SC_PAGE_SIZE") / (1024 * 1024), 1)
+    except Exception:
+        return None
+
 logger = logging.getLogger(__name__)
 
 VERSION = "2.1.0"
@@ -95,6 +117,12 @@ def salud() -> dict:
         "ida_y_vuelta_bd_ms": ida_y_vuelta,
         "region": (os.getenv("RAILWAY_REPLICA_REGION") or os.getenv("RAILWAY_REGION")
                    or os.getenv("FLY_REGION") or "desconocida"),
+        # Segundos desde que arranco este proceso. Si baja de golpe entre dos
+        # consultas, el contenedor se reinicio: eso es lo que hay que mirar
+        # cuando "se cayo" pero el chequeo de salud responde bien.
+        "vivo_segundos": int(time.time() - _ARRANQUE_PROCESO),
+        "memoria_mb": _memoria_mb(),
+        "pid": os.getpid(),
     }
 
 
