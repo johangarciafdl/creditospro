@@ -19,4 +19,25 @@ PORT=${PORT:-8000}
 # base de datos admite 60 en total.
 WORKERS=${WEB_CONCURRENCY:-2}
 
+# Aplicar las migraciones pendientes antes de aceptar trafico.
+#
+# Sin esto habia que acordarse de ejecutarlas a mano despues de cada
+# despliegue: un cambio de esquema subido pero no aplicado deja la
+# aplicacion consultando columnas que no existen, y el fallo aparece en la
+# primera peticion de un usuario, no en el despliegue. Se ejecuta una vez
+# por arranque del contenedor, antes de que uvicorn cree sus procesos.
+#
+# Si falla, el arranque se detiene a proposito: Railway conserva el
+# despliegue anterior, que es preferible a servir con un esquema a medias.
+# Se puede saltar con SKIP_MIGRATIONS=1 para un arranque de emergencia.
+if [ "${SKIP_MIGRATIONS:-0}" != "1" ]; then
+  echo "[start] Aplicando migraciones pendientes..."
+  if ! alembic upgrade head; then
+    echo "[start] ERROR: fallaron las migraciones. No se arranca con un esquema a medias."
+    echo "[start] Para arrancar igualmente (y arreglarlo a mano): SKIP_MIGRATIONS=1"
+    exit 1
+  fi
+  echo "[start] Migraciones al dia."
+fi
+
 exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --workers "$WORKERS" --proxy-headers --forwarded-allow-ips='*'
