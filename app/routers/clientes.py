@@ -527,6 +527,14 @@ async def detalle_cliente(
                                and c.fecha_pago > c.fecha_vencimiento else 0),
                 "no_pagos": no_pagos_por_cuota.get(c.id, []),
                 "cobros": cobros_por_cuota.get(c.id, []),
+                # Un cobro se anota entero en la cuota donde se recibio, pero
+                # si supera su saldo el excedente se aplica a las siguientes.
+                # Sin estas dos cifras el detalle mentia por los dos lados:
+                # la cuota de origen parecia haber recibido el importe
+                # completo, y la de destino decia "sin pagos registrados"
+                # teniendo dinero abonado.
+                "recibido": sum(x["valor"] for x in cobros_por_cuota.get(c.id, [])),
+                "aplicado": float(c.valor_pagado or 0),
                 # Un abono que no cubre la cuota es un "pago menor": hay que
                 # verlo de un vistazo y saber cuanto falta, no deducirlo de
                 # dos numeros.

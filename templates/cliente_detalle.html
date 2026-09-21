@@ -248,7 +248,7 @@
                 <div class="fs-12">
                   <div class="fw-600 mb-1">Cuota {{ c.numero }} — {{ c.valor | cop }}, vence {{ c.fecha_vencimiento }}</div>
                   {% if c.cobros %}
-                    <div class="fs-11 text-2" style="margin-top:4px;">Pagos registrados:</div>
+                    <div class="fs-11 text-2" style="margin-top:4px;">Recibido del cliente:</div>
                     {% for co in c.cobros %}
                       <div style="margin-left:10px;">
                         · {{ co.fecha }} — <strong class="num">{{ co.valor | cop }}</strong>
@@ -256,6 +256,24 @@
                         {% if co.observaciones %}<span class="text-2">— {{ co.observaciones }}</span>{% endif %}
                       </div>
                     {% endfor %}
+                    {# El importe recibido no siempre se queda entero en esta
+                       cuota: si supera su saldo, el resto pasa a las
+                       siguientes. Decirlo evita que parezca que a una cuota
+                       de 60.000 se le aplicaron 80.000. #}
+                    {% if c.recibido > c.aplicado %}
+                      <div style="margin-left:10px;" class="text-2">
+                        Aplicado a esta cuota: <strong class="num">{{ c.aplicado | cop }}</strong>;
+                        los {{ (c.recibido - c.aplicado) | cop }} restantes pasaron a las cuotas siguientes.
+                      </div>
+                    {% endif %}
+                  {% elif c.aplicado > 0 %}
+                    {# Sin cobro propio pero con dinero abonado: llego por el
+                       excedente de un pago mayor hecho en una cuota anterior
+                       del mismo prestamo. #}
+                    <div style="margin-left:10px;">
+                      · {{ c.fecha_pago or '—' }} — <strong class="num">{{ c.aplicado | cop }}</strong>
+                      <span class="text-2">abonado desde un pago mayor de una cuota anterior</span>
+                    </div>
                   {% else %}
                     <div class="text-2" style="margin-left:10px;">Sin pagos registrados.</div>
                   {% endif %}
