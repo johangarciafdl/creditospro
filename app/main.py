@@ -362,14 +362,16 @@ async def foto_cliente(filename: str, request: Request, db=Depends(get_db)):
     if not cliente or not require_zone_access(db, user, cliente.zona_id):
         raise HTTPException(status_code=404)
 
-    # Las imagenes viven en la base de datos: el disco del contenedor se
-    # borra en cada despliegue y las fotos desaparecian con el. Se sigue
-    # mirando el disco despues, por si queda alguna de antes del cambio.
-    archivo = leer_imagen(db, user.empresa_id, filename)
-    if archivo:
+    # Los bytes estan en Supabase Storage, en un bucket privado. Se sirven
+    # por aqui y no por una URL de Supabase para que sigan pasando por las
+    # comprobaciones de empresa y de zona de arriba. Despues se mira el
+    # disco del contenedor, por si queda algo de antes del cambio.
+    imagen = leer_imagen(db, user.empresa_id, filename)
+    if imagen:
+        datos, mime = imagen
         return Response(
-            content=archivo.datos,
-            media_type=archivo.mime,
+            content=datos,
+            media_type=mime,
             headers={"Cache-Control": "private, max-age=86400"},
         )
 

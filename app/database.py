@@ -344,13 +344,18 @@ class Usuario(Base):
 
 
 class Archivo(Base):
-    """Las imagenes subidas, guardadas en la base de datos y no en el disco.
+    """Indice de las imagenes subidas: quien es su dueno y donde estan.
 
     Antes se escribian en uploads/ dentro del contenedor. El proveedor da un
     disco efimero: cada despliegue lo borra, asi que toda foto tomada por un
     cobrador desaparecia en el siguiente despliegue y el perfil del cliente
-    quedaba con la imagen rota. Aqui viajan con la base de datos y entran en
-    sus copias de seguridad.
+    quedaba con la imagen rota.
+
+    Los bytes viven ahora en Supabase Storage, en un bucket privado al que
+    solo llega el backend con la clave de servicio. Esta tabla guarda a que
+    empresa pertenece cada imagen, que es lo que permite negarsela a otra
+    empresa antes de ir a buscarla, y de paso deja el inventario dentro de la
+    misma copia de seguridad que el resto de los datos.
     """
     __tablename__ = "archivos"
     id = Column(Integer, primary_key=True, index=True)
@@ -360,7 +365,14 @@ class Archivo(Base):
     # "cliente" o "cobro": permite localizar y limpiar por tipo.
     tipo = Column(String(30), nullable=False, default="cliente")
     mime = Column(String(80), nullable=False, default="image/jpeg")
-    datos = Column(LargeBinary, nullable=False)
+    # Donde estan los bytes: "supabase" (Storage) o "bd" (la columna datos).
+    # Las dos conviven porque las imagenes subidas antes de mover el almacen
+    # siguen en la base, y porque sin credenciales de Storage -- pruebas y
+    # desarrollo local -- la aplicacion tiene que seguir funcionando igual.
+    almacen = Column(String(20), nullable=False, default="bd")
+    # Ruta dentro del bucket cuando almacen == "supabase".
+    ruta = Column(String(400), nullable=True)
+    datos = Column(LargeBinary, nullable=True)
     tamano = Column(Integer, nullable=False, default=0)
     creado = Column(DateTime, default=func.now())
 

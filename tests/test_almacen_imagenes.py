@@ -17,6 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Archivo, Base
+from app.utils import supabase_storage
 from app.utils.almacen_imagenes import borrar_imagen, guardar_imagen, leer_imagen
 from app.utils.validators import LADO_MAXIMO_IMAGEN, sanitizar_imagen_subida
 
@@ -45,9 +46,10 @@ def test_la_imagen_se_recupera_tal_cual_se_guardo(db):
 
     guardada = leer_imagen(db, 1, nombre)
     assert guardada is not None
-    assert guardada.datos == datos
-    assert guardada.mime == "image/jpeg"
-    assert guardada.tamano == len(datos)
+    recuperados, mime = guardada
+    assert recuperados == datos
+    assert mime == "image/jpeg"
+    assert db.query(Archivo).one().tamano == len(datos)
 
 
 def test_una_empresa_no_puede_leer_la_foto_de_otra(db):
@@ -107,3 +109,68 @@ def test_ninguna_subida_escribe_en_el_disco_del_contenedor():
         "Guarda la imagen con guardar_imagen(); el disco se borra en cada despliegue:"
         + chr(10) + "  " + (chr(10) + "  ").join(culpables)
     )
+
+
+def test_sin_credenciales_los_bytes_se_quedan_en_la_base(db, monkeypatch):
+    """Sin Storage configurado la aplicacion no puede dejar de funcionar."""
+    monkeypatch.setattr(supabase_storage, "disponible", lambda: False)
+    ext, datos = sanitizar_imagen_subida("foto.jpg", _jpeg())
+    nombre = guardar_imagen(db, 1, datos, ext)
+    db.commit()
+
+    fila = db.query(Archivo).one()
+    assert fila.almacen == "bd" and fila.ruta is None
+    assert fila.datos is not None
+    assert leer_imagen(db, 1, nombre)[0] == datos
+
+
+def test_con_credenciales_los_bytes_van_al_bucket(db, monkeypatch):
+    subidos = {}
+    monkeypatch.setattr(supabase_storage, "disponible", lambda: True)
+    monkeypatch.setattr(supabase_storage, "subir",
+                        lambda ruta, datos, mime: subidos.__setitem__(ruta, datos))
+    monkeypatch.setattr(supabase_storage, "descargar", lambda ruta: subidos.get(ruta))
+
+    ext, datos = sanitizar_imagen_subida("foto.jpg", _jpeg())
+    nombre = guardar_imagen(db, 7, datos, ext, "cobro")
+    db.commit()
+
+    fila = db.query(Archivo).one()
+    assert fila.almacen == "supabase"
+    assert fila.ruta == f"empresa_7/cobro/{nombre}", "un prefijo por empresa y tipo"
+    assert fila.datos is None, "los bytes no se duplican en la base"
+    assert leer_imagen(db, 7, nombre) == (datos, "image/jpeg")
+
+
+def test_si_storage_falla_la_foto_no_se_pierde(db, monkeypatch):
+    """Guardarla en el sitio menos elegante es mejor que perderla."""
+    monkeypatch.setattr(supabase_storage, "disponible", lambda: True)
+
+    def revienta(ruta, datos, mime):
+        raise supabase_storage.ErrorStorage("503")
+
+    monkeypatch.setattr(supabase_storage, "subir", revienta)
+    ext, datos = sanitizar_imagen_subida("foto.jpg", _jpeg())
+    nombre = guardar_imagen(db, 1, datos, ext)
+    db.commit()
+
+    fila = db.query(Archivo).one()
+    assert fila.almacen == "bd" and fila.datos is not None
+    assert leer_imagen(db, 1, nombre)[0] == datos
+
+
+def test_el_bucket_es_privado_y_no_se_firman_urls(db):
+    """Una URL firmada, una vez emitida, no sabe nada de empresas ni zonas.
+
+    Las imagenes se sirven por un endpoint de la aplicacion que comprueba
+    antes la empresa del usuario y su acceso a la zona. Si algun dia se
+    empiezan a repartir URL de Supabase, esa comprobacion deja de existir.
+    """
+    fuentes = (RAIZ / "app").rglob("*.py")
+    culpables = [
+        f"{r.relative_to(RAIZ)}"
+        for r in fuentes
+        if re.search(r"sign|/object/public/", r.read_text(encoding="utf-8"), re.I)
+        and r.name in ("supabase_storage.py", "almacen_imagenes.py")
+    ]
+    assert not culpables, "No emitas URL publicas ni firmadas: " + ", ".join(culpables)
