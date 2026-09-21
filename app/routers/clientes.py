@@ -8,6 +8,7 @@ Clientes router v2.3 — multi-tenant
 """
 import re
 import uuid
+from decimal import Decimal
 import shutil
 import datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db, Cliente, Cobro, NoPago, Prestamo, Usuario, Zona
 from app.utils.almacen_imagenes import borrar_imagen, guardar_imagen
+from app.utils.money import money
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
@@ -502,8 +504,14 @@ async def detalle_cliente(
 
     prestamos_data = []
     for p in prestamos:
-        pagado = sum(c.valor_pagado or 0 for c in p.cuotas)
-        saldo = max(0.0, (p.total_pagar or p.capital or 0) - pagado)
+        # Todo en Decimal, de extremo a extremo. Antes era
+        # max(0.0, Decimal), que devuelve el float 0.0 cuando el prestamo
+        # esta saldado y un Decimal cuando no: la plantilla suma los saldos
+        # de todos los prestamos del cliente y reventaba con "unsupported
+        # operand type(s) for +: 'decimal.Decimal' and 'float'" en cuanto
+        # alguien tenia un prestamo pagado y otro pendiente a la vez.
+        pagado = sum((money(c.valor_pagado) for c in p.cuotas), Decimal("0"))
+        saldo = max(Decimal("0"), money(p.total_pagar or p.capital or 0) - pagado)
         prestamos_data.append({
             "id": p.id, "capital": p.capital or 0,
             "total": p.total_pagar or p.capital or 0,
@@ -533,12 +541,13 @@ async def detalle_cliente(
                 # la cuota de origen parecia haber recibido el importe
                 # completo, y la de destino decia "sin pagos registrados"
                 # teniendo dinero abonado.
-                "recibido": sum(x["valor"] for x in cobros_por_cuota.get(c.id, [])),
-                "aplicado": float(c.valor_pagado or 0),
+                "recibido": sum((money(x["valor"]) for x in cobros_por_cuota.get(c.id, [])),
+                                Decimal("0")),
+                "aplicado": money(c.valor_pagado),
                 # Un abono que no cubre la cuota es un "pago menor": hay que
                 # verlo de un vistazo y saber cuanto falta, no deducirlo de
                 # dos numeros.
-                "falta": max(0.0, float(c.valor or 0) - float(c.valor_pagado or 0)),
+                "falta": max(Decimal("0"), money(c.valor) - money(c.valor_pagado)),
                 "estado": c.estado or "Pendiente",
             } for c in sorted(p.cuotas, key=lambda x: x.numero)],
         })

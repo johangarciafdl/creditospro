@@ -221,6 +221,14 @@ app.mount("/static", EstaticosConCache(directory=str(BASE_DIR / "static")), name
 # internet cuando el problema estaba en el servidor, y que no deja rastro de
 # que fallo. Con esto SIEMPRE responde JSON, con el id de la peticion para
 # poder cruzarlo con los logs.
+# application/json es UTF-8 por norma, pero Starlette no lo dice en la
+# cabecera y el navegador acaba adivinando. Cuando el usuario cae
+# directamente sobre una de estas respuestas -- un formulario que navega en
+# vez de usar fetch, o una recarga que falla -- se leia "OcurriA3 un error"
+# en lugar de "Ocurrio un error". Decirlo cuesta nada y quita la duda.
+JSON_UTF8 = "application/json; charset=utf-8"
+
+
 @app.exception_handler(Exception)
 async def error_no_previsto(request: Request, exc: Exception):
     rid = getattr(request.state, "request_id", None) or "-"
@@ -230,13 +238,15 @@ async def error_no_previsto(request: Request, exc: Exception):
     return JSONResponse(
         {"error": "Ocurrió un error en el servidor. Intenta de nuevo.", "request_id": rid},
         status_code=500,
+        media_type=JSON_UTF8,
     )
 
 
 @app.exception_handler(StarletteHTTPException)
 async def error_http(request: Request, exc: StarletteHTTPException):
     """Misma forma {"error": ...} que usan los routers, en vez de {"detail": ...}."""
-    return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+    return JSONResponse({"error": exc.detail}, status_code=exc.status_code,
+                        media_type=JSON_UTF8)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
