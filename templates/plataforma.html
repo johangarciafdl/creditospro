@@ -60,9 +60,9 @@
                 <button type="submit" class="btn btn-ghost btn-xs">Aplicar</button>
               </form>
               {% if e.clave_visible %}
-              <button type="button" class="btn btn-ghost btn-xs" onclick="verClave({{ e.id }}, {{ e.nombre|tojson }})">Ver clave</button>
+              <button type="button" class="btn btn-ghost btn-xs" onclick='verClave({{ e.id }}, {{ e.nombre|tojson }})'>Ver clave</button>
               {% endif %}
-              <button type="button" class="btn btn-ghost btn-xs" onclick="generarClave({{ e.id }}, {{ (e.tiene_clave)|tojson }}, {{ e.nombre|tojson }})">
+              <button type="button" class="btn btn-ghost btn-xs" onclick='generarClave({{ e.id }}, {{ (e.tiene_clave)|tojson }}, {{ e.nombre|tojson }})'>
                 {% if e.tiene_clave %}Rotar clave{% else %}Generar clave{% endif %}
               </button>
             </div>

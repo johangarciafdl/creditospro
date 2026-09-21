@@ -222,8 +222,11 @@
                    habia que salir a Cobros o a Clientes para registrar el pago
                    del cliente que ya se tenia abierto. #}
                 {% if c.estado != 'Pagada' %}
+                {# El nombre va por una constante de JS y no incrustado en el
+                   atributo: tojson emite comillas dobles, que cortaban el
+                   onclick a la mitad y dejaban el boton sin hacer nada. #}
                 <button class="btn btn-gold btn-xs"
-                        onclick="abrirCobro({{ c.id }}, {{ cliente.nombre|tojson }}, {{ '%.2f'|format(c.valor - c.valor_pagado) }}, {{ c.numero }})">Cobrar</button>
+                        onclick="abrirCobro({{ c.id }}, NOMBRE_CLIENTE, {{ '%.2f'|format(c.valor - c.valor_pagado) }}, {{ c.numero }})">Cobrar</button>
                 {% endif %}
               </td>
             </tr>
@@ -369,6 +372,7 @@
 
 {% block extra_scripts %}
 <script nonce="{{ csp_nonce }}">
+const NOMBRE_CLIENTE = {{ cliente.nombre|tojson }};
 const fechaInicioPrest = document.getElementById('fecha-inicio-prest');
 if (fechaInicioPrest) {
   fechaInicioPrest.value = hoyLocal();
