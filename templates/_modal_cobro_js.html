@@ -134,6 +134,14 @@ async function confirmarCobro(){
       document.getElementById('modal-cobro').classList.remove('open');
       toast(d.mensaje,'success');
       setTimeout(refrescarTrasCobro,600);
+    }else if(d.maximo!==undefined){
+      // El importe supera lo que el cliente debe. En vez de dejar al
+      // cobrador restando con el cliente delante, se le deja puesto el
+      // maximo admisible para que solo confirme.
+      toast(d.error,'warn');
+      const campo=document.getElementById('mc-valor');
+      campo.value=d.maximo;
+      campo.focus(); campo.select();
     }else{toast(d.error||d.detail||'No se pudo registrar el cobro','error');}
   }catch(e){
     if(window.pwa){

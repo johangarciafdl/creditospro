@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
-from app.database import get_db, Cliente, NoPago, Prestamo, Usuario, Zona
+from app.database import get_db, Cliente, Cobro, NoPago, Prestamo, Usuario, Zona
 from app.utils.almacen_imagenes import borrar_imagen, guardar_imagen
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
@@ -477,7 +477,28 @@ async def detalle_cliente(
         .order_by(NoPago.fecha)
         .all()
     ):
-        no_pagos_por_cuota.setdefault(np.cuota_id, []).append(np.fecha)
+        no_pagos_por_cuota.setdefault(np.cuota_id, []).append(
+            {"fecha": np.fecha.strftime("%d/%m/%Y"), "motivo": np.motivo or "",
+             "registrado_por": np.registrado_por or ""}
+        )
+
+    # Los pagos de cada cuota, para poder contar su historia completa: una
+    # cuota de 60.000 pagada en tres abonos y dos visitas sin cobro no se
+    # explica con un estado y una fecha. Una sola consulta, no una por cuota.
+    cobros_por_cuota: dict[int, list] = {}
+    for co in (
+        db.query(Cobro)
+        .filter(Cobro.cliente_id == cliente.id, Cobro.empresa_id == user.empresa_id)
+        .order_by(Cobro.fecha, Cobro.id)
+        .all()
+    ):
+        cobros_por_cuota.setdefault(co.cuota_id, []).append({
+            "fecha": co.fecha.strftime("%d/%m/%Y") if co.fecha else "—",
+            "valor": float(co.valor_cobrado or 0),
+            "metodo": co.metodo_pago or "Efectivo",
+            "cobrador": co.cobrador or "",
+            "observaciones": co.observaciones or "",
+        })
 
     prestamos_data = []
     for p in prestamos:
@@ -504,7 +525,12 @@ async def detalle_cliente(
                 "dias_tarde": ((c.fecha_pago - c.fecha_vencimiento).days
                                if c.fecha_pago and c.fecha_vencimiento
                                and c.fecha_pago > c.fecha_vencimiento else 0),
-                "no_pagos": [f.strftime("%d/%m/%Y") for f in no_pagos_por_cuota.get(c.id, [])],
+                "no_pagos": no_pagos_por_cuota.get(c.id, []),
+                "cobros": cobros_por_cuota.get(c.id, []),
+                # Un abono que no cubre la cuota es un "pago menor": hay que
+                # verlo de un vistazo y saber cuanto falta, no deducirlo de
+                # dos numeros.
+                "falta": max(0.0, float(c.valor or 0) - float(c.valor_pagado or 0)),
                 "estado": c.estado or "Pendiente",
             } for c in sorted(p.cuotas, key=lambda x: x.numero)],
         })

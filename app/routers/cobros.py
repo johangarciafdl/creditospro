@@ -340,9 +340,17 @@ async def registrar_cobro(
             reparto.append((siguiente, aplicar))
             excedente -= aplicar
         if excedente > 0:
+            # Cobrar mas de lo que el cliente debe dejaria un sobrante sin
+            # dueno en la contabilidad. El caso real es el ultimo pago con
+            # un billete redondo, asi que en vez de repetir "el saldo
+            # pendiente" se dice cuanto es y cuanto hay que devolver, que es
+            # justo lo que el cobrador necesita saber con el cliente delante.
+            maximo = valor_cobrado_dec - excedente
             return JSONResponse(
-                {"error": f"El valor supera lo que resta del prestamo por {cop(excedente)}. "
-                          f"Registra como maximo el saldo pendiente."},
+                {"error": f"Este prestamo solo debe {cop(maximo)}. "
+                          f"Registra {cop(maximo)} y devuelve {cop(excedente)} de cambio.",
+                 "maximo": float(maximo),
+                 "cambio": float(excedente)},
                 400,
             )
 

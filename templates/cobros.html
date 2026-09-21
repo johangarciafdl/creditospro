@@ -119,6 +119,12 @@ function buscarDebounce(){clearTimeout(_deb);_deb=setTimeout(buscar,400)}
 let _verTodosActivo=false;
 function verTodos(){_verTodosActivo=true;buscar();}
 
+// El modal compartido llama aqui despues de registrar un cobro. Cobros era
+// justamente la unica pantalla que no lo definia, asi que la lista no se
+// recargaba: el cliente al que se acababa de cobrar seguia apareciendo, y al
+// pulsar Cobrar otra vez respondia "la cuota ya esta pagada".
+window.alRegistrarCobro = () => buscar();
+
 async function buscar(){
   const q=document.getElementById('inp-buscar').value.trim();
   const zona_id=document.getElementById('sel-zona').value;

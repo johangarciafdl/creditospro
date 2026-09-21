@@ -204,9 +204,14 @@
                   {% if c.dias_tarde > 0 %}<div class="fs-11 text-red">{{ c.dias_tarde }} día{{ 's' if c.dias_tarde != 1 }} tarde</div>{% endif %}
                 {% else %}<span class="text-3">—</span>{% endif %}
                 {% if c.no_pagos %}
-                  <div class="fs-11 text-2" title="Días en que se visitó y no pagó">
-                    no pagó: {{ c.no_pagos | join(', ') }}
+                  <div class="fs-11" style="color:var(--amber);" title="Días en que se visitó y no pagó">
+                    no pagó: {{ c.no_pagos | map(attribute='fecha') | join(', ') }}
                   </div>
+                {% endif %}
+                {# Un abono que no cubre la cuota: se dice cuanto falta, en vez
+                   de dejar que el cobrador reste dos numeros de memoria. #}
+                {% if c.estado == 'Parcial' and c.falta > 0 %}
+                  <div class="fs-11" style="color:var(--amber);">pago menor — faltan {{ c.falta | cop }}</div>
                 {% endif %}
               </td>
               <td class="num">{{ c.valor | cop }}</td>
@@ -228,6 +233,51 @@
                 <button class="btn btn-gold btn-xs"
                         onclick="abrirCobro({{ c.id }}, NOMBRE_CLIENTE, {{ '%.2f'|format(c.valor - c.valor_pagado) }}, {{ c.numero }})">Cobrar</button>
                 {% endif %}
+                {# La fila resume; el detalle cuenta la historia: cada abono
+                   con su fecha e importe, y cada visita en la que no se
+                   cobro con su motivo. Sin esto, una cuota pagada en tres
+                   veces con dos visitas fallidas se ve igual que una pagada
+                   de golpe. #}
+                <button class="btn btn-ghost btn-xs" aria-expanded="false"
+                        onclick="verDetalleCuota(this, {{ c.id }})"
+                        title="Ver el detalle de esta cuota">Detalle</button>
+              </td>
+            </tr>
+            <tr id="detalle-cuota-{{ c.id }}" style="display:none;">
+              <td colspan="7" style="background:var(--bg2);padding:10px 14px;">
+                <div class="fs-12">
+                  <div class="fw-600 mb-1">Cuota {{ c.numero }} — {{ c.valor | cop }}, vence {{ c.fecha_vencimiento }}</div>
+                  {% if c.cobros %}
+                    <div class="fs-11 text-2" style="margin-top:4px;">Pagos registrados:</div>
+                    {% for co in c.cobros %}
+                      <div style="margin-left:10px;">
+                        · {{ co.fecha }} — <strong class="num">{{ co.valor | cop }}</strong>
+                        ({{ co.metodo }}{% if co.cobrador %}, {{ co.cobrador }}{% endif %})
+                        {% if co.observaciones %}<span class="text-2">— {{ co.observaciones }}</span>{% endif %}
+                      </div>
+                    {% endfor %}
+                  {% else %}
+                    <div class="text-2" style="margin-left:10px;">Sin pagos registrados.</div>
+                  {% endif %}
+
+                  {% if c.no_pagos %}
+                    <div class="fs-11" style="color:var(--amber);margin-top:6px;">Visitas sin cobro:</div>
+                    {% for np in c.no_pagos %}
+                      <div style="margin-left:10px;color:var(--amber);">
+                        · {{ np.fecha }}{% if np.motivo %} — {{ np.motivo }}{% endif %}
+                        {%- if np.registrado_por %} <span class="text-2">({{ np.registrado_por }})</span>{% endif %}
+                      </div>
+                    {% endfor %}
+                  {% endif %}
+
+                  <div style="margin-top:6px;">
+                    {% if c.estado == 'Pagada' %}
+                      Saldada{% if c.dias_tarde > 0 %} con {{ c.dias_tarde }} día{{ 's' if c.dias_tarde != 1 }} de retraso{% else %} a tiempo{% endif %}.
+                    {% elif c.falta > 0 %}
+                      Quedan <strong class="num">{{ c.falta | cop }}</strong> por cobrar de esta cuota.
+                    {% endif %}
+                  </div>
+                </div>
               </td>
             </tr>
             {% endfor %}
@@ -389,6 +439,18 @@ function abrirEditar() {
 // El modal de cobro es el compartido: tras registrar, la ficha se recarga
 // para que el plan de cuotas y los totales reflejen el pago.
 window.alRegistrarCobro = () => setTimeout(() => location.reload(), 900);
+
+// Despliega la historia de una cuota: sus abonos y sus visitas sin cobro.
+// El detalle ya viene con la pagina, asi que abrirlo no pide nada al
+// servidor: el cobrador suele estar en la calle con mala señal.
+function verDetalleCuota(boton, cuotaId) {
+  const fila = document.getElementById('detalle-cuota-' + cuotaId);
+  if (!fila) return;
+  const abierto = fila.style.display !== 'none';
+  fila.style.display = abierto ? 'none' : '';
+  boton.setAttribute('aria-expanded', String(!abierto));
+  boton.textContent = abierto ? 'Detalle' : 'Ocultar';
+}
 
 async function guardarClienteEditado() {
   const form = document.getElementById('form-editar-cliente');
