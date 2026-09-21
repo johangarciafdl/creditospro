@@ -134,3 +134,71 @@ def test_la_ficha_no_mezcla_float_y_decimal_en_dinero():
         "Usa Decimal(\"0\") y no 0.0 al acotar dinero:" + chr(10) + "  "
         + (chr(10) + "  ").join(culpables)
     )
+
+
+# ── La plantilla, renderizada de verdad ─────────────────────────────────────
+# Las pruebas de arriba comprueban la aritmetica; esta comprueba que la
+# pagina se genera. El fallo original no estaba en el calculo sino en
+# sumarlos dentro de la plantilla, asi que hay que pasar por Jinja.
+
+def _ficha(prestamos):
+    """Renderiza el bloque de la ficha que suma los saldos de los prestamos."""
+    from app.templates import templates
+    plantilla = templates.env.from_string(
+        "{% set total_prestado = namespace(v=0) %}"
+        "{% set total_pagado_t = namespace(v=0) %}"
+        "{% set total_saldo = namespace(v=0) %}"
+        "{% for p in prestamos %}"
+        "{% set total_prestado.v = total_prestado.v + p.capital %}"
+        "{% set total_pagado_t.v = total_pagado_t.v + p.pagado %}"
+        "{% set total_saldo.v = total_saldo.v + p.saldo %}"
+        "{% endfor %}"
+        "{{ total_prestado.v | cop }}|{{ total_pagado_t.v | cop }}|{{ total_saldo.v | cop }}"
+    )
+    return plantilla.render(prestamos=prestamos)
+
+
+def _p(capital, pagado, saldo):
+    return {"capital": Decimal(str(capital)), "pagado": Decimal(str(pagado)),
+            "saldo": Decimal(str(saldo))}
+
+
+def test_la_ficha_suma_prestamos_en_cualquier_estado():
+    """Uno saldado y uno pendiente: la combinacion que tumbaba la pagina."""
+    salida = _ficha([_p(3600000, 3600000, 0), _p(240000, 0, 240000)])
+    assert salida == "$3.840.000|$3.600.000|$240.000"
+
+
+def test_la_ficha_funciona_sin_ningun_prestamo():
+    assert _ficha([]) == "$0|$0|$0"
+
+
+def test_la_barra_de_progreso_sale_redondeada_y_acotada():
+    """El |round iba pegado al 0 del else y nunca se aplicaba al calculo.
+
+    Salia width:33.33333333333333333333333333% en el atributo de estilo, y
+    con abonos de mas la barra pasaba del 100 y se salia de su carril.
+    """
+    from app.templates import templates
+    t = templates.env.from_string(
+        "{{ [100, ((p.pagado / p.capital * 100) | round | int)] | min if p.capital else 0 }}")
+    assert t.render(p=_p(900000, 300000, 600000)) == "33"
+    assert t.render(p=_p(3000000, 900000, 2100000)) == "30"
+    assert t.render(p=_p(100000, 0, 100000)) == "0"
+    assert t.render(p=_p(100000, 150000, 0)) == "100", "no puede pasar del 100"
+    assert t.render(p={"capital": Decimal("0"), "pagado": Decimal("0")}) == "0", "sin dividir por cero"
+
+
+def test_la_plantilla_no_deja_decimales_sueltos_en_un_atributo_de_estilo():
+    """Un width con 28 decimales es la firma de un |round mal colocado."""
+    import pathlib
+    import re
+    ruta = (pathlib.Path(__file__).resolve().parent.parent
+            / "templates" / "cliente_detalle.html")
+    culpables = [
+        f"linea {n}: {l.strip()[:90]}"
+        for n, l in enumerate(ruta.read_text(encoding="utf-8").splitlines(), 1)
+        # Un calculo dentro de width: sin pasar por round
+        if re.search(r"width:\{\{[^}]*[*/][^}]*\}\}", l) and "round" not in l
+    ]
+    assert not culpables, "Redondea antes de meterlo en el estilo:" + chr(10) + chr(10).join(culpables)

@@ -172,7 +172,11 @@
     </div>
     <div class="flex-center gap-2">
       <div class="progress" style="width:120px;">
-        <div class="progress-fill {% if p.vencidas > 0 %}red{% endif %}" style="width:{{ (p.pagado/p.capital*100) if p.capital else 0 | round }}%"></div>
+        <div class="progress-fill {% if p.vencidas > 0 %}red{% endif %}" {# El |round iba pegado al 0 del else, asi que nunca se aplicaba al
+             calculo: la barra salia con width:33.33333333333333333333333333%.
+             Se redondea y se acota a 100, porque un prestamo con abonos de mas
+             daria una barra mas larga que su propio carril. #}
+          style="width:{{ [100, ((p.pagado / p.capital * 100) | round | int)] | min if p.capital else 0 }}%"></div>
       </div>
       {% if p.estado=='Cancelado' %}<span class="badge badge-gold">Cancelado</span>
       {% elif p.vencidas > 0 %}<span class="badge badge-red">{{ p.vencidas }} vencida(s)</span>
