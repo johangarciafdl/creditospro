@@ -70,3 +70,38 @@ def test_las_plantillas_no_formatean_pesos_a_mano():
                re.search(r"\"\?\$\{?:,\.0f\}?\"", linea):
                 culpables.append(f"{ruta.name}:{n}: {linea.strip()[:80]}")
     assert not culpables, "Usa el filtro cop:\n  " + "\n  ".join(culpables)
+
+
+def test_el_navegador_tampoco_formatea_pesos_a_mano():
+    """Un '$' pegado a toLocaleString es un cuarto formateador encubierto.
+
+    Se encontraron tres a la vez: fmtCOP en base.html, fmt() en el panel y
+    ocho llamadas sueltas repartidas por las plantillas. Cada una redondeaba
+    distinto, asi que el mismo importe se leia de tres maneras segun la
+    pantalla. La unica excepcion es la abreviatura del grafico ($1,2M), que
+    no pretende ser la cifra exacta.
+    """
+    permitidos = {
+        # La definicion del propio formateador y la abreviatura del grafico.
+        ("base.html", "window.fmtCOP"),
+        ("dashboard.html", "function fmt"),
+    }
+    culpables = []
+    for ruta in (RAIZ / "templates").rglob("*.html"):
+        lineas = ruta.read_text(encoding="utf-8").splitlines()
+        for n, linea in enumerate(lineas, 1):
+            if "toLocaleString('es-CO'" not in linea:
+                continue
+            # Un contador de clientes o de zonas tambien separa miles y es
+            # correcto; lo que no puede es llevar un simbolo de peso delante.
+            if not re.search(r"""(['"]\$['"]\s*\+|\$\$\{)""", linea):
+                continue
+            # Dentro de fmtCOP y de la abreviatura del grafico esta permitido.
+            contexto = chr(10).join(lineas[max(0, n - 8):n])
+            if any(ruta.name == f and marca in contexto for f, marca in permitidos):
+                continue
+            culpables.append(f"{ruta.name}:{n}: {linea.strip()[:80]}")
+    assert not culpables, (
+        "Usa cop() en vez de formatear pesos a mano:" + chr(10) + "  "
+        + (chr(10) + "  ").join(culpables)
+    )

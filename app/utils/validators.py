@@ -153,6 +153,9 @@ def validar_entero_positivo(valor, nombre: str = "valor", minimo: int = 1, maxim
     return v
 
 
+LADO_MAXIMO_IMAGEN = 1280
+
+
 def sanitizar_imagen_subida(filename: str, contenido: bytes, max_bytes: int = 5 * 1024 * 1024) -> tuple[str, bytes]:
     """Valida una imagen por contenido y la regraba sin metadatos EXIF."""
     ext = Path(filename or "").suffix.lower()
@@ -172,6 +175,13 @@ def sanitizar_imagen_subida(filename: str, contenido: bytes, max_bytes: int = 5 
             img.verify()
         with Image.open(BytesIO(contenido)) as img:
             img = ImageOps.exif_transpose(img)
+            # Un movil actual entrega 12 megapixeles. Para la foto de un
+            # cliente o la evidencia de un cobro sobra de largo, y guardar
+            # varios megas por imagen encarece cada copia de seguridad y cada
+            # carga del perfil. Se reduce el lado mayor a 1280 px, que sigue
+            # siendo nitido en pantalla y en una impresion pequena.
+            if max(img.size) > LADO_MAXIMO_IMAGEN:
+                img.thumbnail((LADO_MAXIMO_IMAGEN, LADO_MAXIMO_IMAGEN), Image.LANCZOS)
             formato, ext_normalizada = formatos[ext]
             if formato == "JPEG" and img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")

@@ -17,7 +17,7 @@ from app.templates import templates
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
-from app.database import get_db, Prestamo, Cliente, Cuota, Zona, hoy_local
+from app.database import get_db, Prestamo, Cliente, Cuota, NoPago, Zona, hoy_local
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import calcular_cuotas
 from app.utils.money import money
@@ -121,9 +121,24 @@ async def buscar_ajax(
     rows = query.order_by(Prestamo.creado.desc()).offset(offset).limit(per_page).all()
     zonas_dict = {z.id: z.nombre for z in db.query(Zona).filter(Zona.empresa_id == user.empresa_id).all()}
 
+    # Visitas en las que se fue a cobrar y el cliente no pago. Sin esto, un
+    # prestamo con seis visitas fallidas se ve igual que uno recien puesto.
+    ids_prestamo = [p.id for p, _ in rows]
+    no_pagos_por_prestamo: dict[int, int] = {}
+    if ids_prestamo:
+        for pid, n in (
+            db.query(NoPago.prestamo_id, func.count(NoPago.id))
+            .filter(NoPago.empresa_id == user.empresa_id,
+                    NoPago.prestamo_id.in_(ids_prestamo))
+            .group_by(NoPago.prestamo_id)
+            .all()
+        ):
+            no_pagos_por_prestamo[pid] = n
+
     result = []
     for p, c in rows:
         result.append({
+            "no_pagos": no_pagos_por_prestamo.get(p.id, 0),
             "id": p.id,
             "cliente": c.nombre,
             "cedula": c.cedula,

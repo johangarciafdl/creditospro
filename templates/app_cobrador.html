@@ -88,7 +88,7 @@ async function cargarRuta() {
 
   // Update stats
   const cobradoHoy = (cData.cobros||[]).reduce((s,c)=>s+c.valor,0);
-  document.getElementById('cobrado-hoy').textContent = '$'+Number(cobradoHoy).toLocaleString('es-CO');
+  document.getElementById('cobrado-hoy').textContent = cop(cobradoHoy);
   document.getElementById('num-pendientes').textContent = (rData.pendientes||[]).length;
 
   // Render list
@@ -118,7 +118,7 @@ async function cargarRuta() {
             <div style="font-size:11px;color:var(--t3);">Cuota ${Number(p.cuota_num||0)}/${Number(p.total_cuotas||0)} · ${esc(p.vencimiento)}</div>
           </div>
           <div style="text-align:right;">
-            <div style="font-family:var(--mono);font-weight:700;font-size:16px;">$${saldo.toLocaleString('es-CO')}</div>
+            <div style="font-family:var(--mono);font-weight:700;font-size:16px;">${cop(saldo)}</div>
             <div style="font-size:10px;font-weight:600;color:${venc?'var(--red)':'var(--amber)'};">${venc?dias+'d vencida':'Vence hoy'}</div>
           </div>
         </div>
@@ -148,7 +148,7 @@ function setMetodo(m) {
 function abrirCobro(cuotaId, cliente, valor, numCuota) {
   document.getElementById('mc-cuota-id').value = cuotaId;
   document.getElementById('mc-nombre').textContent = cliente;
-  document.getElementById('mc-detalle').textContent = `Cuota #${numCuota} · $${Number(valor).toLocaleString('es-CO')}`;
+  document.getElementById('mc-detalle').textContent = `Cuota #${numCuota} · ${cop(Number(valor))}`;
   document.getElementById('mc-valor').value = valor;
   setMetodo('Efectivo');
   document.getElementById('mc-obs').value = '';

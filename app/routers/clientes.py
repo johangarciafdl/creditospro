@@ -21,6 +21,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db, Cliente, NoPago, Prestamo, Usuario, Zona
+from app.utils.almacen_imagenes import borrar_imagen, guardar_imagen
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
@@ -257,9 +258,7 @@ async def crear_cliente(
     if foto and foto.filename:
         contenido = await foto.read()
         ext, contenido = sanitizar_imagen_subida(foto.filename, contenido)
-        nombre_archivo = f"{user.empresa_id}_{uuid.uuid4().hex}{ext}"
-        ruta = UPLOAD_DIR / nombre_archivo
-        ruta.write_bytes(contenido)
+        nombre_archivo = guardar_imagen(db, user.empresa_id, contenido, ext, "cliente")
         foto_path = f"fotos/{nombre_archivo}"
 
     cliente = Cliente(
@@ -359,10 +358,11 @@ async def editar_cliente(
     if foto and foto.filename:
         contenido = await foto.read()
         ext, contenido = sanitizar_imagen_subida(foto.filename, contenido)
-        nombre_archivo = f"{user.empresa_id}_{cliente.id}_{uuid.uuid4().hex}{ext}"
-        ruta = UPLOAD_DIR / nombre_archivo
-        ruta.write_bytes(contenido)
+        anterior = (cliente.foto_path or "").removeprefix("fotos/")
+        nombre_archivo = guardar_imagen(db, user.empresa_id, contenido, ext,
+                                        "cliente", cliente.id)
         cliente.foto_path = f"fotos/{nombre_archivo}"
+        borrar_imagen(db, user.empresa_id, anterior)
 
     db.commit()
     return JSONResponse({"ok": True, "mensaje": "Cliente actualizado"})
@@ -431,9 +431,12 @@ async def actualizar_foto(
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
 
-    nombre_archivo = f"{user.empresa_id}_{cliente.id}_{uuid.uuid4().hex}{ext}"
-    (UPLOAD_DIR / nombre_archivo).write_bytes(contenido)
+    anterior = (cliente.foto_path or "").removeprefix("fotos/")
+    nombre_archivo = guardar_imagen(db, user.empresa_id, contenido, ext,
+                                    "cliente", cliente.id)
     cliente.foto_path = f"fotos/{nombre_archivo}"
+    # La imagen sustituida ya no la referencia nadie.
+    borrar_imagen(db, user.empresa_id, anterior)
     db.commit()
     return JSONResponse({"ok": True, "mensaje": "Foto actualizada"})
 

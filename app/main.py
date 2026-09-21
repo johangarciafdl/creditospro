@@ -26,7 +26,7 @@ if _dotenv_path.exists():
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.utils.estaticos import construir as construir_estaticos
@@ -59,6 +59,7 @@ from app.utils.audit_middleware import AuditMiddleware
 from app.utils.request_id import RequestIDMiddleware
 from app.utils.license_middleware import LicenseMiddleware
 from app.utils.rate_limit import InMemoryRateLimitMiddleware
+from app.utils.almacen_imagenes import leer_imagen
 from app.utils.security_headers import SecurityHeadersMiddleware
 from app.utils.seed import seed_data_demo
 from app.utils.settings import settings
@@ -355,6 +356,17 @@ async def foto_cliente(filename: str, request: Request, db=Depends(get_db)):
     ).first()
     if not cliente or not require_zone_access(db, user, cliente.zona_id):
         raise HTTPException(status_code=404)
+
+    # Las imagenes viven en la base de datos: el disco del contenedor se
+    # borra en cada despliegue y las fotos desaparecian con el. Se sigue
+    # mirando el disco despues, por si queda alguna de antes del cambio.
+    archivo = leer_imagen(db, user.empresa_id, filename)
+    if archivo:
+        return Response(
+            content=archivo.datos,
+            media_type=archivo.mime,
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
 
     base = (BASE_DIR / "uploads" / "fotos").resolve()
     ruta = (base / filename).resolve()

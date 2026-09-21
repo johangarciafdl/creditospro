@@ -50,6 +50,7 @@ ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usuario_zonas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rutas_cobro ENABLE ROW LEVEL SECURITY;
 ALTER TABLE no_pagos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE archivos ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS empresa_isolation_empresas ON empresas;
 CREATE POLICY empresa_isolation_empresas ON empresas
@@ -135,6 +136,14 @@ CREATE POLICY empresa_isolation_rutas_cobro ON rutas_cobro
 
 DROP POLICY IF EXISTS empresa_isolation_no_pagos ON no_pagos;
 CREATE POLICY empresa_isolation_no_pagos ON no_pagos
+  USING (empresa_id = public.current_empresa_id())
+  WITH CHECK (empresa_id = public.current_empresa_id());
+
+-- Las imagenes llevan empresa_id como cualquier otra tabla de negocio: una
+-- foto de un cliente es un dato de ese cliente, y se sirve por nombre, que
+-- es adivinable si alguien conoce el formato.
+DROP POLICY IF EXISTS empresa_isolation_archivos ON archivos;
+CREATE POLICY empresa_isolation_archivos ON archivos
   USING (empresa_id = public.current_empresa_id())
   WITH CHECK (empresa_id = public.current_empresa_id());
 

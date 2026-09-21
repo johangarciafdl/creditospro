@@ -243,13 +243,17 @@ async function buscar(opciones) {
         </td>
         <td style="padding:10px 14px;color:var(--t2);">${esc(p.zona)}</td>
         <td style="padding:10px 14px;text-align:right;" class="num">
-          $${Number(p.capital||0).toLocaleString('es-CO')}</td>
+          ${cop(Number(p.capital||0))}</td>
         <td style="padding:10px 14px;text-align:right;" class="num">
-          $${Number(p.valor_cuota||0).toLocaleString('es-CO')}</td>
+          ${cop(Number(p.valor_cuota||0))}</td>
         <td style="padding:10px 14px;text-align:center;">${Number(p.num_cuotas||0)}</td>
         <td style="padding:10px 14px;color:var(--t2);">${esc(p.fecha_inicio)}</td>
         <td style="padding:10px 14px;text-align:center;">
-          <span class="badge ${safeBadge(p.estado)}">${esc(safeEstado(p.estado))}</span></td>
+          <span class="badge ${safeBadge(p.estado)}">${esc(safeEstado(p.estado))}</span>
+          ${Number(p.no_pagos||0)>0
+            ? `<div class="fs-11" style="color:var(--amber);font-weight:600;margin-top:3px;"
+                    title="Visitas en las que se fue a cobrar y el cliente no pago">${Number(p.no_pagos)} sin pago</div>`
+            : ''}</td>
         <td style="padding:10px 14px;text-align:center;" onclick="event.stopPropagation()">
           <a href="/clientes/${attr(p.cliente_id)}" class="btn btn-ghost btn-xs">Ver</a></td>
       </tr>`).join('');
@@ -341,9 +345,9 @@ function calcPreview() {
         return;
       }
       
-      document.getElementById('np-prev-int').textContent   = '$'+Number(d.interes_total).toLocaleString('es-CO');
-      document.getElementById('np-prev-total').textContent = '$'+Number(d.total_pagar).toLocaleString('es-CO');
-      document.getElementById('np-prev-cuota').textContent = '$'+Number(d.valor_cuota).toLocaleString('es-CO');
+      document.getElementById('np-prev-int').textContent   = cop(d.interes_total);
+      document.getElementById('np-prev-total').textContent = cop(d.total_pagar);
+      document.getElementById('np-prev-cuota').textContent = cop(d.valor_cuota);
       document.getElementById('np-preview').style.display  = 'block';
     } catch(e) {}
   }, 500);

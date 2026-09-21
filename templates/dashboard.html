@@ -169,10 +169,12 @@ if (!hasData) {
   bars.appendChild(msg);
 }
 
+// Abreviatura para las etiquetas del grafico, donde no cabe la cifra
+// entera. Cualquier importe que el usuario lea como dinero exacto usa cop().
 function fmt(n) {
   if (n >= 1000000) return '$' + (n/1000000).toFixed(1) + 'M';
   if (n >= 1000) return '$' + (n/1000).toFixed(0) + 'K';
-  return '$' + n.toLocaleString('es-CO');
+  return cop(n);
 }
 </script>
 {% endblock %}

@@ -198,7 +198,7 @@ async function buscar(opciones) {
           </div>
           <div class="flex-between fs-11 mt-1">
             <span class="text-2">Capital:</span>
-            <span class="num text-red fw-600">$${Number(c.prestamo.capital||0).toLocaleString('es-CO')}</span>
+            <span class="num text-red fw-600">${cop(Number(c.prestamo.capital||0))}</span>
           </div>
         </div>
         <div class="flex gap-1" onclick="event.stopPropagation()">

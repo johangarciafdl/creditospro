@@ -17,6 +17,7 @@ from app.routers.auth import get_current_user
 from app.services.prestamo_service import get_estado_prestamo
 from app.utils.audit import log_action
 from app.utils.money import cop, money, money_int
+from app.utils.almacen_imagenes import guardar_imagen
 from app.utils.validators import (
     sanitizar_imagen_subida, validar_metodo_pago, sin_html, limpiar_texto,
     filtro_busqueda,
@@ -158,7 +159,8 @@ async def buscar_cobros(request: Request, q: str="", zona_id: int=None, fecha: s
     } for co, cl, cu in rows], "total": len(rows)})
 
 @router.get("/pendientes-ajax")
-async def pendientes(request: Request, zona_id: int=None, q: str="", db: Session = Depends(get_db)):
+async def pendientes(request: Request, zona_id: int=None, q: str="", fecha: str="",
+                     db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error":"No autorizado"}, 401)
@@ -166,14 +168,22 @@ async def pendientes(request: Request, zona_id: int=None, q: str="", db: Session
     allowed_zones = get_allowed_zone_ids(db, user)
     if allowed_zones is not None and zona_id and zona_id not in allowed_zones:
         return JSONResponse({"pendientes": []})
+    # La pantalla manda la fecha del selector y el endpoint la ignoraba: se
+    # cambiaba el dia y la lista salia siempre la de hoy.
     hoy = hoy_local()
+    try:
+        dia = datetime.date.fromisoformat(fecha.strip()) if fecha.strip() else hoy
+    except ValueError:
+        dia = hoy
 
     query = (db.query(Cuota, Prestamo, Cliente)
         .join(Prestamo, Cuota.prestamo_id==Prestamo.id)
         .join(Cliente, Prestamo.cliente_id==Cliente.id)
+        # "Parcial" faltaba: una cuota con un abono sigue debiendo, pero
+        # desaparecia de la lista y el cobrador no volvia a pasar por ella.
         .filter(Cuota.empresa_id==eid,
-                Cuota.estado.in_(["Pendiente","Vencida"]),
-                Cuota.fecha_vencimiento<=hoy+datetime.timedelta(days=3)))
+                Cuota.estado.in_(["Pendiente","Vencida","Parcial"]),
+                Cuota.fecha_vencimiento<=dia+datetime.timedelta(days=3)))
     if q:
         query = query.filter(filtro_busqueda(q, Cliente.nombre, Cliente.cedula))
     if zona_id:
@@ -181,6 +191,23 @@ async def pendientes(request: Request, zona_id: int=None, q: str="", db: Session
     if allowed_zones is not None:
         query = query.filter(Prestamo.zona_id.in_(allowed_zones or [-1]))
     rows = query.order_by(Cuota.fecha_vencimiento).limit(150).all()
+
+    # Marcar el cliente como "no pago" no cambiaba nada en esta lista: seguia
+    # apareciendo igual que el resto y el cobrador no sabia si ya habia
+    # pasado por el. Se envia si se registro no pago en el dia consultado y
+    # cuantas visitas sin cobro acumula la cuota.
+    ids = [cu.id for cu, _, _ in rows]
+    del_dia: set[int] = set()
+    historico: dict[int, int] = {}
+    motivos: dict[int, str] = {}
+    if ids:
+        for np in db.query(NoPago).filter(NoPago.empresa_id == eid,
+                                          NoPago.cuota_id.in_(ids)).all():
+            historico[np.cuota_id] = historico.get(np.cuota_id, 0) + 1
+            if np.fecha == dia:
+                del_dia.add(np.cuota_id)
+                if np.motivo:
+                    motivos[np.cuota_id] = np.motivo
 
     return JSONResponse({"pendientes": [{
         "cuota_id": cu.id, "prestamo_id": p.id, "cliente_id": cl.id,
@@ -190,7 +217,10 @@ async def pendientes(request: Request, zona_id: int=None, q: str="", db: Session
         "valor": float(cu.valor), "valor_pagado": float(cu.valor_pagado or 0),
         "estado": cu.estado,
         "vencimiento": cu.fecha_vencimiento.strftime("%d/%m/%Y") if cu.fecha_vencimiento else "—",
-        "dias": (hoy - cu.fecha_vencimiento).days if cu.fecha_vencimiento else 0,
+        "dias": (dia - cu.fecha_vencimiento).days if cu.fecha_vencimiento else 0,
+        "no_pago_hoy": cu.id in del_dia,
+        "no_pago_motivo": motivos.get(cu.id, ""),
+        "no_pagos": historico.get(cu.id, 0),
     } for cu, p, cl in rows]})
 
 @router.post("/registrar")
@@ -332,10 +362,7 @@ async def registrar_cobro(
     if foto and foto.filename:
         contenido = await foto.read()
         ext, contenido = sanitizar_imagen_subida(foto.filename, contenido)
-        nombre = f"{user.empresa_id}_{uuid.uuid4().hex}{ext}"
-        ruta = FOTO_DIR / nombre
-        ruta.write_bytes(contenido)
-        foto_path = nombre
+        foto_path = guardar_imagen(db, user.empresa_id, contenido, ext, "cobro")
 
     try:
         for cuota_destino, importe in reparto:
@@ -362,6 +389,7 @@ async def registrar_cobro(
             lat_cobro=lat_val,
             lng_cobro=lng_val,
             idempotency_key=clave,
+            foto_path=foto_path,
         )
         db.add(cobro)
 
@@ -557,6 +585,57 @@ async def registrar_cobro_cliente_rapido(
         "mensaje": f"Cobro registrado a {cliente.nombre}: {cop(valor_cobrado)}",
         "cuota_id": cuota.id,
         "valor_cobrado": float(valor_cobrado),
+    })
+
+
+@router.post("/no-pago/deshacer")
+async def deshacer_no_pago(
+    request: Request,
+    cuota_id: int = Form(...),
+    fecha: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Quita la marca de "no pago" de un dia.
+
+    Marcar por equivocacion a quien si pago dejaba la cuota apartada en la
+    lista sin ninguna forma de devolverla a las pendientes por cobrar.
+    """
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, 401)
+
+    try:
+        dia = datetime.date.fromisoformat(fecha.strip()) if fecha.strip() else hoy_local()
+    except ValueError:
+        return JSONResponse({"error": "Fecha invalida. Usa el formato AAAA-MM-DD."}, 400)
+
+    cuota = db.query(Cuota).filter(
+        Cuota.id == cuota_id, Cuota.empresa_id == user.empresa_id
+    ).first()
+    if not cuota:
+        return JSONResponse({"error": "Cuota no encontrada"}, 404)
+
+    prestamo = db.query(Prestamo).filter(
+        Prestamo.id == cuota.prestamo_id, Prestamo.empresa_id == user.empresa_id
+    ).first()
+    if not prestamo:
+        return JSONResponse({"error": "Prestamo no encontrado"}, 404)
+    if not require_zone_access(db, user, prestamo.zona_id):
+        return JSONResponse({"error": "No tienes permisos para esa zona"}, 403)
+
+    quitados = (
+        db.query(NoPago)
+        .filter(NoPago.cuota_id == cuota.id,
+                NoPago.empresa_id == user.empresa_id,
+                NoPago.fecha == dia)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    if not quitados:
+        return JSONResponse({"error": f"No habia marca de no pago el {dia.strftime('%d/%m/%Y')}"}, 404)
+    return JSONResponse({
+        "ok": True,
+        "mensaje": f"Se quito la marca de no pago del {dia.strftime('%d/%m/%Y')}",
     })
 
 

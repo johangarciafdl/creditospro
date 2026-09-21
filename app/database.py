@@ -13,7 +13,7 @@ from pathlib import Path
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Numeric, Date,
     DateTime, Boolean, Text, JSON, ForeignKey, UniqueConstraint, Index, Table,
-    CheckConstraint, event, text,
+    CheckConstraint, event, text, LargeBinary,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker, relationship
 from sqlalchemy.sql import func
@@ -305,6 +305,32 @@ class Usuario(Base):
     __table_args__ = (UniqueConstraint("empresa_id", "username", name="uq_user_empresa"),)
 
 
+class Archivo(Base):
+    """Las imagenes subidas, guardadas en la base de datos y no en el disco.
+
+    Antes se escribian en uploads/ dentro del contenedor. El proveedor da un
+    disco efimero: cada despliegue lo borra, asi que toda foto tomada por un
+    cobrador desaparecia en el siguiente despliegue y el perfil del cliente
+    quedaba con la imagen rota. Aqui viajan con la base de datos y entran en
+    sus copias de seguridad.
+    """
+    __tablename__ = "archivos"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
+    # El nombre con el que se sirve; es lo que queda guardado en foto_path.
+    nombre = Column(String(300), nullable=False, unique=True, index=True)
+    # "cliente" o "cobro": permite localizar y limpiar por tipo.
+    tipo = Column(String(30), nullable=False, default="cliente")
+    mime = Column(String(80), nullable=False, default="image/jpeg")
+    datos = Column(LargeBinary, nullable=False)
+    tamano = Column(Integer, nullable=False, default=0)
+    creado = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        Index("ix_archivos_empresa_tipo", "empresa_id", "tipo"),
+    )
+
+
 class NoPago(Base):
     """Visita en la que el cliente no pago: queda constancia del intento.
 
@@ -491,7 +517,7 @@ class Cobro(Base):
     cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="RESTRICT"), nullable=False)
     zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="RESTRICT"), nullable=False)
     valor_cobrado = Column(Numeric(12, 2), nullable=False)
-    fecha = Column(Date, default=datetime.date.today)
+    fecha = Column(Date, default=hoy_local)
     hora = Column(DateTime, default=func.now())
     cobrador = Column(String(200))
     metodo_pago = Column(String(50), default="Efectivo")
@@ -503,6 +529,10 @@ class Cobro(Base):
     # sin señal). Si la respuesta del servidor se pierde y la PWA reintenta,
     # el reintento trae la misma clave y el cobro no se aplica dos veces.
     idempotency_key = Column(String(64), nullable=True)
+    # La foto del cobro se pedia en pantalla como "evidencia del pago", se
+    # validaba y se escribia en disco, pero no habia donde anotar cual era:
+    # la referencia se descartaba y la evidencia se perdia siempre.
+    foto_path = Column(String(300), nullable=True)
     __table_args__ = (
         Index("ix_cobros_empresa_fecha", "empresa_id", "fecha"),
         UniqueConstraint("empresa_id", "idempotency_key", name="uq_cobro_idempotency"),
