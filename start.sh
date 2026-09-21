@@ -30,14 +30,30 @@ WORKERS=${WEB_CONCURRENCY:-2}
 # Si falla, el arranque se detiene a proposito: Railway conserva el
 # despliegue anterior, que es preferible a servir con un esquema a medias.
 # Se puede saltar con SKIP_MIGRATIONS=1 para un arranque de emergencia.
+#
+# Se reintenta porque la causa mas probable de que falle no es una migracion
+# mala, sino que la base aun no acepta conexiones en el instante del
+# arranque. Sin reintento, un tropiezo de dos segundos deja el contenedor
+# sin arrancar y el sitio caido hasta que alguien lo note.
 if [ "${SKIP_MIGRATIONS:-0}" != "1" ]; then
-  echo "[start] Aplicando migraciones pendientes..."
-  if ! alembic upgrade head; then
-    echo "[start] ERROR: fallaron las migraciones. No se arranca con un esquema a medias."
-    echo "[start] Para arrancar igualmente (y arreglarlo a mano): SKIP_MIGRATIONS=1"
-    exit 1
-  fi
-  echo "[start] Migraciones al dia."
+  INTENTOS=${MIGRATION_RETRIES:-3}
+  n=1
+  while : ; do
+    echo "[start] Aplicando migraciones pendientes (intento $n de $INTENTOS)..."
+    if alembic upgrade head; then
+      echo "[start] Migraciones al dia."
+      break
+    fi
+    if [ "$n" -ge "$INTENTOS" ]; then
+      echo "[start] ERROR: fallaron las migraciones tras $INTENTOS intentos."
+      echo "[start] No se arranca con un esquema a medias; Railway conserva el despliegue anterior."
+      echo "[start] Para arrancar igualmente (y arreglarlo a mano): SKIP_MIGRATIONS=1"
+      exit 1
+    fi
+    n=$((n + 1))
+    echo "[start] Reintentando en 5 segundos..."
+    sleep 5
+  done
 fi
 
 exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --workers "$WORKERS" --proxy-headers --forwarded-allow-ips='*'
