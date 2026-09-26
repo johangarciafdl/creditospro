@@ -2,6 +2,12 @@
 {% block title %}Mi Ruta{% endblock %}
 {% block topbar_title %}Mi Ruta{% endblock %}
 {% block topbar_sub %}{{ current_user.nombre }}{% endblock %}
+{% block topbar_actions %}
+  {#- Prestar desde la calle: el cobrador registra al cliente nuevo y le
+      presta sin salir de esta pantalla. El boton vive arriba, donde lo
+      alcanza el pulgar, y no al final de la lista. -#}
+  <button class="btn btn-gold btn-sm" onclick="abrirPrestar()">💵 Prestar</button>
+{% endblock %}
 
 {% block content %}
 {#- La vista unica del cobrador. Lista CLIENTES de una zona, no cuotas: un
@@ -88,6 +94,84 @@
 </div>
 
 {% include "_modal_cobro.html" %}
+
+<!-- MODAL PRESTAR -->
+{#- Un solo formulario para los dos casos. El cobrador busca primero: si el
+    cliente ya existe se le presta a ese y sus datos NO se tocan -- corregir
+    una ficha que ya existe es del administrador. Si no aparece, lo da de alta
+    aqui mismo y el prestamo sale en la misma peticion. -#}
+<div class="modal-overlay" id="modal-prestar" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Prestar</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-prestar').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="form-group">
+      <label for="p-zona">Zona</label>
+      <select id="p-zona">
+        {% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="p-buscar">A quien le prestas</label>
+      <input type="text" id="p-buscar" placeholder="Busca por nombre o cedula"
+             oninput="buscarParaPrestar()" autocomplete="off">
+      <div id="p-resultados" style="display:none;border:1px solid var(--border);border-radius:var(--r-sm);margin-top:4px;max-height:160px;overflow:auto;"></div>
+    </div>
+
+    <div id="p-elegido" style="display:none;background:var(--bg-2);border-radius:var(--r-sm);padding:10px;margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div>
+          <div class="fw-600 fs-13" id="p-elegido-nombre">—</div>
+          <div class="fs-11 text-3" id="p-elegido-cedula">—</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="soltarCliente()">Cambiar</button>
+      </div>
+    </div>
+
+    <div id="p-nuevo" style="display:none;">
+      <div class="fs-11 text-3" style="margin-bottom:8px;">
+        No aparece: se da de alta con estos datos.
+      </div>
+      <div class="form-grid">
+        <div class="form-group"><label for="p-cedula">Cedula</label>
+          <input type="text" id="p-cedula" inputmode="numeric"></div>
+        <div class="form-group"><label for="p-nombre">Nombre completo</label>
+          <input type="text" id="p-nombre"></div>
+        <div class="form-group"><label for="p-telefono">Telefono</label>
+          <input type="text" id="p-telefono" inputmode="tel"></div>
+        <div class="form-group"><label for="p-direccion">Direccion</label>
+          <input type="text" id="p-direccion"></div>
+      </div>
+    </div>
+
+    <div class="form-grid" style="margin-top:8px;">
+      <div class="form-group"><label for="p-capital">Capital</label>
+        <input type="number" id="p-capital" min="1000" step="1000" placeholder="300000" oninput="previoPrestamo()"></div>
+      <div class="form-group"><label for="p-tasa">Interes %</label>
+        <input type="number" id="p-tasa" value="20" step="0.5" oninput="previoPrestamo()"></div>
+      <div class="form-group"><label for="p-cuotas">Cuotas</label>
+        <input type="number" id="p-cuotas" value="30" min="1" max="365" oninput="previoPrestamo()"></div>
+      <div class="form-group"><label for="p-plazo">Dias entre cuotas</label>
+        <input type="number" id="p-plazo" value="1" min="1" oninput="previoPrestamo()"></div>
+    </div>
+
+    <div id="p-previo" style="display:none;background:rgba(200,169,90,.08);border:1px solid rgba(200,169,90,.25);border-radius:var(--r-sm);padding:10px;margin-top:4px;">
+      <div class="flex-between fs-12"><span class="text-2">Total a pagar:</span>
+        <span class="num fw-600" id="p-prev-total">—</span></div>
+      <div class="flex-between fs-12"><span class="text-2">Cada cuota:</span>
+        <span class="num fw-600" style="color:var(--green);" id="p-prev-cuota">—</span></div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-prestar').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-gold" style="flex:1;justify-content:center;" id="btn-prestar"
+            onclick="confirmarPrestamo(this)">Prestar</button>
+  </div>
+</div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -337,6 +421,134 @@ async function deshacerNoPago(cuotaId){
     console.error('[Ruta] Error deshaciendo no pago:', e);
     toast('No hay conexion. Intenta de nuevo.', 'error');
   }
+}
+
+// ── PRESTAR ──────────────────────────────────────────────────────────────
+let _clienteElegido = null, _debBuscar = null;
+
+function abrirPrestar(){
+  const sel = document.getElementById('p-zona');
+  if (!sel || !sel.options.length) { toast('Hoy no tienes zonas asignadas', 'error'); return; }
+  if (_zona) sel.value = _zona;          // la zona en la que esta trabajando
+  soltarCliente();
+  document.getElementById('p-buscar').value = '';
+  ['p-cedula','p-nombre','p-telefono','p-direccion','p-capital'].forEach(id => {
+    const c = document.getElementById(id); if (c) c.value = '';
+  });
+  document.getElementById('p-previo').style.display = 'none';
+  document.getElementById('modal-prestar').classList.add('open');
+}
+
+function soltarCliente(){
+  _clienteElegido = null;
+  document.getElementById('p-elegido').style.display = 'none';
+  document.getElementById('p-nuevo').style.display = 'none';
+  document.getElementById('p-resultados').style.display = 'none';
+}
+
+function buscarParaPrestar(){
+  clearTimeout(_debBuscar);
+  _debBuscar = setTimeout(async () => {
+    const q = document.getElementById('p-buscar').value.trim();
+    const caja = document.getElementById('p-resultados');
+    if (q.length < 3) { caja.style.display = 'none';
+                        document.getElementById('p-nuevo').style.display = 'none'; return; }
+    try {
+      const r = await window.fetch('/ruta/buscar-cliente?q=' + encodeURIComponent(q));
+      const d = await leerRespuesta(r);
+      const filas = d.clientes || [];
+      if (!filas.length) {
+        caja.style.display = 'none';
+        // No esta: se da de alta. La cedula se prerrellena si lo que
+        // escribio son numeros, que es como suelen buscarlo.
+        document.getElementById('p-nuevo').style.display = 'block';
+        if (/^\d+$/.test(q)) document.getElementById('p-cedula').value = q;
+        else document.getElementById('p-nombre').value = q;
+        return;
+      }
+      document.getElementById('p-nuevo').style.display = 'none';
+      caja.style.display = 'block';
+      caja.innerHTML = filas.map(c => `
+        <div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);"
+             onclick="elegirCliente(${Number(c.id)||0},${attr(JSON.stringify(c.nombre||''))},${attr(JSON.stringify(c.cedula||''))},${Number(c.zona_id)||0})">
+          <div class="fs-13 fw-600">${esc(c.nombre)}</div>
+          <div class="fs-11 text-3">${esc(c.cedula)}${c.telefono ? ' · ' + esc(c.telefono) : ''}</div>
+        </div>`).join('');
+    } catch(e) {
+      console.error('[Prestar] No se pudo buscar:', e);
+    }
+  }, 400);
+}
+
+function elegirCliente(id, nombre, cedula, zonaId){
+  _clienteElegido = id;
+  document.getElementById('p-elegido-nombre').textContent = nombre;
+  document.getElementById('p-elegido-cedula').textContent = cedula;
+  document.getElementById('p-elegido').style.display = 'block';
+  document.getElementById('p-resultados').style.display = 'none';
+  document.getElementById('p-nuevo').style.display = 'none';
+  const sel = document.getElementById('p-zona');
+  if (zonaId && sel) sel.value = String(zonaId);   // se le presta en SU zona
+}
+
+// El calculo lo hace el servidor, que es el mismo que crea las cuotas: si lo
+// repitiera aqui, la pantalla y el prestamo podrian discrepar en los centavos.
+async function previoPrestamo(){
+  const cap = document.getElementById('p-capital').value;
+  const tasa = document.getElementById('p-tasa').value;
+  const cuotas = document.getElementById('p-cuotas').value;
+  const plazo = document.getElementById('p-plazo').value;
+  const previo = document.getElementById('p-previo');
+  if (!cap || !tasa || !cuotas) { previo.style.display = 'none'; return; }
+  try {
+    const r = await window.fetch(`/prestamos/calcular?capital=${cap}&tasa=${tasa}&cuotas=${cuotas}&plazo=${plazo}`);
+    const d = await leerRespuesta(r);
+    document.getElementById('p-prev-total').textContent = cop(d.total_pagar);
+    document.getElementById('p-prev-cuota').textContent = cop(d.valor_cuota);
+    previo.style.display = 'block';
+  } catch(e) {
+    previo.style.display = 'none';
+  }
+}
+
+async function confirmarPrestamo(btn){
+  const fd = new FormData();
+  fd.append('zona_id', document.getElementById('p-zona').value);
+  fd.append('capital', document.getElementById('p-capital').value);
+  fd.append('tasa_interes', document.getElementById('p-tasa').value);
+  fd.append('num_cuotas', document.getElementById('p-cuotas').value);
+  fd.append('plazo_dias', document.getElementById('p-plazo').value);
+  if (_clienteElegido) {
+    fd.append('cliente_id', _clienteElegido);
+  } else {
+    fd.append('cedula', document.getElementById('p-cedula').value.trim());
+    fd.append('nombre', document.getElementById('p-nombre').value.trim());
+    fd.append('telefono', document.getElementById('p-telefono').value.trim());
+    fd.append('direccion', document.getElementById('p-direccion').value.trim());
+  }
+
+  await conBoton(btn, 'Prestando...', async () => {
+    try {
+      const r = await window.fetch('/ruta/prestar', {method:'POST', body:fd});
+      const d = await leerRespuesta(r);
+      if (d.ok) {
+        document.getElementById('modal-prestar').classList.remove('open');
+        toast(d.mensaje, 'success');
+        // El sobregiro no lo impide, pero tiene que verlo ahora.
+        if (d.aviso) toast(d.aviso, 'warn', 9000);
+        setTimeout(cargar, 700);
+      } else if (d.duplicado && d.cliente_id) {
+        toast(d.error, 'warn', 7000);
+        elegirCliente(d.cliente_id, document.getElementById('p-nombre').value.trim() || 'Ese cliente',
+                      document.getElementById('p-cedula').value.trim(), 0);
+      } else {
+        toast(d.error || d.detail || 'No se pudo prestar', 'error');
+      }
+    } catch(e) {
+      console.error('[Prestar] Error:', e);
+      toast('No hay conexion. El prestamo no se registro.', 'error');
+    }
+  });
 }
 
 // El modal de cobro es el compartido con Cobros y Clientes; cada pantalla

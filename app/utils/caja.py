@@ -7,16 +7,21 @@ devuelve el resto por la tarde. Si al contar no cuadra, hay que poder decir
 exactamente donde se rompio; y si nadie lleva la cuenta, un cobrador
 descuadrado se descubre semanas despues o no se descubre.
 
-    esperado = base + cobrado - prestado - viaticos - entregas +/- ajustes
+    esperado = base + cobrado - gastos - prestado - entregas +/- ajustes
 
 Cada sumando sale de su propia tabla y ninguno se copia:
 
-- base, entregas y ajustes  ->  movimientos_caja
+- base, gastos, entregas y ajustes  ->  movimientos_caja
 - cobrado                   ->  cobros   (neto: las devueltas que el cobrador
                                 le da al cliente ya estan descontadas de lo
                                 que registro, no son una linea aparte)
 - prestado                  ->  prestamos, por desembolsado_por_id
-- viaticos                  ->  no son una fila, se calculan (ver abajo)
+
+Los gastos los anota el propio cobrador. Antes habia en su lugar un viatico
+fijo de 15.000 que se descontaba solo; se quito porque un automatismo que
+resta dinero sin que nadie lo haya escrito es imposible de cuadrar cuando el
+dia no fue como siempre. Ahora todo lo que sale de la caja tiene una linea
+con su valor y su concepto.
 
 Todo el calculo vive aqui y no en el router porque la misma cifra la miran el
 cobrador y el administrador, y dos implementaciones del mismo numero acaban
@@ -34,18 +39,12 @@ from sqlalchemy.orm import Session
 from app.database import Cobro, MovimientoCaja, Prestamo, Usuario
 from app.utils.money import money
 
-# Los 15.000 del almuerzo. No se guardan como fila: serian una fila por
-# cobrador y por dia, lo que obliga a una tarea programada que ademas
-# generaria filas los dias que nadie salio a la calle. Se calculan, y solo
-# los dias en que el cobrador se movio -- tuvo base, cobro algo o presto algo.
-# Si un dia concreto no le tocan, el admin lo corrige con un ajuste.
-VIATICO_DIARIO = Decimal("15000")
-
-TIPOS = ("base", "entrega", "ajuste_mas", "ajuste_menos")
+TIPOS = ("base", "gasto", "entrega", "ajuste_mas", "ajuste_menos")
 
 # Que le hace cada tipo al dinero que el cobrador lleva encima.
 EFECTO = {
     "base": 1,          # la oficina le entrega
+    "gasto": -1,        # se lo gasto en la calle
     "entrega": -1,      # el devuelve a la oficina
     "ajuste_mas": 1,
     "ajuste_menos": -1,
@@ -53,10 +52,15 @@ EFECTO = {
 
 NOMBRES = {
     "base": "Base entregada",
+    "gasto": "Gasto",
     "entrega": "Entregado a la oficina",
     "ajuste_mas": "Ajuste a favor",
     "ajuste_menos": "Ajuste en contra",
 }
+
+# El unico tipo que el cobrador anota en su propia caja. Los demas los pone
+# el administrador: quien recibe la base no puede ser quien la escribe.
+TIPOS_DEL_COBRADOR = ("gasto",)
 
 
 def cuadre(db: Session, empresa_id: int, usuario_id: int,
@@ -68,6 +72,7 @@ def cuadre(db: Session, empresa_id: int, usuario_id: int,
     consumidor a defenderse, y alguno se olvida.
     """
     base = Decimal("0")
+    gastos = Decimal("0")
     entregado = Decimal("0")
     ajustes = Decimal("0")
     movimientos = []
@@ -84,6 +89,8 @@ def cuadre(db: Session, empresa_id: int, usuario_id: int,
         valor = money(m.valor)
         if m.tipo == "base":
             base += valor
+        elif m.tipo == "gasto":
+            gastos += valor
         elif m.tipo == "entrega":
             entregado += valor
         else:
@@ -129,9 +136,8 @@ def cuadre(db: Session, empresa_id: int, usuario_id: int,
     )
 
     hubo_movimiento = bool(filas or num_cobros or num_prestamos)
-    viaticos = VIATICO_DIARIO if hubo_movimiento else Decimal("0")
 
-    esperado = base + cobrado - prestado - viaticos - entregado + ajustes
+    esperado = base + cobrado - gastos - prestado - entregado + ajustes
 
     return {
         "usuario_id": usuario_id,
@@ -141,7 +147,7 @@ def cuadre(db: Session, empresa_id: int, usuario_id: int,
         "num_cobros": num_cobros,
         "prestado": float(prestado),
         "num_prestamos": num_prestamos,
-        "viaticos": float(viaticos),
+        "gastos": float(gastos),
         "entregado": float(entregado),
         "ajustes": float(ajustes),
         "esperado": float(esperado),

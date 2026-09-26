@@ -1,19 +1,21 @@
-"""Un cobrador solo cobra y consulta. Todo lo demas le esta negado.
+"""Que puede y que no puede hacer un cobrador.
 
-Lo unico que limitaba a un cobrador era el filtro por zona: veia solo sus
-clientes, pero sobre ellos podia hacer de todo. No habia ninguna
-comprobacion de rol en clientes.py, prestamos.py ni reportes.py, de modo que
-cualquier cobrador podia, desde el movil, crear clientes, cambiar la
-direccion de uno existente, reemplazar su foto y mover su ubicacion.
+La linea no esta entre "leer" y "escribir": esta entre **dar de alta algo
+nuevo** y **corregir algo que ya existe**. Un cobrador encuentra a alguien en
+la calle, lo registra y le presta en el momento -- eso es su trabajo. Lo que
+no puede es volver sobre una ficha que ya estaba y cambiarla: una ficha de
+cliente es el expediente de una deuda, y corregirla con prisa y sin
+supervision es como se pierde la direccion de alguien que debe dinero. Si ve
+un dato mal, deja una nota y el admin corrige.
 
-Cada prueba comprueba las dos mitades, igual que las de aislamiento entre
-empresas: que la respuesta niegue la accion, y que el dato siga intacto
-despues. Un endpoint puede responder 403 y haber escrito igualmente.
+Cada prueba de lo negado comprueba las dos mitades, igual que las de
+aislamiento entre empresas: que la respuesta niegue la accion, y que el dato
+siga intacto despues. Un endpoint puede responder 403 y haber escrito
+igualmente.
 
-El matiz que no hay que romper al apretar esto: la foto y el GPS que se
-guardan CON EL COBRO son del cobro, no del cliente, y ahi si los aporta el
-cobrador porque son la evidencia de donde se recibio el dinero. Hay pruebas
-para que eso siga funcionando.
+El matiz que no hay que romper: la foto y el GPS que se guardan CON EL COBRO
+son del cobro, no del cliente, y ahi si los aporta el cobrador porque son la
+evidencia de donde se recibio el dinero.
 """
 import datetime
 import io
@@ -123,18 +125,20 @@ def _jpeg() -> bytes:
 
 # ── Lo que NO puede hacer ──────────────────────────────────────────────────
 
-def test_no_puede_crear_clientes(entorno):
+def test_si_puede_dar_de_alta_un_cliente_nuevo(entorno):
+    """Lo encuentra en la calle y lo registra: eso es su trabajo."""
     cli, d, Sesion = entorno
     from app.database import Cliente
     r = cli.post("/clientes/nuevo",
-                 data={"cedula": "999", "nombre": "Colado", "telefono": "3001112222",
-                       "zona_id": d["zona_id"], "direccion": "x", "barrio": "x",
-                       "tipo_cliente": "Regular"})
-    assert _niega(r), f"devolvio {r.status_code}"
+                 data={"cedula": "999", "nombre": "Cliente Nuevo",
+                       "telefono": "3001112222", "zona_id": d["zona_id"],
+                       "direccion": "x", "barrio": "x", "tipo_cliente": "Regular"})
+    assert r.status_code == 200, f"no pudo registrarlo: {r.text[:200]}"
     db = Sesion()
     try:
-        assert db.query(Cliente).filter(Cliente.cedula == "999").first() is None, \
-            "respondio error pero creo el cliente"
+        creado = db.query(Cliente).filter(Cliente.cedula == "999").first()
+        assert creado is not None, "respondio bien pero no lo creo"
+        assert creado.zona_id == d["zona_id"]
     finally:
         db.close()
 
@@ -185,23 +189,49 @@ def test_no_puede_mover_la_ubicacion_del_cliente(entorno):
         db.close()
 
 
-def test_no_puede_crear_prestamos(entorno):
+def test_si_puede_prestar_y_sale_de_su_propia_caja(entorno):
+    """Presta en la calle y el dinero sale de su bolsillo, asi que el
+    desembolso se le atribuye a el."""
     cli, d, Sesion = entorno
-    from app.database import Prestamo
-    db = Sesion()
-    try:
-        antes = db.query(Prestamo).count()
-    finally:
-        db.close()
+    from app.database import Prestamo, Usuario, hoy_local
     r = cli.post("/prestamos/nuevo",
                  data={"cliente_id": d["cliente_id"], "zona_id": d["zona_id"],
                        "capital": "500000", "tasa_interes": "20",
                        "num_cuotas": "4", "plazo_dias": "7",
-                       "fecha_inicio": "2026-09-25"})
-    assert _niega(r), f"devolvio {r.status_code}"
+                       "fecha_inicio": hoy_local().isoformat()})
+    assert r.status_code == 200 and r.json().get("ok"), \
+        f"no pudo prestar: {r.text[:200]}"
     db = Sesion()
     try:
-        assert db.query(Prestamo).count() == antes, "creo el prestamo igualmente"
+        p = db.query(Prestamo).order_by(Prestamo.id.desc()).first()
+        yo = db.query(Usuario).filter(Usuario.username == "cobra").first()
+        assert p.desembolsado_por_id == yo.id, "el desembolso no se le atribuyo"
+        assert p.fecha_desembolso == hoy_local()
+    finally:
+        db.close()
+
+
+def test_no_puede_apuntarle_el_desembolso_a_otro(entorno):
+    """Si pudiera, prestaria sin que su caja lo notara."""
+    cli, d, Sesion = entorno
+    from app.database import Prestamo, Usuario, hoy_local
+    db = Sesion()
+    try:
+        jefa_id = db.query(Usuario).filter(Usuario.username == "jefa").first().id
+        yo_id = db.query(Usuario).filter(Usuario.username == "cobra").first().id
+    finally:
+        db.close()
+    r = cli.post("/prestamos/nuevo",
+                 data={"cliente_id": d["cliente_id"], "zona_id": d["zona_id"],
+                       "capital": "70000", "tasa_interes": "20",
+                       "num_cuotas": "4", "plazo_dias": "7",
+                       "fecha_inicio": hoy_local().isoformat(),
+                       "desembolsado_por": jefa_id})
+    assert r.status_code == 200, r.text
+    db = Sesion()
+    try:
+        p = db.query(Prestamo).order_by(Prestamo.id.desc()).first()
+        assert p.desembolsado_por_id == yo_id, "le apunto el desembolso a otro"
     finally:
         db.close()
 
@@ -227,8 +257,7 @@ def test_el_menu_no_le_ofrece_lo_que_no_puede_usar(entorno):
     """Un enlace que responde 403 al pulsarlo es un enlace que no debe estar."""
     cli, _, _ = entorno
     html = cli.get("/cobros").text
-    for ruta in ('href="/prestamos"', 'href="/zonas"',
-                 'href="/whatsapp"', 'href="/reportes"'):
+    for ruta in ('href="/zonas"', 'href="/whatsapp"', 'href="/reportes"'):
         assert ruta not in html, f"el menu sigue ofreciendo {ruta}"
 
 
@@ -283,32 +312,33 @@ def test_si_puede_consultar_sus_clientes(entorno):
 
 # ── Cerrar la accion no basta: hay que cerrar la pantalla que la ofrece ───
 
-def test_no_puede_entrar_al_modulo_de_prestamos(entorno):
-    """La comprobacion estaba en POST /prestamos/nuevo y esta pagina se quedo
-    abierta: el menu ya no la ofrecia, pero escribiendo la direccion a mano un
-    cobrador entraba y se encontraba el formulario de crear prestamos.
+def test_la_pagina_de_prestamos_va_con_la_accion(entorno):
+    """La pantalla y la accion tienen que decir lo mismo.
 
-    Se descubrio probando en produccion con un cobrador real, no aqui: las
-    pruebas cubrian la accion y no la pantalla.
+    Cuando el cobrador no podia prestar, la comprobacion estaba solo en POST
+    /prestamos/nuevo y la pagina se quedo abierta: escribiendo la direccion a
+    mano entraba y se encontraba delante el formulario que el servidor le iba
+    a negar. Ahora si puede prestar, asi que la pagina se abre. Lo que se
+    vigila aqui no es el valor concreto: es que las dos vayan juntas.
     """
     cli, _, _ = entorno
     r = cli.get("/prestamos", follow_redirects=False)
-    assert _niega(r), f"devolvio {r.status_code}"
+    assert r.status_code == 200, \
+        f"puede prestar pero no puede ver la pantalla: {r.status_code}"
 
 
-def test_la_ficha_del_cliente_no_le_ofrece_lo_que_no_puede_hacer(entorno):
-    """El cobrador abre la ficha para consultar y para dejar notas.
+def test_la_ficha_le_ofrece_prestar_pero_no_editar(entorno):
+    """La ficha tiene que trazar la misma linea que el servidor.
 
-    El servidor ya negaba crear prestamos y editar al cliente, pero la ficha
-    seguia mostrando los dos botones. Un boton que responde 403 al pulsarlo es
-    un boton que no debe estar: el cobrador no puede saber si fallo el sistema
-    o si no le correspondia.
+    Un boton que responde 403 al pulsarlo es un boton que no debe estar: quien
+    lo pulsa no sabe si fallo el sistema o si no le correspondia. Y al reves,
+    quitarle el de prestar le esconderia algo que si puede hacer.
     """
     cli, d, _ = entorno
     html = cli.get(f"/clientes/{d['cliente_id']}").text
-    assert 'onclick="abrirModalPrestamo()"' not in html, "le ofrece crear un prestamo"
+    assert 'onclick="abrirModalPrestamo()"' in html, "no le ofrece prestar y si puede"
+    assert 'id="modal-prestamo"' in html, "el formulario de prestamo no llego"
     assert 'onclick="abrirEditar()"' not in html, "le ofrece editar la ficha"
-    assert 'id="modal-prestamo"' not in html, "el formulario de prestamo sigue en la pagina"
-    assert 'id="modal-editar-cliente"' not in html, "el formulario de edicion sigue en la pagina"
-    # Lo que si es suyo sigue estando.
-    assert "guardarNota" in html, "le quito la unica escritura que si tiene"
+    assert 'id="modal-editar-cliente"' not in html, \
+        "el formulario de edicion sigue en la pagina"
+    assert "guardarNota" in html, "le quito el recuadro de notas"

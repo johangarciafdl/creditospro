@@ -488,9 +488,11 @@ class MovimientoCaja(Base):
     entrega quede sumando en vez de restando por un menos que falta, y eso en
     un cuadre de caja no se nota: simplemente le cuadra a quien no deberia.
 
-    Los viaticos NO son una fila: son 15.000 al dia y se calculan, porque una
-    fila por cobrador y por dia obliga a una tarea programada que ademas
-    generaria filas los dias que nadie salio a la calle.
+    Los gastos del cobrador -- transporte, almuerzo, lo que gaste en la calle --
+    tambien viven aqui, y los anota el. Antes habia en su lugar un viatico
+    fijo que se descontaba solo; se quito porque un automatismo que resta
+    dinero sin que nadie lo haya escrito es imposible de cuadrar el dia que no
+    fue como siempre.
     """
     __tablename__ = "movimientos_caja"
     id = Column(Integer, primary_key=True, index=True)
@@ -514,7 +516,7 @@ class MovimientoCaja(Base):
         Index("ix_movimientos_empresa_fecha", "empresa_id", "fecha"),
         CheckConstraint("valor > 0", name="ck_movimiento_valor_pos"),
         CheckConstraint(
-            "tipo IN ('base','entrega','ajuste_mas','ajuste_menos')",
+            "tipo IN ('base','gasto','entrega','ajuste_mas','ajuste_menos')",
             name="ck_movimiento_tipo",
         ),
     )

@@ -19,9 +19,11 @@ from app.database import MovimientoCaja, Usuario, get_db, hoy_local
 from app.routers.auth import get_current_user
 from app.templates import templates
 from app.utils.audit import log_action
-from app.utils.caja import NOMBRES, TIPOS, cuadre, cuadre_de_todos
+from app.utils.caja import (NOMBRES, TIPOS, TIPOS_DEL_COBRADOR, cuadre,
+                            cuadre_de_todos)
 from app.utils.money import money
-from app.utils.permisos_rol import (es_admin, puede_registrar_movimientos_caja,
+from app.utils.permisos_rol import (es_admin, puede_anotar_gastos,
+                                    puede_registrar_movimientos_caja,
                                     puede_ver_cuadre_de)
 from app.utils.validators import sin_html
 
@@ -123,17 +125,35 @@ async def registrar_movimiento(
     concepto: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    """Anota la base del dia, la entrega de la tarde o una correccion."""
+    """Anota un gasto, la base del dia, la entrega de la tarde o una correccion.
+
+    Dos permisos distintos conviven aqui, y la diferencia es de quien es el
+    dinero que se mueve:
+
+    - Un **gasto** lo anota el propio cobrador, en su propia caja. Quien tuvo
+      el gasto es el unico que sabe cuanto fue, y hacerle esperar a que
+      alguien en la oficina lo escriba deja su caja descuadrada hasta el dia
+      siguiente. Queda a la vista con su concepto, que es el control.
+    - La **base**, las **entregas** y los **ajustes** los pone el
+      administrador: quien recibe la base no puede ser quien la escribe.
+    """
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
-    if not puede_registrar_movimientos_caja(user):
-        return JSONResponse(
-            {"error": "Solo el administrador anota movimientos de caja."},
-            status_code=403)
 
     if tipo not in TIPOS:
         return JSONResponse({"error": "Tipo de movimiento invalido"}, status_code=400)
+
+    propio = tipo in TIPOS_DEL_COBRADOR and usuario_id == user.id
+    if not (puede_registrar_movimientos_caja(user)
+            or (propio and puede_anotar_gastos(user))):
+        if tipo in TIPOS_DEL_COBRADOR:
+            return JSONResponse(
+                {"error": "Solo puedes anotar gastos en tu propia caja."},
+                status_code=403)
+        return JSONResponse(
+            {"error": "Solo el administrador anota la base, las entregas y los ajustes."},
+            status_code=403)
 
     try:
         cantidad = money(str(valor).replace(",", "").strip())
@@ -203,8 +223,6 @@ async def borrar_movimiento(request: Request, movimiento_id: int,
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
-    if not puede_registrar_movimientos_caja(user):
-        return JSONResponse({"error": "Sin permisos"}, status_code=403)
 
     movimiento = (
         db.query(MovimientoCaja)
@@ -214,6 +232,17 @@ async def borrar_movimiento(request: Request, movimiento_id: int,
     )
     if not movimiento:
         return JSONResponse({"error": "Movimiento no encontrado"}, status_code=404)
+
+    # Un cobrador puede retirar un gasto suyo mal tecleado -- es el mismo
+    # permiso con el que lo anoto. Lo que no puede tocar es la base ni la
+    # entrega, que no las escribio el.
+    propio = (movimiento.tipo in TIPOS_DEL_COBRADOR
+              and movimiento.usuario_id == user.id)
+    if not (puede_registrar_movimientos_caja(user)
+            or (propio and puede_anotar_gastos(user))):
+        return JSONResponse(
+            {"error": "Solo puedes retirar gastos que anotaste tu."},
+            status_code=403)
 
     usuario_id, dia = movimiento.usuario_id, movimiento.fecha
     detalle = f"{movimiento.tipo}={movimiento.valor} usuario_id={usuario_id} fecha={dia}"

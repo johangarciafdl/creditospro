@@ -28,8 +28,9 @@ from app.utils.interfaz import redirigir_a_vista_simple
 from app.utils.money import money
 from app.utils.permisos_rol import (
     puede_atender_notas,
+    puede_crear_clientes,
+    puede_editar_clientes,
     puede_escribir_notas,
-    puede_gestionar_clientes,
     puede_gestionar_prestamos,
 )
 from app.routers.auth import get_current_user
@@ -235,12 +236,12 @@ async def crear_cliente(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
-    # Los clientes los da de alta el administrador. Un cobrador que crea
-    # clientes en la calle acaba con duplicados y con cedulas mal tecleadas
-    # que despues nadie sabe a quien pertenecen.
-    if not puede_gestionar_clientes(user):
+    # Dar de alta un cliente nuevo si lo hace el cobrador: es lo que encuentra
+    # en la calle y a quien le presta en el momento. Lo que no puede es volver
+    # sobre una ficha que ya existia y cambiarla (ver /{cliente_id}/editar).
+    if not puede_crear_clientes(user):
         return JSONResponse(
-            {"error": "Solo el administrador puede registrar clientes nuevos."},
+            {"error": "No tienes permiso para registrar clientes."},
             status_code=403)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
@@ -332,7 +333,7 @@ async def editar_cliente(
     # La ficha de un cliente es el expediente de una deuda: quien es, donde
     # vive y como se le encuentra. Cambiarlo desde la calle, con prisa y sin
     # supervision, es como se pierde la direccion de alguien que debe dinero.
-    if not puede_gestionar_clientes(user):
+    if not puede_editar_clientes(user):
         return JSONResponse(
             {"error": "Solo el administrador puede modificar los datos de un cliente. "
                       "Si algo cambio, dejalo en una nota."},
@@ -434,7 +435,7 @@ async def actualizar_ubicacion(
     # La ficha de un cliente es el expediente de una deuda: quien es, donde
     # vive y como se le encuentra. Cambiarlo desde la calle, con prisa y sin
     # supervision, es como se pierde la direccion de alguien que debe dinero.
-    if not puede_gestionar_clientes(user):
+    if not puede_editar_clientes(user):
         return JSONResponse(
             {"error": "Solo el administrador puede modificar los datos de un cliente. "
                       "Si algo cambio, dejalo en una nota."},
@@ -467,7 +468,7 @@ async def actualizar_foto(
     # La ficha de un cliente es el expediente de una deuda: quien es, donde
     # vive y como se le encuentra. Cambiarlo desde la calle, con prisa y sin
     # supervision, es como se pierde la direccion de alguien que debe dinero.
-    if not puede_gestionar_clientes(user):
+    if not puede_editar_clientes(user):
         return JSONResponse(
             {"error": "Solo el administrador puede modificar los datos de un cliente. "
                       "Si algo cambio, dejalo en una nota."},
@@ -639,7 +640,7 @@ async def detalle_cliente(
         # La ficha la abre tambien el cobrador -- es donde consulta y donde
         # deja sus notas -- asi que tiene que saber que botones ofrecerle.
         # Un boton que responde 403 al pulsarlo es un boton que no debe estar.
-        "puede_editar": puede_gestionar_clientes(user),
+        "puede_editar": puede_editar_clientes(user),
         "puede_prestar": puede_gestionar_prestamos(user),
         "cliente": cliente, "zona": zona, "zonas": zonas,
         "prestamos": prestamos_data,

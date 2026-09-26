@@ -17,16 +17,24 @@ interfaz para su equipo, necesita poder ver antes lo que van a ver ellos.
 import datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.database import (Cliente, Cobro, Cuota, NoPago, Prestamo, get_db,
+from app.database import (Cliente, Cobro, Cuota, NoPago, Prestamo, Zona, get_db,
                           hoy_local)
 from app.routers.auth import get_current_user
+from app.services.prestamo_service import calcular_cuotas
 from app.templates import templates
-from app.utils.money import money
-from app.utils.zone_permissions import get_allowed_zone_ids, visible_zonas_query
+from app.utils.audit import log_action
+from app.utils.caja import cuadre
+from app.utils.money import cop, money
+from app.utils.permisos_rol import puede_gestionar_prestamos
+from app.utils.validators import (filtro_busqueda, sin_html, validar_cedula,
+                                  validar_entero_positivo, validar_nombre,
+                                  validar_numero_positivo, validar_telefono)
+from app.utils.zone_permissions import (get_allowed_zone_ids, require_zone_access,
+                                        visible_zonas_query)
 
 router = APIRouter()
 
@@ -237,3 +245,180 @@ async def datos_de_la_zona(
 def _resumen_vacio() -> dict:
     return {"clientes": 0, "por_cobrar": 0, "cobrados": 0, "vencidos": 0,
             "no_pagos": 0, "esperado": 0.0, "cobrado": 0.0, "recortada": False}
+
+
+# ── PRESTAR DESDE LA CALLE ────────────────────────────────────────────────
+# Un cobrador que encuentra a alguien nuevo tiene que poder registrarlo y
+# prestarle sin salir de su pantalla. Los dos pasos van en UNA sola peticion a
+# proposito: si fueran dos, una señal que se cae entre medias deja un cliente
+# dado de alta sin el prestamo que justificaba darlo de alta, y el cobrador no
+# sabe si repetir o no.
+
+
+@router.get("/ruta/buscar-cliente")
+async def buscar_cliente(request: Request, q: str = "",
+                         db: Session = Depends(get_db)):
+    """Busca por cedula o nombre, para no dar de alta a quien ya existe."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if len(q.strip()) < 3:
+        return JSONResponse({"clientes": []})
+
+    permitidas = get_allowed_zone_ids(db, user)
+    consulta = db.query(Cliente).filter(
+        Cliente.empresa_id == user.empresa_id,
+        filtro_busqueda(q.strip(), Cliente.nombre, Cliente.cedula),
+    )
+    # Un cliente de una zona que hoy no cobra no le sirve, y ensenarselo le
+    # invita a prestar donde no le toca.
+    if permitidas is not None:
+        consulta = consulta.filter(Cliente.zona_id.in_(permitidas or [-1]))
+
+    return JSONResponse({"clientes": [{
+        "id": c.id, "nombre": c.nombre, "cedula": c.cedula,
+        "telefono": c.telefono or "", "zona_id": c.zona_id,
+    } for c in consulta.order_by(Cliente.nombre).limit(15).all()]})
+
+
+@router.post("/ruta/prestar")
+async def prestar(
+    request: Request,
+    zona_id: int = Form(...),
+    capital: str = Form(...),
+    tasa_interes: str = Form("20"),
+    num_cuotas: str = Form(...),
+    plazo_dias: str = Form("1"),
+    fecha_inicio: str = Form(""),
+    observaciones: str = Form(""),
+    # O uno o el otro: un cliente que ya existe, o los datos de uno nuevo.
+    cliente_id: str = Form(""),
+    cedula: str = Form(""),
+    nombre: str = Form(""),
+    telefono: str = Form(""),
+    direccion: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Da de alta al cliente si hace falta y le presta, todo en una."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not puede_gestionar_prestamos(user):
+        return JSONResponse({"error": "No tienes permiso para prestar"},
+                            status_code=403)
+
+    zona = db.query(Zona).filter(Zona.id == zona_id,
+                                 Zona.empresa_id == user.empresa_id).first()
+    if not zona or not zona.activa:
+        return JSONResponse({"error": "Zona no encontrada"}, status_code=404)
+    if not require_zone_access(db, user, zona_id):
+        return JSONResponse({"error": "Hoy no cobras en esa zona"}, status_code=403)
+
+    try:
+        capital_v = validar_numero_positivo(capital, "capital", maximo=100_000_000)
+        tasa_v = validar_numero_positivo(tasa_interes, "tasa de interes",
+                                         minimo=0, maximo=200)
+        cuotas_v = validar_entero_positivo(num_cuotas, "cuotas", minimo=1, maximo=365)
+        plazo_v = validar_entero_positivo(plazo_dias, "plazo", minimo=1, maximo=365)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    try:
+        dia = (datetime.date.fromisoformat(fecha_inicio.strip())
+               if fecha_inicio.strip() else hoy_local())
+    except ValueError:
+        return JSONResponse({"error": "Fecha invalida"}, status_code=400)
+    if dia > hoy_local():
+        return JSONResponse({"error": "No se puede prestar con fecha futura"},
+                            status_code=400)
+
+    # ── El cliente: el que ya esta, o uno nuevo ───────────────────────────
+    if cliente_id.strip():
+        try:
+            cid = validar_entero_positivo(cliente_id, "Cliente")
+        except HTTPException as e:
+            return JSONResponse({"error": e.detail}, status_code=e.status_code)
+        cliente = db.query(Cliente).filter(
+            Cliente.id == cid, Cliente.empresa_id == user.empresa_id).first()
+        if not cliente:
+            return JSONResponse({"error": "Cliente no encontrado"}, status_code=404)
+        if not require_zone_access(db, user, cliente.zona_id):
+            return JSONResponse({"error": "Ese cliente no es de tus zonas de hoy"},
+                                status_code=403)
+        # Deliberadamente NO se le tocan los datos aunque vengan en el
+        # formulario: corregir una ficha que ya existe es del administrador.
+        es_nuevo = False
+    else:
+        try:
+            cedula_v = validar_cedula(cedula)
+            nombre_v = validar_nombre(nombre)
+            telefono_v = validar_telefono(telefono)
+            direccion_v = sin_html(direccion, "Direccion", 300)
+        except HTTPException as e:
+            return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+        repetido = db.query(Cliente).filter(
+            Cliente.empresa_id == user.empresa_id,
+            Cliente.cedula == cedula_v).first()
+        if repetido:
+            # No es un error suyo: es que ya existe. Se le devuelve quien es
+            # para que preste sobre ese y no cree un duplicado.
+            return JSONResponse({
+                "error": f"Esa cedula ya es de {repetido.nombre}. Buscalo y prestale a el.",
+                "cliente_id": repetido.id, "duplicado": True,
+            }, status_code=409)
+
+        cliente = Cliente(
+            empresa_id=user.empresa_id, cedula=cedula_v, nombre=nombre_v,
+            telefono=telefono_v, whatsapp=telefono_v,
+            direccion=direccion_v or None, zona_id=zona_id, activo=True,
+        )
+        db.add(cliente)
+        db.flush()
+        es_nuevo = True
+
+    # ── El prestamo ───────────────────────────────────────────────────────
+    try:
+        calc = calcular_cuotas(capital_v, tasa_v, cuotas_v, dia, plazo_v)
+    except ValueError as e:
+        db.rollback()
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    prestamo = Prestamo(
+        empresa_id=user.empresa_id, cliente_id=cliente.id, zona_id=zona_id,
+        capital=money(capital_v), tasa_interes=money(tasa_v),
+        interes_total=money(calc.get("interes_total")),
+        total_pagar=money(calc.get("total_pagar")),
+        num_cuotas=cuotas_v, valor_cuota=money(calc.get("valor_cuota")),
+        plazo_dias=plazo_v, fecha_inicio=dia, fecha_fin=calc.get("fecha_fin"),
+        estado="Activo", cobrador=user.nombre or user.username,
+        # El dinero sale de SU caja, hoy.
+        desembolsado_por_id=user.id, fecha_desembolso=dia,
+        observaciones=sin_html(observaciones, "Observaciones", 500) or None,
+    )
+    db.add(prestamo)
+    db.flush()
+    for c in calc.get("cuotas", []):
+        db.add(Cuota(empresa_id=user.empresa_id, prestamo_id=prestamo.id,
+                     numero=int(c["numero"]), valor=money(c.get("valor")),
+                     fecha_vencimiento=c["fecha_vencimiento"], estado="Pendiente"))
+    db.commit()
+
+    log_action(db, user, "prestamo_en_calle", "prestamos",
+               f"prestamo={prestamo.id} cliente={cliente.id} nuevo={es_nuevo} "
+               f"capital={capital_v}")
+
+    respuesta = {
+        "ok": True, "prestamo_id": prestamo.id, "cliente_id": cliente.id,
+        "cliente_nuevo": es_nuevo,
+        "mensaje": f"Prestamo de {cop(capital_v)} a {cliente.nombre}",
+    }
+    # El sobregiro no impide prestar, pero tiene que verlo en el momento.
+    estado_caja = cuadre(db, user.empresa_id, user.id, dia)
+    if estado_caja["sobregiro"]:
+        respuesta["sobregiro"] = estado_caja["sobregiro_valor"]
+        respuesta["aviso"] = (
+            f"Llevas prestado {cop(estado_caja['prestado'])} y cobrado "
+            f"{cop(estado_caja['cobrado'])} hoy: "
+            f"{cop(estado_caja['sobregiro_valor'])} de sobregiro.")
+    return JSONResponse(respuesta)

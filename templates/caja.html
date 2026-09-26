@@ -6,7 +6,7 @@
 {% block content %}
 {#- Cuanto dinero deberia tener encima el cobrador al final del dia:
 
-      base + cobrado - prestado - viaticos - entregado +/- ajustes
+      base + cobrado - gastos - prestado - entregado +/- ajustes
 
     El desglose se muestra entero y siempre, porque lo que hace util un cuadre
     no es el total sino poder decir donde se rompio. -#}
@@ -70,11 +70,37 @@
     <div class="card-header"><div class="card-title">Movimientos del dia</div></div>
     <div class="card-body-flush table-wrap">
       <table>
-        <thead><tr><th>Concepto</th><th>Anotado por</th><th style="text-align:right;">Valor</th>{% if es_admin %}<th></th>{% endif %}</tr></thead>
+        <thead><tr><th>Concepto</th><th>Anotado por</th><th style="text-align:right;">Valor</th><th></th></tr></thead>
         <tbody id="d-movimientos"></tbody>
       </table>
     </div>
   </div>
+
+  {% if not es_admin %}
+  {#- Lo unico que el cobrador escribe en su caja. Quien tuvo el gasto es el
+      unico que sabe cuanto fue; esperar a que alguien en la oficina lo
+      escriba le deja la caja descuadrada hasta el dia siguiente. Queda a la
+      vista con su concepto, que es el control. -#}
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Anotar un gasto</div></div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="g-valor">Cuanto</label>
+          <input type="number" id="g-valor" min="1" placeholder="15000">
+        </div>
+        <div class="form-group">
+          <label for="g-concepto">En que</label>
+          <input type="text" id="g-concepto" placeholder="almuerzo, transporte...">
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="anotarGasto(this)">Anotar gasto</button>
+      <div class="fs-11 text-3" style="margin-top:8px;">
+        Sale de tu caja del dia. El administrador ve todos los gastos que anotas.
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   {% if es_admin %}
   <div class="card mb-3">
@@ -85,6 +111,7 @@
           <label for="m-tipo">Que se anota</label>
           <select id="m-tipo">
             <option value="base">Base entregada al cobrador</option>
+            <option value="gasto">Gasto del cobrador</option>
             <option value="entrega">Entregado a la oficina</option>
             <option value="ajuste_mas">Ajuste a favor del cobrador</option>
             <option value="ajuste_menos">Ajuste en contra del cobrador</option>
@@ -117,7 +144,8 @@
         <thead>
           <tr>
             <th>Cobrador</th><th style="text-align:right;">Base</th>
-            <th style="text-align:right;">Cobrado</th><th style="text-align:right;">Prestado</th>
+            <th style="text-align:right;">Cobrado</th><th style="text-align:right;">Gastos</th>
+            <th style="text-align:right;">Prestado</th>
             <th style="text-align:right;">Entregado</th><th style="text-align:right;">Debe tener</th>
           </tr>
         </thead>
@@ -208,7 +236,7 @@ function pintarUno(c){
     _linea('Base entregada', c.base, 1),
     _linea('Cobrado', c.cobrado, 1, c.num_cobros + ' cobros'),
     _linea('Prestado en la calle', c.prestado, -1, c.num_prestamos + ' prestamos'),
-    _linea('Viaticos', c.viaticos, -1, 'almuerzo'),
+    _linea('Gastos', c.gastos, -1, 'transporte, almuerzo, lo de la calle'),
     _linea('Entregado a la oficina', c.entregado, -1),
     c.ajustes ? _linea('Ajustes', c.ajustes, c.ajustes > 0 ? 1 : -1) : '',
   ].join('');
@@ -235,9 +263,9 @@ function pintarUno(c){
         <td class="fs-12 text-2">${esc(m.registrado_por)}</td>
         <td style="text-align:right;font-family:var(--mono);color:${m.efecto > 0 ? 'var(--green)' : 'var(--red)'};">
           ${m.efecto > 0 ? '+' : '−'}${cop(m.valor)}</td>
-        ${ES_ADMIN ? `<td style="text-align:right;"><button class="btn btn-ghost btn-xs" onclick="borrar(${Number(m.id)||0})">✕</button></td>` : ''}
+        ${(ES_ADMIN || m.tipo === 'gasto') ? `<td style="text-align:right;"><button class="btn btn-ghost btn-xs" onclick="borrar(${Number(m.id)||0})">✕</button></td>` : '<td></td>'}
       </tr>`).join('')
-    : `<tr><td colspan="${ES_ADMIN ? 4 : 3}" class="fs-12 text-3" style="padding:14px;text-align:center;">
+    : `<tr><td colspan="4" class="fs-12 text-3" style="padding:14px;text-align:center;">
         Sin movimientos anotados este dia</td></tr>`;
 }
 
@@ -255,13 +283,58 @@ function pintarTodos(d){
           ${!c.hubo_movimiento ? '<span class="badge badge-gray" style="margin-left:6px;">Sin movimiento</span>' : ''}</td>
         <td style="text-align:right;font-family:var(--mono);">${cop(c.base)}</td>
         <td style="text-align:right;font-family:var(--mono);color:var(--green);">${cop(c.cobrado)}</td>
+        <td style="text-align:right;font-family:var(--mono);">${cop(c.gastos)}</td>
         <td style="text-align:right;font-family:var(--mono);">${cop(c.prestado)}</td>
         <td style="text-align:right;font-family:var(--mono);">${cop(c.entregado)}</td>
         <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${c.esperado < 0 ? 'var(--red)' : 'var(--t1)'};">${cop(c.esperado)}</td>
       </tr>`).join('')
-    : `<tr><td colspan="6" class="fs-12 text-3" style="padding:16px;text-align:center;">
+    : `<tr><td colspan="7" class="fs-12 text-3" style="padding:16px;text-align:center;">
         La empresa no tiene cobradores activos</td></tr>`;
 }
+
+{% if not es_admin %}
+async function anotarGasto(btn){
+  const valor = document.getElementById('g-valor').value;
+  if (!valor || Number(valor) <= 0) { toast('Escribe cuanto gastaste', 'error'); return; }
+  const fd = new FormData();
+  fd.append('usuario_id', YO);
+  fd.append('tipo', 'gasto');
+  fd.append('valor', valor);
+  fd.append('fecha', _dia());
+  fd.append('concepto', document.getElementById('g-concepto').value.trim());
+  await conBoton(btn, 'Anotando...', async () => {
+    try {
+      const r = await window.fetch('/caja/movimiento', {method:'POST', body:fd});
+      const d = await leerRespuesta(r);
+      if (d.ok) {
+        toast(d.mensaje);
+        document.getElementById('g-valor').value = '';
+        document.getElementById('g-concepto').value = '';
+        pintarUno(Object.assign({nombre: _cuadre && _cuadre.nombre}, d.cuadre));
+      } else {
+        toast(d.error || d.detail || 'No se pudo anotar', 'error');
+      }
+    } catch(e) {
+      console.error('[Caja] Error anotando el gasto:', e);
+      toast('No hay conexion. Intenta de nuevo.', 'error');
+    }
+  });
+}
+
+// Un gasto mal tecleado lo puede retirar quien lo anoto.
+async function borrar(id){
+  if (!id || !confirm('Retirar este gasto?')) return;
+  try {
+    const r = await window.fetch('/caja/movimiento/' + id + '/borrar', {method:'POST'});
+    const d = await leerRespuesta(r);
+    if (d.ok) { toast(d.mensaje); pintarUno(Object.assign({nombre: _cuadre && _cuadre.nombre}, d.cuadre)); }
+    else toast(d.error || d.detail || 'No se pudo retirar', 'error');
+  } catch(e) {
+    console.error('[Caja] Error borrando:', e);
+    toast('No hay conexion. Intenta de nuevo.', 'error');
+  }
+}
+{% endif %}
 
 {% if es_admin %}
 async function anotar(btn){

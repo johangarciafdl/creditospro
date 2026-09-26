@@ -30,19 +30,38 @@ def es_admin(user: Usuario | None) -> bool:
     return bool(user and user.rol in ROLES_ADMIN)
 
 
-def puede_gestionar_clientes(user: Usuario | None) -> bool:
-    """Crear clientes, editar sus datos, su direccion, su foto, su ubicacion.
+def puede_crear_clientes(user: Usuario | None) -> bool:
+    """Dar de alta un cliente que no existia.
+
+    La linea que separa esto de editarlo no es "crear vs. escribir": es **dar
+    de alta algo nuevo** frente a **corregir algo que ya existe**. Un cobrador
+    que encuentra un cliente nuevo en la calle lo registra y le presta en el
+    momento; lo que no puede es volver sobre una ficha que ya estaba y
+    cambiarla.
+    """
+    return bool(user)
+
+
+def puede_editar_clientes(user: Usuario | None) -> bool:
+    """Cambiar los datos de un cliente que YA existe: nombre, direccion,
+    telefono, foto, ubicacion.
 
     Una ficha de cliente es el expediente de una deuda: quien es, donde vive
     y como se le encuentra. Cambiarlo desde la calle, con prisa y sin
     supervision, es como se pierde la direccion de alguien que debe dinero.
+    Si el cobrador ve que un dato esta mal, deja una nota y el admin corrige.
     """
     return es_admin(user)
 
 
 def puede_gestionar_prestamos(user: Usuario | None) -> bool:
-    """Crear o modificar prestamos. El cobrador recoge, no presta."""
-    return es_admin(user)
+    """Crear un prestamo.
+
+    El cobrador presta: es lo que hace en la calle, y el dinero sale de su
+    propia caja -- por eso el desembolso se le atribuye a el y por eso el
+    sistema le avisa si presta mas de lo que ha recogido ese dia.
+    """
+    return bool(user)
 
 
 def puede_gestionar_usuarios(user: Usuario | None) -> bool:
@@ -104,6 +123,24 @@ def puede_registrar_movimientos_caja(user: Usuario | None) -> bool:
 
     Solo el administrador. Un cobrador que pueda escribir su propia base
     puede hacerse cuadrar cualquier dia: seria pedirle la cuenta a quien la
-    rinde. El cobrador ve su caja, no la escribe.
+    rinde. Los gastos son la excepcion -- ver puede_anotar_gastos.
     """
     return es_admin(user)
+
+
+def puede_anotar_gastos(user: Usuario | None) -> bool:
+    """Anotar un gasto en la propia caja: transporte, almuerzo, lo de la calle.
+
+    Lo anota el cobrador y no el administrador. Es una decision consciente del
+    negocio: quien tuvo el gasto es el unico que sabe cuanto fue y en que
+    momento, y hacerle esperar a que alguien en la oficina lo escriba
+    significa que su caja no cuadra hasta el dia siguiente.
+
+    A cambio queda a la vista: cada gasto sale con su valor y su concepto en
+    la caja del dia, que es lo que el administrador revisa. La entrada facil
+    para descuadrarse seria anotar gastos inventados, y contra eso lo que hay
+    es que se vean, no que no se puedan escribir.
+
+    Nadie anota gastos en la caja de otro: eso lo comprueba el endpoint.
+    """
+    return bool(user)

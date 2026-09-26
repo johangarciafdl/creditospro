@@ -19,7 +19,7 @@ from sqlalchemy import func
 
 from app.database import (get_db, Prestamo, Cliente, Cuota, NoPago, Usuario,
                           Zona, hoy_local)
-from app.utils.permisos_rol import puede_gestionar_prestamos
+from app.utils.permisos_rol import es_admin, puede_gestionar_prestamos
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import calcular_cuotas
 from app.utils.caja import cuadre
@@ -247,11 +247,9 @@ async def crear_prestamo(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
-    # El cobrador recoge dinero, no lo presta. Quien decide a quien se le
-    # presta y cuanto es el administrador.
     if not puede_gestionar_prestamos(user):
         return JSONResponse(
-            {"error": "Solo el administrador puede crear prestamos."},
+            {"error": "No tienes permiso para crear prestamos."},
             status_code=403)
 
     # Validar IDs y rangos
@@ -338,6 +336,11 @@ async def crear_prestamo(
 
     # ── Quien entrega el dinero, y de que caja sale ────────────────────────
     entrega_id, entrega_nombre, dia_desembolso = None, None, None
+    # Un cobrador presta de su propio bolsillo, asi que el desembolso es suyo
+    # y no se discute: si pudiera apuntarselo a otro, podria prestar sin que
+    # su caja lo notara. Elegir de quien sale el dinero es del administrador.
+    if not es_admin(user):
+        desembolsado_por = str(user.id)
     if desembolsado_por.strip():
         try:
             entrega_id = validar_entero_positivo(desembolsado_por, "Cobrador")
