@@ -21,22 +21,50 @@ def test_sync_cuotas_incluye_valor_pagado():
     )
 
 
-def test_pantallas_de_cobro_usan_el_saldo_y_no_el_valor():
-    """Ninguna pantalla debe pre-llenar el cobro con el valor total de la cuota."""
-    for nombre in ("cobros.html", "app_cobrador.html"):
-        html = (RAIZ / "templates" / nombre).read_text(encoding="utf-8")
-        assert "Number(p.valor||0) - Number(p.valor_pagado||0)" in html, (
-            f"{nombre} debe calcular el saldo pendiente de la cuota"
+def test_cobros_calcula_el_saldo_y_no_el_valor():
+    """Cobros arma el saldo en el navegador, a partir de valor y valor_pagado."""
+    html = (RAIZ / "templates" / "cobros.html").read_text(encoding="utf-8")
+    assert "Number(p.valor||0) - Number(p.valor_pagado||0)" in html, (
+        "cobros.html debe calcular el saldo pendiente de la cuota"
+    )
+    assert "const saldo = Math.round(" in html, (
+        "cobros.html debe redondear el saldo a centavos"
+    )
+    llamadas = re.findall(r"abrirCobro\((.*?)\)\"", html)
+    assert llamadas, "cobros.html: no se encontro la llamada a abrirCobro"
+    for args in llamadas:
+        assert "Number(p.valor||0)" not in args, (
+            "cobros.html: abrirCobro recibe el valor total de la cuota en vez del saldo"
         )
-        assert "const saldo = Math.round(" in html, (
-            f"{nombre} debe redondear el saldo a centavos"
+
+
+def test_la_vista_simple_prellena_el_saldo_que_calculo_el_servidor():
+    """La garantia es la misma; quien hace la resta, no.
+
+    La vista del cobrador recibe el saldo ya calculado (`falta`) desde
+    /ruta/zona, donde se hace con Decimal. Restar otra vez en el navegador
+    seria una segunda implementacion del mismo concepto, que es exactamente
+    como las dos pantallas empiezan a discrepar en los centavos. Lo que no
+    puede pasar, igual que antes, es pre-llenar el cobro con el valor total
+    de la cuota.
+    """
+    html = (RAIZ / "templates" / "app_cobrador.html").read_text(encoding="utf-8")
+    ruta = (RAIZ / "app" / "routers" / "ruta.py").read_text(encoding="utf-8")
+    assert 'money(cu.valor) - money(cu.valor_pagado or 0)' in ruta, (
+        "/ruta/zona debe calcular el saldo pendiente con Decimal"
+    )
+    assert '"falta": float(falta)' in ruta, (
+        "/ruta/zona debe enviar el saldo pendiente de la cuota"
+    )
+    llamadas = re.findall(r"abrirCobro\((.*?)\)\"", html)
+    assert llamadas, "app_cobrador.html: no se encontro la llamada a abrirCobro"
+    for args in llamadas:
+        assert "p.falta" in args, (
+            "app_cobrador.html: abrirCobro debe recibir el saldo (falta), no el valor"
         )
-        llamadas = re.findall(r"abrirCobro\((.*?)\)\"", html)
-        assert llamadas, f"{nombre}: no se encontro la llamada a abrirCobro"
-        for args in llamadas:
-            assert "Number(p.valor||0)" not in args, (
-                f"{nombre}: abrirCobro recibe el valor total de la cuota en vez del saldo"
-            )
+        assert "p.valor" not in args, (
+            "app_cobrador.html: abrirCobro recibe el valor total de la cuota"
+        )
 
 
 def test_perfil_no_trunca_los_centavos_del_saldo():

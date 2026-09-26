@@ -76,9 +76,18 @@ def test_cobros_template_escapa_datos_usuario():
 
 def test_app_cobrador_escapa_datos_usuario():
     tpl = _read("templates/app_cobrador.html")
-    for field in ("p.cliente", "p.vencimiento", "p.whatsapp", "p.telefono"):
+    # La vista simple pasó de listar cuotas (p.cliente) a listar clientes de
+    # una zona (f.nombre), asi que los campos que llegan del usuario son
+    # otros; la exigencia es la misma.
+    for field in ("f.nombre", "p.vencimiento", "f.whatsapp", "f.telefono",
+                  "f.no_pago_motivo"):
         bad = re.search(r"\$\{(?!\s*(esc|attr|Number|attr|JSON\.stringify))\s*[a-zA-Z_$]*\s*" + re.escape(field), tpl)
         assert not bad, f"{field} se inserta sin escapar en app_cobrador.html"
+    # El nombre del archivo de la foto va dentro de un atributo HTML, que es
+    # donde una comilla suelta escapa del atributo y se convierte en otro.
+    assert 'data-mini="${attr(f.miniatura)}"' in tpl, (
+        "el nombre de la miniatura debe ir escapado dentro del atributo"
+    )
 
 
 def test_xss_payload_bloqueado_por_esc():

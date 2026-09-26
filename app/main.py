@@ -61,7 +61,7 @@ from app.utils.request_id import RequestIDMiddleware
 from app.utils.license_middleware import LicenseMiddleware
 from app.utils.rate_limit import InMemoryRateLimitMiddleware
 from app.utils import registro_logs
-from app.utils.almacen_imagenes import leer_imagen
+from app.utils.almacen_imagenes import leer_imagen, leer_miniatura
 from app.utils.security_headers import SecurityHeadersMiddleware
 from app.utils.seed import seed_data_demo
 from app.utils.settings import settings
@@ -330,12 +330,26 @@ async def inicio(request: Request):
 _csp_violations = deque(maxlen=200)
 
 
+def _sin_contenido() -> Response:
+    """Un 204 de verdad: sin cuerpo.
+
+    Esto devolvia `JSONResponse({}, status_code=204)`. Un 204 significa "no
+    hay contenido", asi que el servidor anuncia Content-Length: 0 y luego
+    intentaba mandar los dos bytes de `{}` -- uvicorn cortaba la respuesta con
+    RuntimeError y escribia una traza entera en stderr. El navegador manda un
+    reporte CSP por cada violacion y cada pagina de la aplicacion tiene
+    varias, asi que el registro de produccion se llenaba de trazas de un
+    error que no impedia nada, tapando las que si importan.
+    """
+    return Response(status_code=204)
+
+
 @app.post("/csp-report")
 async def csp_report(request: Request):
     try:
         body = await request.json()
     except Exception:
-        return JSONResponse({}, status_code=204)
+        return _sin_contenido()
     report = body.get("csp-report") or body
     entry = {
         "hora": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -348,7 +362,7 @@ async def csp_report(request: Request):
     }
     _csp_violations.append(entry)
     logger.info("CSP-REPORT: %s", entry)
-    return JSONResponse({}, status_code=204)
+    return _sin_contenido()
 
 
 @app.get("/csp-report/reciente")
@@ -366,12 +380,17 @@ async def comprar(request: Request):
     return templates.TemplateResponse(request, "comprar.html", {})
 
 
-@app.get("/uploads/fotos/{filename}")
-async def foto_cliente(filename: str, request: Request, db=Depends(get_db)):
+def _usuario_puede_ver_la_foto(request: Request, db, filename: str):
+    """El usuario de la sesion, si esa foto es de un cliente que puede ver.
+
+    Esto es lo unico que hay entre una empresa y las fotos de otra: el nombre
+    del objeto es adivinable para quien conozca el formato. Devuelve 404 y no
+    403 a proposito -- confirmar que la foto existe pero es de otro ya es
+    contar algo.
+    """
     user = auth.get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=404)
-
     cliente = db.query(Cliente).filter(
         Cliente.empresa_id == user.empresa_id,
         Cliente.foto_path == f"fotos/{filename}",
@@ -379,6 +398,36 @@ async def foto_cliente(filename: str, request: Request, db=Depends(get_db)):
     ).first()
     if not cliente or not require_zone_access(db, user, cliente.zona_id):
         raise HTTPException(status_code=404)
+    return user
+
+
+@app.get("/uploads/miniaturas/{filename}")
+async def miniatura_cliente(filename: str, request: Request, db=Depends(get_db)):
+    """La misma foto reducida, para las listas.
+
+    La ruta del cobrador muestra ochenta clientes de golpe. Servir ahi la
+    foto completa son varios megabytes en el celular de alguien que esta en
+    la calle; la miniatura son unos kilobytes. Pasa por la misma
+    comprobacion de empresa y de zona que la foto entera: reducir una
+    imagen no la hace menos privada.
+    """
+    user = _usuario_puede_ver_la_foto(request, db, filename)
+    imagen = leer_miniatura(db, user.empresa_id, filename)
+    if not imagen:
+        raise HTTPException(status_code=404)
+    datos, mime = imagen
+    return Response(
+        content=datos,
+        media_type=mime,
+        # Una semana: la miniatura solo cambia si cambia la foto, y entonces
+        # cambia tambien su nombre.
+        headers={"Cache-Control": "private, max-age=604800"},
+    )
+
+
+@app.get("/uploads/fotos/{filename}")
+async def foto_cliente(filename: str, request: Request, db=Depends(get_db)):
+    user = _usuario_puede_ver_la_foto(request, db, filename)
 
     # Los bytes estan en Supabase Storage, en un bucket privado. Se sirven
     # por aqui y no por una URL de Supabase para que sigan pasando por las

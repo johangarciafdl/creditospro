@@ -4,9 +4,13 @@
 {% block topbar_sub %}{{ current_user.nombre }}{% endblock %}
 
 {% block content %}
-<div style="max-width:420px;margin:0 auto;">
+{#- La vista unica del cobrador. Lista CLIENTES de una zona, no cuotas: un
+    cobrador recorre una calle, y pasa por la puerta del que esta al dia
+    igual que por la del que debe. El semaforo es lo que le permite
+    distinguirlos sin abrir nada. -#}
+<div style="max-width:460px;margin:0 auto;">
 
-<!-- ZONA: nada se carga hasta que se elige -->
+<!-- ZONA, FECHA Y BUSQUEDA: nada se carga hasta que se elige zona -->
 <div class="card mb-3">
   <div class="card-body" style="padding:10px;">
     {% if sin_zonas %}
@@ -15,7 +19,7 @@
     </div>
     {% else %}
     <label for="sel-zona" style="display:block;font-size:11px;color:var(--t3);margin-bottom:6px;">Zona de hoy</label>
-    <div style="display:flex;gap:6px;">
+    <div style="display:flex;gap:6px;margin-bottom:8px;">
       <select id="sel-zona" style="flex:1;" onchange="elegirZona()">
         <option value="">— Elige la zona —</option>
         {% for z in zonas %}
@@ -26,269 +30,352 @@
       <button class="btn btn-sm" onclick="verTodas()" title="Todas las zonas de hoy">Ver todos</button>
       {% endif %}
     </div>
+    <div style="display:flex;gap:6px;">
+      <div style="flex:0 0 140px;">
+        <label for="sel-fecha" style="display:block;font-size:11px;color:var(--t3);margin-bottom:4px;">Dia</label>
+        <input type="date" id="sel-fecha" value="{{ hoy }}" max="{{ hoy }}" onchange="recargar()">
+      </div>
+      <div style="flex:1;">
+        <label for="inp-buscar" style="display:block;font-size:11px;color:var(--t3);margin-bottom:4px;">Buscar</label>
+        <input type="text" id="inp-buscar" placeholder="Nombre o cedula" oninput="buscarDebounce()">
+      </div>
+    </div>
     {% endif %}
   </div>
 </div>
 
-<!-- RESUMEN COBRADOR -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+<!-- RESUMEN DE LA ZONA -->
+<div id="resumen" style="display:none;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
   <div class="stat-card gold card-anim">
-    <div class="stat-label">Cobrado hoy</div>
-    <div class="stat-val gold" style="font-size:20px;" id="cobrado-hoy">$0</div>
+    <div class="stat-label">Por cobrar</div>
+    <div class="stat-val gold" style="font-size:19px;" id="r-esperado">$0</div>
+    <div class="fs-11 text-3" id="r-por-cobrar">0 clientes</div>
+  </div>
+  <div class="stat-card green card-anim">
+    <div class="stat-label">Cobrado</div>
+    <div class="stat-val" style="font-size:19px;color:var(--green);" id="r-cobrado">$0</div>
+    <div class="fs-11 text-3" id="r-cobrados">0 clientes</div>
   </div>
   <div class="stat-card red card-anim">
-    <div class="stat-label">Pendientes</div>
-    <div class="stat-val red" style="font-size:20px;" id="num-pendientes">—</div>
+    <div class="stat-label">Vencidos</div>
+    <div class="stat-val red" style="font-size:19px;" id="r-vencidos">0</div>
+    <div class="fs-11 text-3">clientes atrasados</div>
+  </div>
+  <div class="stat-card blue card-anim">
+    <div class="stat-label">Clientes de la zona</div>
+    <div class="stat-val" style="font-size:19px;color:var(--blue);" id="r-clientes">0</div>
+    <div class="fs-11 text-3" id="r-no-pagos">&nbsp;</div>
   </div>
 </div>
 
-<!-- BÚSQUEDA -->
-<div class="card mb-3">
-  <div class="card-body" style="padding:10px;">
-    <div class="input-icon-wrap">
-      <label for="inp-buscar" style="position:absolute;clip:rect(1px,1px,1px,1px);overflow:hidden;">Buscar cliente en ruta</label>
-      <span class="input-icon">🔍</span>
-      <input type="text" id="inp-buscar" placeholder="Buscar cliente..." oninput="buscarDebounce()">
-    </div>
-  </div>
+<!-- PESTANAS -->
+<div id="pestanas" style="display:none;background:var(--bg-2);border-radius:var(--r-sm);padding:3px;gap:2px;margin-bottom:10px;">
+  <button class="tab-btn active" id="tab-cobrar" onclick="verPestana('cobrar')">Por cobrar <span id="n-cobrar">0</span></button>
+  <button class="tab-btn" id="tab-todos" onclick="verPestana('todos')">Todos <span id="n-todos">0</span></button>
+  <button class="tab-btn" id="tab-cobrados" onclick="verPestana('cobrados')">Cobrados <span id="n-cobrados">0</span></button>
 </div>
 
-<!-- LISTA -->
+<!-- ESTADO / LISTA -->
 <div id="estado" style="text-align:center;padding:40px 0;color:var(--t3);">
-  <div style="font-size:36px;margin-bottom:10px;">🗺️</div>
+  <div id="estado-icono" style="font-size:36px;margin-bottom:10px;">🗺️</div>
   <div id="estado-txt">Elige la zona para ver tu ruta</div>
 </div>
 <div id="lista-ruta" style="display:flex;flex-direction:column;gap:8px;"></div>
+<div id="recortada" class="fs-11 text-3" style="display:none;text-align:center;padding:10px 0;">
+  La zona tiene mas clientes de los que caben en una pantalla. Usa el buscador.
+</div>
 
-<!-- MODAL COBRO RÁPIDO -->
-<div class="modal-overlay" id="modal-cobro" onclick="if(event.target===this)this.classList.remove('open')">
-<div class="modal" style="max-width:360px;" onclick="event.stopPropagation()">
-  <div class="modal-header">
-    <div>
-      <div class="modal-title" id="mc-nombre">—</div>
-      <div style="font-size:12px;color:var(--t3);" id="mc-detalle">—</div>
-    </div>
-    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cobro').classList.remove('open')">✕</button>
-  </div>
-  <div class="modal-body">
-    <input type="hidden" id="mc-cuota-id">
-    <div class="form-group">
-      <label>Valor</label>
-      <input type="number" id="mc-valor" inputmode="numeric" style="font-size:22px;font-weight:700;text-align:center;" placeholder="0">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">
-      <button onclick="setMetodo('Efectivo')" id="btn-efectivo" class="btn btn-primary btn-sm">💵 Efectivo</button>
-      <button onclick="setMetodo('Nequi')" id="btn-nequi" class="btn btn-sm" style="border-color:transparent;">🟣 Nequi</button>
-      <button onclick="setMetodo('Daviplata')" id="btn-daviplata" class="btn btn-sm" style="border-color:transparent;">🔴 Daviplata</button>
-      <button onclick="setMetodo('Transferencia')" id="btn-transf" class="btn btn-sm" style="border-color:transparent;">📲 Transferencia</button>
-    </div>
-    <input type="hidden" id="mc-metodo" value="Efectivo">
-    <input type="text" id="mc-obs" placeholder="Observación (opcional)">
-  </div>
-  <div class="modal-footer">
-    <button class="btn" onclick="document.getElementById('modal-cobro').classList.remove('open')">Cancelar</button>
-    <button class="btn btn-gold" style="flex:1;justify-content:center;" onclick="confirmarCobro()">✓ Registrar</button>
-  </div>
 </div>
-</div>
-</div>
+
+{% include "_modal_cobro.html" %}
 {% endblock %}
 
 {% block extra_scripts %}
+{% include "_modal_cobro_js.html" %}
 <script nonce="{{ csp_nonce }}">
-// La pantalla arranca vacia a proposito. Un cobrador con cuatro zonas
-// asignadas no quiere la suma de las cuatro al entrar: quiere la de la calle
-// en la que esta. Ademas, en un celular con mala señal, cargar la ruta
-// entera sin que nadie la haya pedido es la peticion que se queda colgada.
-let _deb = null, _zona = null, _elegida = false;
+// La pantalla arranca vacia a proposito. Un cobrador con tres zonas asignadas
+// no quiere la suma de las tres al entrar: quiere la de la calle en la que
+// esta. Y en un celular con mala senal, cargar una lista que nadie ha pedido
+// es la peticion que se queda colgada.
+let _zona = null, _elegida = false, _deb = null;
+let _filas = [], _pestana = 'cobrar';
 
-async function cargarRuta() {
-  if (!_elegida) return;          // sin zona elegida no se pide nada
-  const params = new URLSearchParams();
-  if (_zona) params.set('zona_id', _zona);
-  params.set('q', document.getElementById('inp-buscar').value.trim());
+function _dia(){ return document.getElementById('sel-fecha').value || hoyLocal(); }
 
-  const [rRes, cRes] = await Promise.all([
-    fetch('/cobros/pendientes-ajax?'+params),
-    fetch('/cobros/buscar-ajax?fecha='+hoyLocal()+((_zona?'&zona_id='+_zona:''))),
-  ]);
-  const rData = await rRes.json();
-  const cData = await cRes.json();
+function _estado(txt, icono){
+  document.getElementById('estado').style.display = '';
+  document.getElementById('estado-txt').textContent = txt;
+  if (icono) document.getElementById('estado-icono').textContent = icono;
+}
 
-  // Update stats
-  const cobradoHoy = (cData.cobros||[]).reduce((s,c)=>s+c.valor,0);
-  document.getElementById('cobrado-hoy').textContent = cop(cobradoHoy);
-  document.getElementById('num-pendientes').textContent = (rData.pendientes||[]).length;
+function _vaciar(){
+  _filas = [];
+  document.getElementById('lista-ruta').innerHTML = '';
+  document.getElementById('resumen').style.display = 'none';
+  document.getElementById('pestanas').style.display = 'none';
+  document.getElementById('recortada').style.display = 'none';
+}
 
-  // Render list
-  const lista = document.getElementById('lista-ruta');
-  const items = rData.pendientes || [];
-  document.getElementById('estado').style.display = 'none';
-
-  if (!items.length) {
-    lista.innerHTML = `<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">¡Todo cobrado!</div><div class="empty-sub">No tienes pendientes hoy</div></div>`;
+function elegirZona(){
+  const v = document.getElementById('sel-zona').value;
+  if (!v) {                             // volvio al placeholder
+    _elegida = false; _zona = null; _vaciar();
+    _estado('Elige la zona para ver tu ruta', '🗺️');
     return;
   }
+  _zona = Number(v); _elegida = true; cargar();
+}
 
-  lista.innerHTML = items.map(p => {
-    const dias = Number(p.dias||0);
-    const venc = dias > 0;
-    const waDigits = String(p.whatsapp||'').replace(/\D/g,'').slice(0,20);
-    const telDigits = String(p.telefono||'').replace(/[^\d+\-\s()]/g,'').slice(0,20);
-    // Saldo pendiente, no el valor original de la cuota: en una cuota Parcial
-    // cobrar el valor completo lo rechaza el servidor.
-    const saldo = Math.round(Math.max(0, Number(p.valor||0) - Number(p.valor_pagado||0)) * 100) / 100;
+function verTodas(){
+  document.getElementById('sel-zona').value = '';
+  _zona = null; _elegida = true;        // sin zona_id: el servidor da las de hoy
+  cargar();
+}
+
+function recargar(){ if (_elegida) cargar(); }
+function buscarDebounce(){ clearTimeout(_deb); _deb = setTimeout(recargar, 400); }
+
+async function cargar(){
+  if (!_elegida) return;
+  _vaciar();
+  _estado('Cargando la ruta...', '⏳');
+
+  const p = new URLSearchParams();
+  if (_zona) p.set('zona_id', _zona);
+  p.set('fecha', _dia());
+  const q = document.getElementById('inp-buscar').value.trim();
+  if (q) p.set('q', q);
+
+  try {
+    const r = await window.fetch('/ruta/zona?' + p);
+    const d = await leerRespuesta(r);
+    if (d.error) { _estado(d.error, '⚠️'); return; }
+    _filas = d.clientes || [];
+    pintarResumen(d.resumen || {});
+    document.getElementById('recortada').style.display =
+      (d.resumen && d.resumen.recortada) ? 'block' : 'none';
+    verPestana(_pestana);
+  } catch(e) {
+    console.error('[Ruta] No se pudo cargar la zona:', e);
+    _estado('No hay conexion. Intenta de nuevo.', '📡');
+  }
+}
+
+function pintarResumen(r){
+  document.getElementById('resumen').style.display = 'grid';
+  document.getElementById('pestanas').style.display = 'flex';
+  document.getElementById('r-esperado').textContent = cop(r.esperado || 0);
+  document.getElementById('r-por-cobrar').textContent = (r.por_cobrar || 0) + ' clientes';
+  document.getElementById('r-cobrado').textContent = cop(r.cobrado || 0);
+  document.getElementById('r-cobrados').textContent = (r.cobrados || 0) + ' clientes';
+  document.getElementById('r-vencidos').textContent = r.vencidos || 0;
+  document.getElementById('r-clientes').textContent = r.clientes || 0;
+  document.getElementById('r-no-pagos').innerHTML =
+    (r.no_pagos || 0) > 0 ? esc(r.no_pagos + ' marcados sin pago') : '&nbsp;';
+
+  document.getElementById('n-cobrar').textContent = _filas.filter(esPorCobrar).length;
+  document.getElementById('n-todos').textContent = _filas.length;
+  document.getElementById('n-cobrados').textContent = _filas.filter(f => f.cobrado_hoy > 0).length;
+}
+
+function esPorCobrar(f){ return f.semaforo === 'rojo' || f.semaforo === 'amarillo'; }
+
+function verPestana(cual){
+  _pestana = cual;
+  ['cobrar','todos','cobrados'].forEach(k => {
+    document.getElementById('tab-'+k).classList.toggle('active', k === cual);
+  });
+  let filas = _filas;
+  if (cual === 'cobrar')   filas = _filas.filter(esPorCobrar);
+  if (cual === 'cobrados') filas = _filas.filter(f => f.cobrado_hoy > 0);
+  pintar(filas, cual);
+}
+
+// El texto del semaforo va SIEMPRE junto al color: un cobrador con la
+// pantalla al sol, o que no distingue el rojo del verde, tiene que poder
+// leer en que estado esta el cliente.
+const LUCES = {
+  rojo:     {clase:'luz-roja',     texto:'Vencida'},
+  amarillo: {clase:'luz-amarilla', texto:'Vence hoy'},
+  verde:    {clase:'luz-verde',    texto:'Al dia'},
+  gris:     {clase:'luz-gris',     texto:'Sin deuda'},
+};
+
+function pintar(filas, cual){
+  const lista = document.getElementById('lista-ruta');
+  if (!filas.length) {
+    lista.innerHTML = '';
+    const vacios = {
+      cobrar:   ['✅', 'No queda nada por cobrar en esta zona'],
+      cobrados: ['💸', 'Todavia no has cobrado nada este dia'],
+      todos:    ['👥', 'La zona no tiene clientes activos'],
+    };
+    _estado(vacios[cual][1], vacios[cual][0]);
+    return;
+  }
+  document.getElementById('estado').style.display = 'none';
+
+  lista.innerHTML = filas.map(f => {
+    const luz = LUCES[f.semaforo] || LUCES.gris;
+    const p = f.pendiente;
+    const wa = String(f.whatsapp || '').replace(/\D/g,'').slice(0,20);
+    const tel = String(f.telefono || '').replace(/[^\d+\-\s()]/g,'').slice(0,20);
+    const inicial = esc((f.nombre || '?').trim().slice(0,2).toUpperCase());
+    const detalle = p
+      ? `Cuota ${Number(p.cuota_num)||0}/${Number(p.total_cuotas)||0} · ${esc(p.vencimiento)}`
+      : 'Sin cuotas pendientes';
+    const atraso = (f.semaforo === 'rojo' && p && Number(p.dias) > 0)
+      ? ` · ${Number(p.dias)}d` : '';
+
     return `
-    <div class="card card-hover">
-      <div style="padding:14px 14px 10px;">
-        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
-          <div>
-            <div style="font-weight:600;font-size:14px;">${esc(p.cliente)}</div>
-            <div style="font-size:11px;color:var(--t3);">Cuota ${Number(p.cuota_num||0)}/${Number(p.total_cuotas||0)} · ${esc(p.vencimiento)}</div>
-          </div>
-          <div style="text-align:right;">
-            <div style="font-family:var(--mono);font-weight:700;font-size:16px;">${cop(saldo)}</div>
-            <div style="font-size:10px;font-weight:600;color:${venc?'var(--red)':'var(--amber)'};">${venc?dias+'d vencida':'Vence hoy'}</div>
-          </div>
+    <div class="fila-cliente ${luz.clase}">
+      <div class="fila-top">
+        <div class="mini-av">${inicial}${
+          f.miniatura ? `<img data-mini="${attr(f.miniatura)}" alt="">` : ''}</div>
+        <div style="flex:1;min-width:0;">
+          <div class="fila-nombre">${esc(f.nombre)}</div>
+          <div class="fs-11 text-3">${detalle}</div>
+          <div class="fila-luz">${luz.texto}${atraso}</div>
         </div>
-        <div style="display:flex;gap:6px;">
-          <button onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(p.cliente||''))},${saldo},${Number(p.cuota_num||0)})" class="btn btn-gold btn-sm" style="flex:1;justify-content:center;">💰 Cobrar</button>
-          ${waDigits?`<a href="https://wa.me/57${attr(waDigits)}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#25D366;color:#fff;border-color:#25D366;padding:5px 10px;">💬</a>`:''}
-          ${telDigits?`<a href="tel:${attr(telDigits)}" class="btn btn-sm" style="padding:5px 10px;">📞</a>`:''}
+        <div style="text-align:right;">
+          <div style="font-family:var(--mono);font-weight:700;font-size:15px;">${cop(p ? p.falta : 0)}</div>
+          ${f.cobrado_hoy > 0 ? `<div class="fs-11" style="color:var(--green);font-weight:600;">✓ ${cop(f.cobrado_hoy)}</div>` : ''}
+          ${f.no_pago_hoy ? `<div class="fs-11" style="color:var(--amber);font-weight:600;">Sin pago</div>` : ''}
         </div>
+      </div>
+      <div class="fila-acciones">
+        ${p ? `<button class="btn btn-gold btn-sm" style="flex:1;justify-content:center;"
+                  onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(f.nombre||''))},${Number(p.falta)||0},${Number(p.cuota_num)||0})">💰 Cobrar</button>` : ''}
+        ${p ? (f.no_pago_hoy
+              ? `<button class="btn btn-sm" onclick="deshacerNoPago(${Number(p.cuota_id)||0})" title="${attr(f.no_pago_motivo||'')}">↩ Si pago</button>`
+              : `<button class="btn btn-sm" onclick="marcarNoPago(${Number(p.cuota_id)||0},${attr(JSON.stringify(f.nombre||''))})">No pago</button>`) : ''}
+        <a class="btn btn-sm" href="/clientes/${Number(f.cliente_id)||0}" title="Ficha, historial y notas">Ficha</a>
+        ${wa ? `<a href="https://wa.me/57${attr(wa)}" target="_blank" rel="noopener" class="btn btn-sm btn-wa">💬</a>` : ''}
+        ${tel ? `<a href="tel:${attr(tel)}" class="btn btn-sm">📞</a>` : ''}
       </div>
     </div>`;
   }).join('');
+
+  observarMiniaturas();
 }
 
-function buscarDebounce() { clearTimeout(_deb); _deb=setTimeout(cargarRuta,400); }
+// ── MINIATURAS: se piden al entrar en pantalla, no todas de golpe ─────────
+// Ochenta fotos completas son varios megabytes; pedirlas todas al abrir la
+// ruta deja al cobrador mirando huecos grises. Cada una se pide cuando su
+// fila esta a punto de verse, y el navegador ya no la vuelve a pedir porque
+// la respuesta se cachea una semana.
+let _mirador = null;
 
-function _cargando() {
-  const est = document.getElementById('estado');
-  const txt = document.getElementById('estado-txt');
-  if (est) est.style.display = '';
-  if (txt) txt.textContent = 'Cargando ruta...';
-  document.getElementById('lista-ruta').innerHTML = '';
-}
+function observarMiniaturas(){
+  const pendientes = document.querySelectorAll('img[data-mini]');
+  if (!pendientes.length) return;
 
-function elegirZona() {
-  const sel = document.getElementById('sel-zona');
-  const v = sel ? sel.value : '';
-  if (!v) {                       // volvio al placeholder: se vacia la pantalla
-    _elegida = false; _zona = null;
-    document.getElementById('lista-ruta').innerHTML = '';
-    document.getElementById('estado').style.display = '';
-    document.getElementById('estado-txt').textContent = 'Elige la zona para ver tu ruta';
-    document.getElementById('cobrado-hoy').textContent = cop(0);
-    document.getElementById('num-pendientes').textContent = '—';
+  if (!('IntersectionObserver' in window)) {
+    // Sin soporte (navegador viejo): se cargan igual, sin el ahorro.
+    pendientes.forEach(cargarMiniatura);
     return;
   }
-  _zona = Number(v); _elegida = true;
-  _cargando(); cargarRuta();
-}
-
-function verTodas() {
-  const sel = document.getElementById('sel-zona');
-  if (sel) sel.value = '';
-  _zona = null; _elegida = true;  // sin zona_id: el servidor devuelve las de hoy
-  _cargando(); cargarRuta();
-}
-
-function setMetodo(m) {
-  document.getElementById('mc-metodo').value = m;
-  ['efectivo','nequi','daviplata','transf'].forEach(k => {
-    const b = document.getElementById('btn-'+k);
-    if(b) { b.className='btn btn-sm'; b.style.borderColor='transparent'; }
-  });
-  const map = {Efectivo:'efectivo',Nequi:'nequi',Daviplata:'daviplata',Transferencia:'transf'};
-  const btn = document.getElementById('btn-'+map[m]);
-  if(btn) { btn.className='btn btn-primary btn-sm'; btn.style.borderColor=''; }
-}
-
-function abrirCobro(cuotaId, cliente, valor, numCuota) {
-  document.getElementById('mc-cuota-id').value = cuotaId;
-  document.getElementById('mc-nombre').textContent = cliente;
-  document.getElementById('mc-detalle').textContent = `Cuota #${numCuota} · ${cop(Number(valor))}`;
-  document.getElementById('mc-valor').value = valor;
-  setMetodo('Efectivo');
-  document.getElementById('mc-obs').value = '';
-  document.getElementById('modal-cobro').classList.add('open');
-  setTimeout(()=>document.getElementById('mc-valor').focus(),300);
-}
-
-async function confirmarCobro() {
-  const cuota_id = document.getElementById('mc-cuota-id').value;
-  const valor    = document.getElementById('mc-valor').value;
-  const metodo   = document.getElementById('mc-metodo').value;
-  const obs      = document.getElementById('mc-obs').value;
-  if (!valor || parseFloat(valor)<=0) { toast('Ingresa el valor del cobro','error'); return; }
-
-  const fd = new FormData();
-  fd.append('cuota_id', cuota_id);
-  fd.append('valor_cobrado', valor);
-  fd.append('metodo_pago', metodo);
-  fd.append('observaciones', obs);
-
-  // getCurrentPosition es asincrono: antes se lanzaba el callback y de una vez
-  // se enviaba el cobro, asi que lat/lng se agregaban al FormData DESPUES de
-  // que la peticion ya habia salido -- el GPS del cobrador nunca llegaba al
-  // servidor. Ahora se espera la ubicacion (max 3s) antes de enviar, y si no
-  // llega el cobro se registra igual, solo que sin coordenadas.
-  const ubicacion = await new Promise(resolve => {
-    if (!navigator.geolocation) return resolve(null);
-    navigator.geolocation.getCurrentPosition(
-      pos => resolve(pos), () => resolve(null), {timeout: 3000, maximumAge: 60000}
-    );
-  });
-  if (ubicacion) {
-    fd.append('lat', ubicacion.coords.latitude);
-    fd.append('lng', ubicacion.coords.longitude);
+  if (!_mirador) {
+    _mirador = new IntersectionObserver((entradas, obs) => {
+      entradas.forEach(e => {
+        if (!e.isIntersecting) return;
+        cargarMiniatura(e.target);
+        obs.unobserve(e.target);
+      });
+    }, {rootMargin: '200px'});     // un poco antes de que se vea
   }
-
-  const btn = document.querySelector('[onclick="confirmarCobro()"]');
-  await conBoton(btn, 'Registrando...', async () => {
-    // Esta es la pantalla que usa el cobrador en la calle, justo donde mas
-    // falta la señal, y era la unica que NO guardaba el cobro sin conexion:
-    // salia "Error de conexion" y el cobro se perdia. Ahora pasa por
-    // window.pwa.saveCobro, que envia si hay red y encola en el celular si no.
-    const datos = {
-      cuota_id, valor_cobrado: valor, metodo_pago: metodo,
-      observaciones: obs || 'Cobro desde la ruta',
-      lat: ubicacion ? ubicacion.coords.latitude : '',
-      lng: ubicacion ? ubicacion.coords.longitude : '',
-      foto: null,
-    };
-    try {
-      if (window.pwa && window.pwa.saveCobro) {
-        const d = await window.pwa.saveCobro(datos);
-        document.getElementById('modal-cobro').classList.remove('open');
-        if (d && d.offline) {
-          toast('Sin conexión: cobro guardado en el celular, se enviará solo al recuperar señal', 'warn');
-        } else {
-          toast((d && d.mensaje) || 'Cobro registrado', 'success');
-        }
-        setTimeout(cargarRuta, 600);
-        return;
-      }
-      const r = await window.fetch('/cobros/registrar', {method:'POST', body:fd});
-      const d = await leerRespuesta(r);
-      if (d.ok) {
-        document.getElementById('modal-cobro').classList.remove('open');
-        toast(d.mensaje, 'success');
-        setTimeout(cargarRuta, 600);
-      } else {
-        toast(d.error || d.detail || 'No se pudo registrar el cobro','error');
-      }
-    } catch(e) {
-      console.error('[Ruta] Error registrando cobro:', e);
-      toast(e && e.message ? ('No se pudo registrar: ' + e.message) : 'No se pudo registrar el cobro', 'error');
-    }
-  });
+  pendientes.forEach(img => _mirador.observe(img));
 }
+
+function cargarMiniatura(img){
+  const nombre = img.getAttribute('data-mini');
+  if (!nombre) return;
+  img.removeAttribute('data-mini');
+  // Si la foto no se puede leer, se retira la imagen y queda la inicial, que
+  // estaba debajo desde el primer momento. El hueco nunca acaba con el icono
+  // de imagen rota ni en blanco.
+  img.onerror = () => img.remove();
+  img.src = '/uploads/miniaturas/' + encodeURIComponent(nombre);
+}
+
+// ── NO PAGO ──────────────────────────────────────────────────────────────
+// Se anota en el dia que muestra el selector, no siempre en hoy: un cobrador
+// que cuadra la ruta por la noche esta registrando lo que paso en la fecha
+// que tiene en pantalla.
+async function marcarNoPago(cuotaId, cliente){
+  if (!cuotaId) return;
+  const dia = _dia();
+  const motivo = prompt(cliente + ' no pago el ' + dia.split('-').reverse().join('/') +
+                        '.\n\nMotivo (opcional):', '');
+  if (motivo === null) return;
+  const fd = new FormData();
+  fd.append('cuota_id', cuotaId);
+  fd.append('fecha', dia);
+  fd.append('motivo', motivo || '');
+  try {
+    const r = await window.fetch('/cobros/no-pago', {method:'POST', body:fd});
+    const d = await leerRespuesta(r);
+    if (d.ok) { toast(d.mensaje, d.duplicado ? 'warn' : 'success'); setTimeout(cargar, 600); }
+    else toast(d.error || d.detail || 'No se pudo registrar', 'error');
+  } catch(e) {
+    console.error('[Ruta] Error registrando no pago:', e);
+    toast('No hay conexion. Intenta de nuevo.', 'error');
+  }
+}
+
+async function deshacerNoPago(cuotaId){
+  if (!cuotaId) return;
+  const fd = new FormData();
+  fd.append('cuota_id', cuotaId);
+  fd.append('fecha', _dia());
+  try {
+    const r = await window.fetch('/cobros/no-pago/deshacer', {method:'POST', body:fd});
+    const d = await leerRespuesta(r);
+    if (d.ok) { toast(d.mensaje); setTimeout(cargar, 600); }
+    else toast(d.error || d.detail || 'No se pudo deshacer', 'error');
+  } catch(e) {
+    console.error('[Ruta] Error deshaciendo no pago:', e);
+    toast('No hay conexion. Intenta de nuevo.', 'error');
+  }
+}
+
+// El modal de cobro es el compartido con Cobros y Clientes; cada pantalla
+// dice como refrescarse despues de un cobro.
+window.alRegistrarCobro = () => cargar();
 
 {% if zona_unica %}
 // Con una sola zona posible no hay nada que elegir: se carga directo.
-_zona = {{ zona_unica }}; _elegida = true; _cargando(); cargarRuta();
+_zona = {{ zona_unica }}; _elegida = true; cargar();
 {% endif %}
 </script>
+
+<style>
+.tab-btn{flex:1;padding:7px 8px;border:none;background:none;border-radius:var(--r-sm);font-size:12px;font-weight:500;color:var(--t2);cursor:pointer;transition:all .15s}
+.tab-btn.active{background:var(--surface);color:var(--t1);box-shadow:var(--shadow-xs)}
+.tab-btn span{opacity:.6;font-weight:700}
+
+.fila-cliente{background:var(--surface);border:1px solid var(--border);border-left-width:4px;border-radius:var(--r-sm);box-shadow:var(--shadow-xs)}
+.fila-top{display:flex;gap:10px;align-items:flex-start;padding:11px 12px 8px}
+.fila-nombre{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fila-luz{font-size:10px;font-weight:700;margin-top:3px;text-transform:uppercase;letter-spacing:.3px}
+.fila-acciones{display:flex;gap:6px;padding:0 12px 11px;flex-wrap:wrap}
+.fila-acciones .btn{padding:5px 9px;font-size:12px}
+.btn-wa{background:#25D366;color:#fff;border-color:#25D366}
+
+.luz-roja{border-left-color:var(--red)}
+.luz-roja .fila-luz{color:var(--red)}
+.luz-amarilla{border-left-color:var(--amber)}
+.luz-amarilla .fila-luz{color:var(--amber)}
+.luz-verde{border-left-color:var(--green)}
+.luz-verde .fila-luz{color:var(--green)}
+.luz-gris{border-left-color:var(--border)}
+.luz-gris .fila-luz{color:var(--t3)}
+
+/* La inicial esta siempre en la caja y la foto se monta encima cuando llega.
+   Asi, mientras la miniatura viaja -- que en la calle puede tardar -- la fila
+   no muestra un cuadro gris vacio, y si la foto no se puede leer se retira y
+   la inicial ya estaba puesta. */
+.mini-av{position:relative;width:42px;height:42px;border-radius:10px;flex-shrink:0;overflow:hidden;background:var(--bg-2);color:var(--t2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+.mini-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+</style>
 {% endblock %}
