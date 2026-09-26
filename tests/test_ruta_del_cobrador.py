@@ -453,3 +453,61 @@ def test_cerrar_sesion_esta_arriba_y_es_un_solo_boton(entorno):
     pie = html.split('<div class="sidebar-footer">')[1].split("</aside>")[0]
     assert "/auth/logout" not in pie, \
         "quedo un segundo boton de cerrar sesion pegado al borde inferior"
+
+
+# ── La ruta semanal manda sobre la vista del dia ──────────────────────────
+
+def test_la_vista_solo_ofrece_las_zonas_que_le_tocan_hoy(entorno):
+    """El enlace entre las dos mitades de la automatizacion.
+
+    El administrador configura, desde Usuarios, que zonas cobra cada dia de la
+    semana. Esta prueba es la que comprueba que eso llega hasta la pantalla
+    del cobrador: con una ruta configurada, el selector deja de ofrecerle sus
+    zonas asignadas y le ofrece solo las de hoy. Sin ella, el administrador
+    podria configurar la semana entera y el cobrador seguir viendolo todo.
+    """
+    cobra, _, d, Sesion = entorno
+    from app.database import RutaCobro, dia_semana_local
+
+    hoy = dia_semana_local()
+    manana = (hoy + 1) % 7
+    db = Sesion()
+    try:
+        db.query(RutaCobro).delete()
+        # Hoy no le toca la zona A; le toca manana.
+        db.add(RutaCobro(empresa_id=d["empresa_id"], usuario_id=d["usuario_id"],
+                         dia_semana=manana, zona_id=d["zona_a"]))
+        db.commit()
+    finally:
+        db.close()
+
+    try:
+        html = cobra.get("/ruta").text
+        assert "no tienes ninguna zona asignada" in html.lower(), \
+            "hoy no le toca ninguna zona y aun asi le ofrece alguna"
+
+        # Y pedir a mano la zona que hoy no le toca tampoco la abre.
+        r = cobra.get("/ruta/zona", params={"zona_id": d["zona_a"],
+                                            "fecha": d["hoy"].isoformat()})
+        assert r.status_code == 200
+        assert r.json()["clientes"] == [], "le dio los clientes de una zona que hoy no cobra"
+
+        # Ahora si le toca: la zona vuelve a aparecer.
+        db = Sesion()
+        try:
+            db.query(RutaCobro).delete()
+            db.add(RutaCobro(empresa_id=d["empresa_id"], usuario_id=d["usuario_id"],
+                             dia_semana=hoy, zona_id=d["zona_a"]))
+            db.commit()
+        finally:
+            db.close()
+        html = cobra.get("/ruta").text
+        assert 'id="sel-zona"' in html and "Centro" in html, \
+            "le toca la zona hoy y no se la ofrece"
+    finally:
+        db = Sesion()
+        try:
+            db.query(RutaCobro).delete()
+            db.commit()
+        finally:
+            db.close()
