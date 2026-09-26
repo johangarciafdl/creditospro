@@ -11,6 +11,7 @@ from app.database import (
 )
 from app.routers.auth import get_current_user
 from app.utils.estado_sistema import VERSION
+from app.utils.interfaz import redirigir_a_vista_simple
 from app.utils.zone_permissions import get_allowed_zone_ids
 
 router = APIRouter()
@@ -21,6 +22,12 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse("/auth/login", 302)
+
+    # Si la empresa trabaja con la interfaz simple, el cobrador no tiene
+    # dashboard: su pantalla es la ruta del dia. Al admin no le afecta.
+    simple = redirigir_a_vista_simple(db, user)
+    if simple:
+        return simple
 
     eid = user.empresa_id
     allowed_zones = get_allowed_zone_ids(db, user)

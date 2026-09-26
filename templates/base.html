@@ -82,7 +82,21 @@ window.attr = window.esc;
   </div>
 
   <nav class="nav" id="nav">
-    {% if current_user and current_user.empresa_id %}
+    {#- Interfaz simple: el cobrador tiene una sola pantalla, asi que el menu
+        tiene un solo enlace. Un enlace que al pulsarlo redirige a otro sitio
+        es un enlace que no debe estar. Al admin no le cambia nada, y por eso
+        la comprobacion del rol va primero: asi no se consulta la empresa en
+        las paginas del admin. -#}
+    {% set interfaz_simple = current_user and current_user.rol not in ('admin','superadmin')
+                             and current_user.empresa
+                             and current_user.empresa.interfaz_cobrador == 'simple' %}
+    {% if current_user and current_user.empresa_id and interfaz_simple %}
+    <div class="nav-section">Principal</div>
+    <a href="/ruta" class="nav-item {% if page=='ruta' %}active{% endif %}">
+      <svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+      Mi Ruta
+    </a>
+    {% elif current_user and current_user.empresa_id %}
     <div class="nav-section">Principal</div>
     <a href="/dashboard" class="nav-item {% if page=='dashboard' %}active{% endif %}">
       <svg class="icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>

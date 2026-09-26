@@ -55,6 +55,28 @@ def sustituir_sesion(app, fabrica):
 import pytest as _pytest
 
 
+def vaciar_limitador():
+    """Vacia los cubos del limitador en memoria, ahora mismo.
+
+    La fixture autouse de abajo lo hace entre pruebas, que es suficiente para
+    casi todo. No lo es cuando una fixture de modulo activa licencia e inicia
+    sesion varias veces en un mismo setup: esas peticiones van seguidas, sin
+    ninguna prueba en medio, y la cuarta activacion se lleva un 429 que no
+    tiene nada que ver con lo que la prueba comprueba. Esas fixtures llaman a
+    esto entre sesion y sesion.
+    """
+    from app.main import app
+    from app.utils.rate_limit import InMemoryRateLimitMiddleware
+
+    pila = getattr(app, "middleware_stack", None)
+    while pila is not None:
+        if isinstance(pila, InMemoryRateLimitMiddleware):
+            pila.requests.clear()
+            return True
+        pila = getattr(pila, "app", None)
+    return False
+
+
 @_pytest.fixture(autouse=True)
 def _limitador_limpio_entre_pruebas():
     """Vacia los contadores del rate limit antes de cada prueba.

@@ -51,6 +51,11 @@ from app.utils.rate_limit import is_rate_limited
 from app.utils.roles import normalize_role
 from app.utils.zone_permissions import validate_user_zones
 from app.utils.plan_limits import limite_cobradores, tiene_funcion
+from app.utils.permisos_rol import puede_gestionar_usuarios
+from app.utils.interfaz import (
+    INTERFACES, INTERFAZ_SIMPLE, interfaz_de_empresa,
+    normalizar as normalizar_interfaz,
+)
 from app.utils.zone_permissions import (
     DIAS_SEMANA, MAX_ZONAS_POR_DIA, ruta_semanal, zonas_asignadas_ids,
 )
@@ -442,6 +447,8 @@ async def listar_usuarios(request: Request, db: Session = Depends(get_db)):
         "usuarios": usuarios,
         "zonas": zonas,
         "current_user": current_user,
+        # El interruptor de interfaz de los cobradores se maneja desde aqui.
+        "interfaz_cobrador": interfaz_de_empresa(db, current_user.empresa_id),
     })
 
 
@@ -1006,3 +1013,49 @@ async def revocar_sesion(
         return JSONResponse({"error": "Sesion no encontrada"}, status_code=404)
     log_action(db, user, "session_revoked", "auth", f"jti_prefix={jti_prefix}")
     return JSONResponse({"ok": True})
+
+
+# ── INTERFAZ DE LOS COBRADORES ────────────────────────────────────────────────
+
+@router.post("/interfaz-cobrador")
+async def cambiar_interfaz_cobrador(
+    request: Request,
+    interfaz: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Mueve el interruptor de interfaz de la empresa del admin que lo pide.
+
+    Es un ajuste de la empresa, no de un usuario: vive aqui porque este es el
+    panel donde el admin gestiona a su equipo, que es justo donde lo va a
+    buscar. Nunca recibe un `empresa_id` -- la empresa es la del que pide, y
+    asi no hay forma de cambiarle la interfaz a otra.
+    """
+    actual = get_current_user(request, db)
+    if not actual:
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    if not puede_gestionar_usuarios(actual):
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    valor = (interfaz or "").strip().lower()
+    if valor not in INTERFACES:
+        return JSONResponse(
+            {"error": "Interfaz invalida"}, status_code=400
+        )
+
+    empresa = db.query(Empresa).filter(Empresa.id == actual.empresa_id).first()
+    if not empresa:
+        return JSONResponse({"error": "Empresa no encontrada"}, status_code=404)
+
+    anterior = normalizar_interfaz(empresa.interfaz_cobrador)
+    empresa.interfaz_cobrador = valor
+    db.commit()
+    log_action(db, actual, "interfaz_cobrador", "empresa",
+               f"{anterior} -> {valor}")
+
+    return JSONResponse({
+        "ok": True,
+        "interfaz": valor,
+        "mensaje": ("Los cobradores veran la vista simple"
+                    if valor == INTERFAZ_SIMPLE
+                    else "Los cobradores veran los modulos completos"),
+    })

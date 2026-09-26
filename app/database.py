@@ -328,6 +328,15 @@ class Empresa(Base):
     # esta columna es solo para mostrarla, nunca se usa para autenticar.
     activation_key_encrypted = Column(Text, nullable=True)
     activation_enabled = Column(Boolean, default=True, nullable=False)
+    # Que pantalla ve un cobrador: "completa" son los modulos de siempre
+    # (Dashboard, Clientes, Cobros); "simple" es una sola vista con la ruta
+    # del dia. Es por empresa y no por usuario porque la costumbre es del
+    # equipo, no de la persona, y asi el admin no tiene que decidirlo cada
+    # vez que crea un cobrador. Al admin no le cambia nada en ningun caso.
+    # Cualquier valor desconocido se trata como "completa" (ver
+    # app/utils/interfaz.py): una empresa nunca se queda sin interfaz.
+    interfaz_cobrador = Column(String(20), default="completa",
+                               server_default="completa", nullable=False)
     creado = Column(DateTime, default=func.now())
 
     usuarios = relationship("Usuario", back_populates="empresa", cascade="all, delete-orphan")

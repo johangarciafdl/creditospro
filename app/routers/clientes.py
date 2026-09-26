@@ -24,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from app.utils.audit import log_action
 from app.database import get_db, Cliente, NotaCliente, Cobro, NoPago, Prestamo, Usuario, Zona
 from app.utils.almacen_imagenes import borrar_imagen, guardar_imagen
+from app.utils.interfaz import redirigir_a_vista_simple
 from app.utils.money import money
 from app.utils.permisos_rol import (
     puede_atender_notas,
@@ -50,6 +51,12 @@ async def listar_clientes(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/auth/login?next=/clientes", status_code=302)
+
+    # Con la interfaz simple, el cobrador no navega el listado de clientes:
+    # llega a ellos desde su ruta del dia.
+    simple = redirigir_a_vista_simple(db, user)
+    if simple:
+        return simple
 
     # SOLO carga zonas (13 registros) — instantaneo
     allowed_zones = get_allowed_zone_ids(db, user)

@@ -16,6 +16,7 @@ from app.database import (
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import get_estado_prestamo
 from app.utils.audit import log_action
+from app.utils.interfaz import redirigir_a_vista_simple
 from app.utils.money import cop, money, money_int
 from app.utils.almacen_imagenes import guardar_imagen
 from app.utils.validators import (
@@ -91,6 +92,15 @@ async def listar_cobros(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse("/auth/login", 302)
+
+    # La pantalla de cobros de la interfaz completa. Con la simple, el
+    # cobrador cobra desde su ruta: se le manda alli. Los endpoints -ajax y
+    # /cobros/registrar NO se redirigen -- son justamente los que usa la
+    # vista simple para funcionar.
+    simple = redirigir_a_vista_simple(db, user)
+    if simple:
+        return simple
+
     eid = user.empresa_id
     # Fecha del negocio, no la del servidor: en UTC, a partir de las 7pm hora
     # de Colombia "hoy" ya seria manana y los cobros de la tarde saldrian del

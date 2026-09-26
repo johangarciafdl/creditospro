@@ -7,6 +7,45 @@
 {% endblock %}
 
 {% block content %}
+<!-- INTERFAZ DE LOS COBRADORES -->
+<div class="card mb-3">
+  <div class="card-header">
+    <div class="card-title">Interfaz de los cobradores</div>
+    <span class="badge {% if interfaz_cobrador == 'simple' %}badge-gold{% else %}badge-blue{% endif %}" id="badge-interfaz">
+      {% if interfaz_cobrador == 'simple' %}Simple{% else %}Completa{% endif %}
+    </span>
+  </div>
+  <div class="card-body">
+    <div class="fs-12 text-2" style="margin-bottom:12px;">
+      Que pantalla ve un cobrador al entrar. Los permisos no cambian: en las dos
+      interfaces el cobrador solo cobra y consulta. A ti como administrador no te
+      cambia nada.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
+        <input type="radio" name="interfaz" value="completa" style="margin-top:3px;"
+               {% if interfaz_cobrador != 'simple' %}checked{% endif %}>
+        <span>
+          <span class="fw-600 fs-13">Completa</span>
+          <span class="fs-12 text-2" style="display:block;">Los modulos de siempre: Dashboard, Clientes y Cobros.</span>
+        </span>
+      </label>
+      <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;">
+        <input type="radio" name="interfaz" value="simple" style="margin-top:3px;"
+               {% if interfaz_cobrador == 'simple' %}checked{% endif %}>
+        <span>
+          <span class="fw-600 fs-13">Simple</span>
+          <span class="fs-12 text-2" style="display:block;">Una sola pantalla con la ruta del dia, pensada para el celular.</span>
+        </span>
+      </label>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;align-items:center;">
+      <button class="btn btn-primary btn-sm" onclick="guardarInterfaz(this)">Guardar interfaz</button>
+      <a class="btn btn-ghost btn-sm" href="/ruta" target="_blank" rel="noopener">Ver la vista simple</a>
+    </div>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-header">
     <div class="card-title">Usuarios del Sistema</div>
@@ -158,6 +197,31 @@ function eliminarUsuarioBtn(btn) {
 }
 function toggleModal(id){ document.getElementById(id).classList.add('open'); }
 function cerrarToggleModal(id){ document.getElementById(id).classList.remove('open'); }
+
+async function guardarInterfaz(btn){
+  const sel = document.querySelector('input[name="interfaz"]:checked');
+  if(!sel){ toast('Elige una interfaz', 'error'); return; }
+  const fd = new FormData();
+  fd.append('interfaz', sel.value);
+  await conBoton(btn, 'Guardando...', async () => {
+    try {
+      const r = await fetch('/auth/interfaz-cobrador', {method:'POST', body:fd});
+      const d = await r.json();
+      if(d.ok){
+        const b = document.getElementById('badge-interfaz');
+        if(b){
+          b.textContent = d.interfaz === 'simple' ? 'Simple' : 'Completa';
+          b.className = 'badge ' + (d.interfaz === 'simple' ? 'badge-gold' : 'badge-blue');
+        }
+        toast(d.mensaje);
+      } else {
+        toast(d.error || d.detail || 'No se pudo cambiar la interfaz', 'error');
+      }
+    } catch(err) {
+      toast('Error de conexion. Intenta nuevamente.', 'error');
+    }
+  });
+}
 
 async function crearUsuario(e){
   e.preventDefault();
