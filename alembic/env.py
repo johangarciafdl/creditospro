@@ -10,6 +10,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.database import Base
+from app.utils.url_bd import normalizar as normalizar_url_bd
 
 config = context.config
 if config.config_file_name is not None:
@@ -22,9 +23,10 @@ def get_url():
     url = os.getenv("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL es obligatoria para migraciones")
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
-    return url
+    # El mismo ayudante que usa la aplicacion: si alembic y la app
+    # resolvieran controladores distintos, las migraciones se aplicarian
+    # por un camino que nadie prueba.
+    return normalizar_url_bd(url)
 
 
 def run_migrations_offline():

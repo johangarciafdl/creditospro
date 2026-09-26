@@ -18,6 +18,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker, relationship
 from sqlalchemy.sql import func
 
+from app.utils.url_bd import normalizar as normalizar_url_bd
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent.parent
@@ -33,9 +35,11 @@ if not SQLALCHEMY_DATABASE_URL:
         "Crea un archivo .env a partir de .env.example"
     )
 
-# Normalizar URL de PostgreSQL
-if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
-    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+# Normalizar la URL, nombrando el controlador. Dejar `postgresql://` a
+# secas delega la eleccion en un valor por defecto de SQLAlchemy, y ese
+# valor cambio en la 2.1 (de psycopg2 a psycopg 3): la aplicacion dejo de
+# arrancar sin que nadie tocara el codigo. Ver app/utils/url_bd.py.
+SQLALCHEMY_DATABASE_URL = normalizar_url_bd(SQLALCHEMY_DATABASE_URL)
 
 # Detectar si es SQLite para desarrollo local
 IS_SQLITE = SQLALCHEMY_DATABASE_URL.startswith("sqlite://")
@@ -143,9 +147,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # nivel de base de datos, ademas del filtro por empresa_id en el codigo. Si no
 # esta configurada, get_db() usa la misma conexion privilegiada de siempre
 # (comportamiento identico al actual, sin romper despliegues existentes).
-APP_DATABASE_URL = os.getenv("DATABASE_URL_APP", "").strip()
-if APP_DATABASE_URL.startswith("postgres://"):
-    APP_DATABASE_URL = APP_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+APP_DATABASE_URL = normalizar_url_bd(os.getenv("DATABASE_URL_APP", "").strip())
 
 if APP_DATABASE_URL and APP_DATABASE_URL != SQLALCHEMY_DATABASE_URL:
     app_connect_args, app_engine_kwargs = _engine_kwargs_for(APP_DATABASE_URL)

@@ -10,7 +10,11 @@ itsdangerous>=2.2.0,<3.0.0  # usado por starlette SessionMiddleware
 pydantic>=2.8.0,<3.0.0
 
 # Base de datos
-sqlalchemy>=2.0.36,<3.0.0
+# Fijado por debajo de 2.1: esa version cambio el controlador por defecto
+# de postgresql:// (psycopg2 -> psycopg 3) y tumbo el despliegue mientras
+# las pruebas, que corrian con 2.0, seguian en verde. Subir de version es
+# una decision a tomar y probar, no algo que deba ocurrir sola.
+sqlalchemy>=2.0.36,<2.1
 alembic>=1.13.3,<2.0.0
 psycopg2-binary>=2.9.9,<3.0.0  # PostgreSQL (no necesario para SQLite)
 
