@@ -209,6 +209,15 @@ app.mount(
     EstaticosConCache(directory=str(BASE_DIR / "static" / "dist"), inmutable=True),
     name="estaticos_versionados",
 )
+# Fuentes y librerias: el nombre del archivo lleva la version, asi que su
+# contenido no cambia nunca y se cachean como los versionados. Sin esto el
+# navegador revalidaria las tipografias en cada carga, que es justo lo que se
+# acaba de quitar de encima al dejar de pedirlas a Google.
+app.mount(
+    "/static/assets",
+    EstaticosConCache(directory=str(BASE_DIR / "static" / "assets"), inmutable=True),
+    name="estaticos_fijos",
+)
 app.mount("/static", EstaticosConCache(directory=str(BASE_DIR / "static")), name="static")
 
 

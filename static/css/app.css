@@ -1,3 +1,30 @@
+/* ── TIPOGRAFIAS, SERVIDAS DESDE ESTE MISMO SERVIDOR ──────────────────────
+   Antes venian de Google Fonts, con una hoja de estilos que BLOQUEA el
+   pintado: el navegador no dibujaba nada hasta resolver fonts.googleapis.com
+   y descargar de fonts.gstatic.com. Medido en produccion, el servidor
+   respondia el HTML en 206 ms y el usuario no veia nada hasta 1.266 ms.
+
+   Servirlas desde aqui quita cuatro viajes a un tercero antes del primer
+   pixel, y de paso quita una dependencia: si Google Fonts va lento o esta
+   bloqueado, la aplicacion iba lenta con el.
+
+   Las dos son variables -- un archivo cubre todos los pesos -- asi que esto
+   son dos descargas, no nueve. `font-display:swap` hace que el texto se lea
+   con la fuente del sistema mientras la real llega, en vez de dejar huecos
+   en blanco. Licencia en static/assets/fonts/LICENSE.txt. */
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;
+  src:url('/static/assets/fonts/inter-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;
+  src:url('/static/assets/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:100 800;font-display:swap;
+  src:url('/static/assets/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:100 800;font-display:swap;
+  src:url('/static/assets/fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --sw:220px;--th:52px;

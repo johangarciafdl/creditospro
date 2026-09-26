@@ -17,9 +17,9 @@ _csp_nonce_var: contextvars.ContextVar[str] = contextvars.ContextVar(
 # .css para cerrar tambien ahi.
 DEFAULT_CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'nonce-{nonce}' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
-    "font-src 'self' https://fonts.gstatic.com data:; "
+    "script-src 'self' 'nonce-{nonce}'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "font-src 'self' data:; "
     "img-src 'self' data: blob: https:; "
     "connect-src 'self' https:; "
     "frame-src https://www.google.com https://maps.google.com; "
@@ -36,9 +36,9 @@ DEFAULT_CSP = (
 # corrige, y recien despues se activa DEFAULT_CSP de verdad.
 REPORT_ONLY_CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'nonce-{nonce}' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
-    "font-src 'self' https://fonts.gstatic.com data:; "
+    "script-src 'self' 'nonce-{nonce}'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "font-src 'self' data:; "
     "img-src 'self' data: blob: https:; "
     "connect-src 'self' https:; "
     "frame-src https://www.google.com https://maps.google.com; "
@@ -53,9 +53,9 @@ REPORT_ONLY_CSP = (
 # usando 'unsafe-inline' (menos seguro pero funcional).
 LEGACY_CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
-    "font-src 'self' https://fonts.gstatic.com data:; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "font-src 'self' data:; "
     "img-src 'self' data: blob: https:; "
     "connect-src 'self' https:; "
     "frame-src https://www.google.com https://maps.google.com; "

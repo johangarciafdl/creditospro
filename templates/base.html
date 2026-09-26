@@ -15,11 +15,21 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="CreditosPro">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js" integrity="sha512-aNMyYYxdIxIaot0Y1/PLuEu3eipGCmsEUBrUq+7aVyPGMFH8z0eTP0tkqAvv34fzN6z+201d3T8HPb1svWSKHQ==" crossorigin="anonymous"></script>
+<!-- La hoja de estilos propia es lo UNICO que bloquea el pintado, y sale de
+     este mismo servidor. Antes habia delante una hoja de Google Fonts (que a
+     su vez pedia los archivos a fonts.gstatic.com) y un anime.js de cdnjs sin
+     defer: cinco viajes a dos terceros antes del primer pixel. Medido en
+     produccion, el HTML llegaba en 206 ms y no se veia nada hasta 1.266 ms.
+     Las tipografias ahora se declaran dentro de este CSS y se sirven desde
+     /static/assets/fonts. -->
 <link rel="stylesheet" href="{{ estatico('css/app.css') }}">
+<!-- Las dos fuentes que se usan de verdad al pintar la primera pantalla, para
+     que el navegador las pida ya y no al terminar de leer el CSS. -->
+<link rel="preload" href="/static/assets/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/assets/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+<!-- anime.js es decorativo y mas abajo hay un sustituto completo para cuando
+     no esta: con defer deja de retrasar el pintado. -->
+<script src="/static/assets/vendor/anime-3.2.2.min.js" defer></script>
 <script nonce="{{ csp_nonce }}">
 // ── MEJORADO: Anime.js con fallback robusto ──
 if(!window.anime){
@@ -222,7 +232,7 @@ window.attr = window.esc;
 </div>
 
 <script src="{{ estatico('js/app.js') }}"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
+<script src="/static/assets/vendor/dexie-3.2.4.min.js"></script>
 <script src="{{ estatico('js/pwa.js') }}"></script>
 <script nonce="{{ csp_nonce }}">
 // Formato de pesos colombianos para todo el navegador: 200.000, 2.000.000.
