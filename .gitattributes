@@ -1,0 +1,21 @@
+# Estos archivos se guardan tal cual llegaron: no son codigo nuestro, son una
+# copia byte a byte de lo que servia el CDN, y una prueba comprueba que su
+# sha512 sigue siendo el mismo que declaraba el <script>.
+#
+# Sin esto, git "normaliza" los saltos de linea al traerlos en Windows, el
+# archivo cambia de contenido sin que nadie lo edite, y la firma deja de
+# coincidir. La consecuencia no es solo una prueba en rojo: seria imposible
+# distinguir ese cambio inocente de que alguien hubiera sustituido la
+# libreria por otra cosa, que es justo lo que la firma esta ahi para detectar.
+*.min.js  -text
+*.woff2   binary
+*.woff    binary
+*.ttf     binary
+*.otf     binary
+
+# Las imagenes tampoco se tocan.
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.webp    binary
+*.ico     binary
