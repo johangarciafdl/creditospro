@@ -342,3 +342,19 @@ def test_la_ficha_le_ofrece_prestar_pero_no_editar(entorno):
     assert 'id="modal-editar-cliente"' not in html, \
         "el formulario de edicion sigue en la pagina"
     assert "guardarNota" in html, "le quito el recuadro de notas"
+
+
+def test_el_dashboard_no_le_muestra_el_capital_en_cartera(entorno):
+    """Lo que la empresa tiene prestado y no ha recuperado es una cifra de
+    negocio, no una herramienta de trabajo.
+
+    Y no se esconde en la plantilla: no se le manda. Un numero que viaja al
+    navegador esta a un clic de distancia en cualquier celular.
+    """
+    cli, _, _ = entorno
+    r = cli.get("/dashboard", follow_redirects=False)
+    assert r.status_code == 200, f"devolvio {r.status_code}"
+    assert "Capital en cartera" not in r.text, "le muestra la cartera"
+    # Lo que si le toca ver sigue estando.
+    for etiqueta in ("Cobrado hoy", "Clientes activos", "En mora"):
+        assert etiqueta in r.text, f"le desaparecio {etiqueta}"

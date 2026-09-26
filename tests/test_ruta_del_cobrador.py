@@ -84,6 +84,13 @@ def entorno():
         cobrador.zonas_asignadas.append(za)      # zona B NO es suya
         d["usuario_id"] = cobrador.id
 
+        # El admin de la MISMA empresa: hay cifras que solo el ve.
+        jefa = Usuario(empresa_id=e.id, username="rutajefa", nombre="Ruta Jefa",
+                       rol="admin", activo=True,
+                       password_hash=get_password_hash("ClaveDePrueba123!"))
+        db.add(jefa); db.flush()
+        d["admin_id"] = jefa.id
+
         def _cliente(nombre, cedula, zona_id, foto=False):
             c = Cliente(empresa_id=e.id, cedula=cedula, nombre=nombre,
                         telefono="3001112233", zona_id=zona_id, activo=True)
@@ -170,10 +177,12 @@ def entorno():
         return cli
 
     cobra = entrar(d["clave"], "rutacobra")
+    jefa_cli = entrar(d["clave"], "rutajefa")
     ajena = entrar(d["clave_b"], "ajena")
+    d["sesion_admin"] = jefa_cli
     yield cobra, ajena, d, Sesion
 
-    for c in (cobra, ajena):
+    for c in (cobra, jefa_cli, ajena):
         c.__exit__(None, None, None)
     for clave in claves:
         app.dependency_overrides.pop(clave, None)
@@ -293,8 +302,14 @@ def test_lo_que_falta_es_el_saldo_y_no_el_valor_de_la_cuota(entorno):
 
 
 def test_el_resumen_suma_lo_que_hay_que_cobrar(entorno):
-    cobra, _, d, _ = entorno
-    cuerpo = _zona(cobra, d)
+    """La suma se sigue calculando; lo que cambia es a quien se le manda.
+
+    Se pide con la sesion del administrador porque al cobrador el total por
+    cobrar ya no le llega (ver mas abajo). Lo que se vigila aqui es la
+    aritmetica, no el permiso.
+    """
+    _, _, d, _ = entorno
+    cuerpo = _zona(d["sesion_admin"], d)
     r = cuerpo["resumen"]
     # Vencida (60000) + vence hoy (60000) + parcial (30000). El de al dia y el
     # que no debe nada no entran en lo de hoy.
@@ -511,3 +526,71 @@ def test_la_vista_solo_ofrece_las_zonas_que_le_tocan_hoy(entorno):
             db.commit()
         finally:
             db.close()
+
+
+# ── El total por cobrar es del admin ─────────────────────────────────────
+
+def test_al_cobrador_no_se_le_manda_el_total_por_cobrar(entorno):
+    """Es una cifra de negocio, no una herramienta de trabajo.
+
+    Lo que el cobrador necesita -- cuanto le debe el cliente que tiene
+    delante -- sigue en cada fila. Lo que se le quita es el total de lo que
+    la empresa tiene por recoger, que no le hace falta para trabajar y si es
+    algo que puede acabar fuera.
+
+    No basta con esconder la tarjeta: si el numero viaja al navegador, esta
+    a un clic de distancia en cualquier celular.
+    """
+    cobra, _, d, _ = entorno
+    r = _zona(cobra, d)["resumen"]
+    assert r["esperado"] is None, "le mando el total por cobrar"
+    # Lo que si le toca ver.
+    assert r["cobrado"] is not None
+    assert r["vencidos"] is not None
+    assert r["clientes"] > 0
+
+
+def test_cada_cliente_sigue_trayendo_lo_que_debe(entorno):
+    """Quitarle esto le impediria cobrar."""
+    cobra, _, d, _ = entorno
+    fila = _por_id(_zona(cobra, d), d["cliente_vencido"])
+    assert fila["pendiente"]["falta"] > 0
+    assert fila["deuda"] > 0
+
+
+def test_la_pantalla_esconde_la_tarjeta_si_no_llega_el_total():
+    """La plantilla tiene que seguir al servidor, no al reves."""
+    import pathlib
+    html = (pathlib.Path(__file__).resolve().parent.parent / "templates"
+            / "app_cobrador.html").read_text(encoding="utf-8")
+    assert 'id="tarjeta-por-cobrar"' in html
+    assert "r.esperado === null" in html, \
+        "la tarjeta no comprueba si el servidor mando el total"
+
+
+# ── Dar de alta un cliente sin prestarle ─────────────────────────────────
+
+def test_la_vista_simple_ofrece_registrar_un_cliente(entorno):
+    """A veces lo registra hoy y le presta la semana que viene; obligarle a
+    inventarse un prestamo para poder anotarlo seria peor."""
+    cobra, _, _, _ = entorno
+    html = cobra.get("/ruta").text
+    assert "abrirCliente()" in html, "no le ofrece registrar un cliente"
+    assert 'id="modal-cliente"' in html, "el formulario no llego a la pagina"
+    assert 'id="c-cedula"' in html and 'id="c-nombre"' in html
+
+
+def test_registrar_un_cliente_desde_la_vista_simple(entorno):
+    cobra, _, d, Sesion = entorno
+    from app.database import Cliente
+    r = cobra.post("/clientes/nuevo", data={
+        "cedula": "SIMPLE1", "nombre": "Alta Sin Prestamo",
+        "telefono": "3007778899", "zona_id": d["zona_a"],
+        "direccion": "Calle 1", "barrio": "Centro", "tipo_cliente": "Regular"})
+    assert r.status_code == 200, r.text
+    db = Sesion()
+    try:
+        c = db.query(Cliente).filter(Cliente.cedula == "SIMPLE1").first()
+        assert c is not None and c.zona_id == d["zona_a"]
+    finally:
+        db.close()

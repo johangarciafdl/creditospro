@@ -6,6 +6,7 @@
   {#- Prestar desde la calle: el cobrador registra al cliente nuevo y le
       presta sin salir de esta pantalla. El boton vive arriba, donde lo
       alcanza el pulgar, y no al final de la lista. -#}
+  <button class="btn btn-sm" onclick="abrirCliente()">＋ Cliente</button>
   <button class="btn btn-gold btn-sm" onclick="abrirPrestar()">💵 Prestar</button>
 {% endblock %}
 
@@ -52,7 +53,10 @@
 
 <!-- RESUMEN DE LA ZONA -->
 <div id="resumen" style="display:none;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-  <div class="stat-card gold card-anim">
+  {#- El total por cobrar de la zona solo lo ve el administrador: al cobrador
+      el servidor ni se lo manda. Lo que el necesita -- cuanto le debe cada
+      cliente -- sigue en cada fila de la lista. -#}
+  <div class="stat-card gold card-anim" id="tarjeta-por-cobrar" style="display:none;">
     <div class="stat-label">Por cobrar</div>
     <div class="stat-val gold" style="font-size:19px;" id="r-esperado">$0</div>
     <div class="fs-11 text-3" id="r-por-cobrar">0 clientes</div>
@@ -94,6 +98,52 @@
 </div>
 
 {% include "_modal_cobro.html" %}
+
+<!-- MODAL CLIENTE NUEVO -->
+{#- Dar de alta sin prestarle todavia. Es el mismo endpoint que usa el modulo
+    de Clientes (/clientes/nuevo), con los mismos campos: a veces el cobrador
+    registra a alguien hoy y le presta la semana que viene, y obligarle a
+    inventarse un prestamo para poder anotarlo seria peor. Los datos de un
+    cliente que YA existe siguen siendo del administrador. -#}
+<div class="modal-overlay" id="modal-cliente" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title">Cliente nuevo</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-cliente').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="form-group">
+      <label for="c-zona">Zona</label>
+      <select id="c-zona">
+        {% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="form-grid">
+      <div class="form-group"><label for="c-cedula">Cedula *</label>
+        <input type="text" id="c-cedula" inputmode="numeric"></div>
+      <div class="form-group"><label for="c-nombre">Nombre completo *</label>
+        <input type="text" id="c-nombre"></div>
+      <div class="form-group"><label for="c-telefono">Telefono *</label>
+        <input type="text" id="c-telefono" inputmode="tel"></div>
+      <div class="form-group"><label for="c-whatsapp">WhatsApp</label>
+        <input type="text" id="c-whatsapp" inputmode="tel" placeholder="Si es distinto"></div>
+      <div class="form-group"><label for="c-direccion">Direccion</label>
+        <input type="text" id="c-direccion"></div>
+      <div class="form-group"><label for="c-barrio">Barrio</label>
+        <input type="text" id="c-barrio"></div>
+    </div>
+    <div class="fs-11 text-3" style="margin-top:6px;">
+      Una vez registrado, sus datos solo los puede corregir el administrador.
+      Si algo cambia, dejale una nota en su ficha.
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn" onclick="document.getElementById('modal-cliente').classList.remove('open')">Cancelar</button>
+    <button class="btn btn-primary" style="flex:1;justify-content:center;" id="btn-cliente"
+            onclick="guardarClienteNuevo(this)">Registrar</button>
+  </div>
+</div>
+</div>
 
 <!-- MODAL PRESTAR -->
 {#- Un solo formulario para los dos casos. El cobrador busca primero: si el
@@ -248,8 +298,15 @@ async function cargar(){
 function pintarResumen(r){
   document.getElementById('resumen').style.display = 'grid';
   document.getElementById('pestanas').style.display = 'flex';
-  document.getElementById('r-esperado').textContent = cop(r.esperado || 0);
-  document.getElementById('r-por-cobrar').textContent = (r.por_cobrar || 0) + ' clientes';
+  // Si el servidor no manda el total, es que a quien mira no le corresponde.
+  const tarjeta = document.getElementById('tarjeta-por-cobrar');
+  if (r.esperado === null || r.esperado === undefined) {
+    tarjeta.style.display = 'none';
+  } else {
+    tarjeta.style.display = '';
+    document.getElementById('r-esperado').textContent = cop(r.esperado);
+    document.getElementById('r-por-cobrar').textContent = (r.por_cobrar || 0) + ' clientes';
+  }
   document.getElementById('r-cobrado').textContent = cop(r.cobrado || 0);
   document.getElementById('r-cobrados').textContent = (r.cobrados || 0) + ' clientes';
   document.getElementById('r-vencidos').textContent = r.vencidos || 0;
@@ -421,6 +478,45 @@ async function deshacerNoPago(cuotaId){
     console.error('[Ruta] Error deshaciendo no pago:', e);
     toast('No hay conexion. Intenta de nuevo.', 'error');
   }
+}
+
+// ── CLIENTE NUEVO ────────────────────────────────────────────────────────
+function abrirCliente(){
+  const sel = document.getElementById('c-zona');
+  if (!sel || !sel.options.length) { toast('Hoy no tienes zonas asignadas', 'error'); return; }
+  if (_zona) sel.value = _zona;          // la zona en la que esta trabajando
+  ['c-cedula','c-nombre','c-telefono','c-whatsapp','c-direccion','c-barrio']
+    .forEach(id => { const c = document.getElementById(id); if (c) c.value = ''; });
+  document.getElementById('modal-cliente').classList.add('open');
+}
+
+async function guardarClienteNuevo(btn){
+  const fd = new FormData();
+  fd.append('zona_id', document.getElementById('c-zona').value);
+  fd.append('cedula', document.getElementById('c-cedula').value.trim());
+  fd.append('nombre', document.getElementById('c-nombre').value.trim());
+  fd.append('telefono', document.getElementById('c-telefono').value.trim());
+  fd.append('whatsapp', document.getElementById('c-whatsapp').value.trim());
+  fd.append('direccion', document.getElementById('c-direccion').value.trim());
+  fd.append('barrio', document.getElementById('c-barrio').value.trim());
+  fd.append('tipo_cliente', 'Regular');
+
+  await conBoton(btn, 'Registrando...', async () => {
+    try {
+      const r = await window.fetch('/clientes/nuevo', {method:'POST', body:fd});
+      const d = await leerRespuesta(r);
+      if (d.ok) {
+        document.getElementById('modal-cliente').classList.remove('open');
+        toast(d.mensaje || 'Cliente registrado', 'success');
+        setTimeout(cargar, 700);
+      } else {
+        toast(d.error || d.detail || 'No se pudo registrar', 'error');
+      }
+    } catch(e) {
+      console.error('[Cliente] Error registrando:', e);
+      toast('No hay conexion. El cliente no se registro.', 'error');
+    }
+  });
 }
 
 // ── PRESTAR ──────────────────────────────────────────────────────────────

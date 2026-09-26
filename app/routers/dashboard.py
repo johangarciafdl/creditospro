@@ -12,6 +12,7 @@ from app.database import (
 from app.routers.auth import get_current_user
 from app.utils.estado_sistema import VERSION
 from app.utils.interfaz import redirigir_a_vista_simple
+from app.utils.permisos_rol import es_admin
 from app.utils.zone_permissions import get_allowed_zone_ids
 
 router = APIRouter()
@@ -195,14 +196,23 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     else:
         max_cobro = 1
 
+    # El capital en cartera -- lo que la empresa tiene prestado y aun no ha
+    # recuperado -- es una cifra de negocio, no una herramienta de trabajo. El
+    # cobrador necesita saber a quien le cobra hoy y cuanto le debe ESE
+    # cliente; el total de lo que falta por cobrar no le hace falta para
+    # trabajar y si es algo que puede acabar fuera. No se le oculta en la
+    # plantilla: no se le manda.
+    ve_la_cartera = es_admin(user)
+
     return templates.TemplateResponse(request, "dashboard.html", {
         "page": "dashboard", "current_user": user,
         "cuotas_vencidas_nav": total_vencidas,
+        "ve_la_cartera": ve_la_cartera,
         "stats": {
             "clientes": total_clientes, "prestamos": total_prestamos,
             "atrasados": total_atrasados, "vencidas": total_vencidas,
             "cobrado_hoy": cobrado_hoy, "cobrado_mes": cobrado_mes,
-            "capital_activo": capital_activo,
+            "capital_activo": capital_activo if ve_la_cartera else None,
         },
         "cobros_recientes": cobros_list,
         "chart_data": json.dumps(chart_data),

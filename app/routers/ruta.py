@@ -29,7 +29,7 @@ from app.templates import templates
 from app.utils.audit import log_action
 from app.utils.caja import cuadre
 from app.utils.money import cop, money
-from app.utils.permisos_rol import puede_gestionar_prestamos
+from app.utils.permisos_rol import es_admin, puede_gestionar_prestamos
 from app.utils.validators import (filtro_busqueda, sin_html, validar_cedula,
                                   validar_entero_positivo, validar_nombre,
                                   validar_numero_positivo, validar_telefono)
@@ -237,6 +237,13 @@ async def datos_de_la_zona(
     resumen["esperado"] = round(resumen["esperado"], 2)
     resumen["cobrado"] = round(resumen["cobrado"], 2)
     resumen["recortada"] = len(clientes) >= MAX_CLIENTES
+    # El total que falta por cobrar en la zona es una cifra de negocio, no
+    # una herramienta de trabajo: el cobrador necesita saber cuanto le debe
+    # el cliente que tiene delante -- eso sigue en cada fila -- y no cuanto
+    # le falta por recoger a la empresa. Al cobrador no se le oculta en la
+    # pantalla: no se le manda.
+    if not es_admin(user):
+        resumen["esperado"] = None
 
     return JSONResponse({"clientes": salida, "resumen": resumen,
                          "fecha": dia.isoformat()})
