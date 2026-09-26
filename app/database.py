@@ -399,6 +399,43 @@ class Archivo(Base):
     )
 
 
+class NotaCliente(Base):
+    """Aviso que el cobrador deja sobre un cliente, para que el admin actue.
+
+    Es la contrapartida de que el cobrador no pueda tocar la ficha. Quien
+    esta en la calle es el unico que se entera de que alguien se mudo o
+    cambio de numero; si no tiene donde apuntarlo, ese dato se pierde en un
+    WhatsApp o no se dice. La nota no modifica nada: deja constancia y le
+    llega al admin, que decide si corrige la ficha.
+
+    `atendida` es lo que la convierte en una bandeja y no en un monton: el
+    admin marca lo que ya resolvio y le queda a la vista solo lo pendiente.
+    """
+    __tablename__ = "notas_cliente"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False, index=True)
+    texto = Column(String(600), nullable=False)
+    # Quien la escribio. Se guarda tambien el nombre porque un usuario puede
+    # borrarse y la nota tiene que seguir diciendo de quien venia.
+    usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True, index=True)
+    escrita_por = Column(String(200), nullable=True)
+    creado = Column(DateTime, default=func.now())
+
+    atendida = Column(Boolean, default=False, nullable=False)
+    atendida_por_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    atendida_por = Column(String(200), nullable=True)
+    atendida_en = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        # La consulta que mas se hace: las pendientes de una empresa,
+        # de la mas reciente a la mas antigua.
+        Index("ix_notas_empresa_atendida", "empresa_id", "atendida"),
+        Index("ix_notas_empresa_cliente", "empresa_id", "cliente_id"),
+        CheckConstraint("length(trim(texto)) > 0", name="ck_nota_no_vacia"),
+    )
+
+
 class NoPago(Base):
     """Visita en la que el cliente no pago: queda constancia del intento.
 

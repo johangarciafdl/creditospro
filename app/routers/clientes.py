@@ -21,10 +21,15 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
-from app.database import get_db, Cliente, Cobro, NoPago, Prestamo, Usuario, Zona
+from app.utils.audit import log_action
+from app.database import get_db, Cliente, NotaCliente, Cobro, NoPago, Prestamo, Usuario, Zona
 from app.utils.almacen_imagenes import borrar_imagen, guardar_imagen
 from app.utils.money import money
-from app.utils.permisos_rol import puede_gestionar_clientes
+from app.utils.permisos_rol import (
+    puede_atender_notas,
+    puede_escribir_notas,
+    puede_gestionar_clientes,
+)
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
@@ -604,9 +609,153 @@ async def detalle_cliente(
         .all()
     )
 
+    # Los avisos que ha dejado quien visita a este cliente. Van con la
+    # pagina porque el cobrador suele abrirla con mala señal.
+    notas = [{
+        "id": n.id,
+        "texto": n.texto,
+        "escrita_por": n.escrita_por or "",
+        "creado": n.creado.strftime("%d/%m/%Y %H:%M") if n.creado else "",
+        "atendida": bool(n.atendida),
+        "atendida_por": n.atendida_por or "",
+    } for n in (
+        db.query(NotaCliente)
+        .filter(NotaCliente.empresa_id == user.empresa_id,
+                NotaCliente.cliente_id == cliente.id)
+        .order_by(NotaCliente.atendida.asc(), NotaCliente.creado.desc())
+        .limit(50).all()
+    )]
+
     return templates.TemplateResponse(request, "cliente_detalle.html", {
         "page": "clientes", "current_user": user,
         "cliente": cliente, "zona": zona, "zonas": zonas,
         "prestamos": prestamos_data,
         "cobradores": cobradores,
+        "notas": notas,
+        "puede_atender_notas": puede_atender_notas(user),
     })
+
+
+# ── Notas sobre un cliente ────────────────────────────────────────────────
+# La contrapartida de que el cobrador no pueda tocar la ficha: quien esta en
+# la calle es el unico que se entera de que alguien se mudo o cambio de
+# numero, y necesita donde apuntarlo. La nota no modifica nada.
+
+@router.post("/{cliente_id}/notas")
+async def crear_nota(
+    request: Request,
+    cliente_id: int,
+    # Con valor por defecto y no Form(...): si el campo llega vacio o no
+    # llega, la comprobacion de abajo responde con un mensaje que se
+    # entiende, en vez del blob de validacion de FastAPI.
+    texto: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not puede_escribir_notas(user):
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    texto = (texto or "").strip()
+    if not texto:
+        return JSONResponse({"error": "La nota esta vacia"}, status_code=400)
+    if len(texto) > 600:
+        return JSONResponse(
+            {"error": "La nota es demasiado larga (maximo 600 caracteres)."},
+            status_code=400)
+
+    # Empresa y zona, igual que cualquier otra lectura del cliente: un
+    # cobrador no deja notas sobre clientes que no le tocan.
+    cliente = db.query(Cliente).filter(
+        Cliente.id == cliente_id,
+        Cliente.empresa_id == user.empresa_id,
+    ).first()
+    if not cliente or not require_zone_access(db, user, cliente.zona_id):
+        return JSONResponse({"error": "Cliente no encontrado"}, status_code=404)
+
+    nota = NotaCliente(
+        empresa_id=user.empresa_id,
+        cliente_id=cliente.id,
+        texto=texto,
+        usuario_id=user.id,
+        escrita_por=user.nombre or user.username,
+    )
+    db.add(nota)
+    db.commit()
+    db.refresh(nota)
+    log_action(db, user, "nota_cliente_crear", "clientes",
+               f"cliente_id={cliente_id}")
+    db.commit()
+    return JSONResponse({
+        "ok": True,
+        "mensaje": "Nota guardada. El administrador la vera como pendiente.",
+        "nota": {
+            "id": nota.id,
+            "texto": nota.texto,
+            "escrita_por": nota.escrita_por,
+            "creado": nota.creado.strftime("%d/%m/%Y %H:%M") if nota.creado else "",
+            "atendida": False,
+        },
+    })
+
+
+@router.get("/notas/pendientes")
+async def notas_pendientes(request: Request, db: Session = Depends(get_db)):
+    """La bandeja del administrador: lo que hay que corregir y nadie ha hecho."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not puede_atender_notas(user):
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    filas = (
+        db.query(NotaCliente, Cliente)
+        .join(Cliente, Cliente.id == NotaCliente.cliente_id)
+        .filter(NotaCliente.empresa_id == user.empresa_id,
+                NotaCliente.atendida == False)  # noqa: E712
+        .order_by(NotaCliente.creado.desc())
+        .limit(200)
+        .all()
+    )
+    return JSONResponse({
+        "ok": True,
+        "total": len(filas),
+        "notas": [{
+            "id": n.id,
+            "texto": n.texto,
+            "escrita_por": n.escrita_por or "",
+            "creado": n.creado.strftime("%d/%m/%Y %H:%M") if n.creado else "",
+            "cliente_id": c.id,
+            "cliente": c.nombre,
+            "cedula": c.cedula,
+        } for n, c in filas],
+    })
+
+
+@router.post("/notas/{nota_id}/atender")
+async def atender_nota(request: Request, nota_id: int, db: Session = Depends(get_db)):
+    """Marca una nota como resuelta; deja de aparecer en la bandeja."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not puede_atender_notas(user):
+        return JSONResponse({"error": "Sin permisos"}, status_code=403)
+
+    nota = db.query(NotaCliente).filter(
+        NotaCliente.id == nota_id,
+        NotaCliente.empresa_id == user.empresa_id,
+    ).first()
+    if not nota:
+        return JSONResponse({"error": "Nota no encontrada"}, status_code=404)
+    if nota.atendida:
+        return JSONResponse({"ok": True, "mensaje": "Esa nota ya estaba atendida."})
+
+    nota.atendida = True
+    nota.atendida_por_id = user.id
+    nota.atendida_por = user.nombre or user.username
+    nota.atendida_en = datetime.datetime.now()
+    db.commit()
+    log_action(db, user, "nota_cliente_atender", "clientes", f"nota_id={nota_id}")
+    db.commit()
+    return JSONResponse({"ok": True, "mensaje": "Nota marcada como atendida."})

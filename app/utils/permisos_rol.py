@@ -72,6 +72,21 @@ def puede_registrar_cobros(user: Usuario | None) -> bool:
     return bool(user)
 
 
+def puede_escribir_notas(user: Usuario | None) -> bool:
+    """Dejar un aviso sobre un cliente. La unica escritura que le queda.
+
+    Es deliberado y es lo que hace viable el resto de restricciones: si el
+    cobrador no puede corregir la ficha, necesita poder decir que hay que
+    corregirla. La nota no cambia ningun dato, solo deja constancia.
+    """
+    return bool(user)
+
+
+def puede_atender_notas(user: Usuario | None) -> bool:
+    """Marcar una nota como resuelta. Quien la resuelve es quien corrige."""
+    return es_admin(user)
+
+
 def puede_ver_cuadre_de(user: Usuario | None, usuario_id: int) -> bool:
     """El cuadre de caja: el cobrador ve el suyo, el admin ve el de todos."""
     if not user:

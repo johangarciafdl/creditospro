@@ -319,6 +319,50 @@
 {% include "_modal_cobro.html" %}
 </div>
 
+<!-- NOTAS -->
+{# La contrapartida de que el cobrador no pueda tocar la ficha: quien esta
+   en la calle es el unico que se entera de que alguien se mudo o cambio de
+   numero, y necesita donde apuntarlo. La nota no modifica nada. #}
+<div class="card mb-3">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <div>
+      <span class="fw-600">Notas</span>
+      {% set pendientes = notas | rejectattr('atendida') | list | length %}
+      {% if pendientes %}<span class="badge badge-yellow">{{ pendientes }} sin atender</span>{% endif %}
+    </div>
+  </div>
+  <div class="card-body">
+    <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:12px;">
+      <textarea id="nota-texto" rows="2" maxlength="600"
+                placeholder="Se mudó, cambió el número, no vive aquí…"
+                style="flex:1;resize:vertical;"></textarea>
+      <button class="btn btn-gold" onclick="guardarNota()">Guardar</button>
+    </div>
+
+    <div id="lista-notas">
+      {% if not notas %}
+        <div class="text-2 fs-12">Sin notas todavía.</div>
+      {% endif %}
+      {% for n in notas %}
+      <div class="nota" data-id="{{ n.id }}"
+           style="padding:8px 0;border-top:1px solid var(--border);{% if n.atendida %}opacity:.6;{% endif %}">
+        <div class="fs-12">
+          {% if not n.atendida %}<span style="color:var(--amber);">●</span> {% endif %}{{ n.texto }}
+        </div>
+        <div class="fs-11 text-2" style="margin-top:2px;">
+          {{ n.escrita_por }} · {{ n.creado }}
+          {% if n.atendida %}· atendida por {{ n.atendida_por }}{% endif %}
+        </div>
+        {% if puede_atender_notas and not n.atendida %}
+        <button class="btn btn-ghost btn-xs" style="margin-top:4px;"
+                onclick="atenderNota({{ n.id }}, this)">Marcar atendida</button>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
 <!-- MODAL EDITAR CLIENTE -->
 <div class="modal-overlay" id="modal-editar-cliente" onclick="if(event.target===this)this.classList.remove('open')">
 <div class="modal modal-lg" onclick="event.stopPropagation()">
@@ -461,6 +505,38 @@ function abrirEditar() {
 // El modal de cobro es el compartido: tras registrar, la ficha se recarga
 // para que el plan de cuotas y los totales reflejen el pago.
 window.alRegistrarCobro = () => setTimeout(() => location.reload(), 900);
+
+async function guardarNota() {
+  const campo = document.getElementById('nota-texto');
+  const texto = campo.value.trim();
+  if (!texto) { toast('Escribe la nota primero', 'warn'); return; }
+  const fd = new FormData();
+  fd.append('texto', texto);
+  try {
+    const r = await window.fetch('/clientes/{{ cliente.id }}/notas',
+                                 { method: 'POST', body: fd });
+    const d = await leerRespuesta(r);
+    if (d.ok) { toast(d.mensaje); campo.value = ''; setTimeout(() => location.reload(), 900); }
+    else toast(d.error || d.detail || 'No se pudo guardar la nota', 'error');
+  } catch (e) {
+    console.error('[Notas] No se pudo guardar:', e);
+    toast('Error de conexión. Intenta nuevamente.', 'error');
+  }
+}
+
+async function atenderNota(notaId, boton) {
+  boton.disabled = true;
+  try {
+    const r = await window.fetch(`/clientes/notas/${notaId}/atender`, { method: 'POST' });
+    const d = await leerRespuesta(r);
+    if (d.ok) { toast(d.mensaje); setTimeout(() => location.reload(), 700); }
+    else { toast(d.error || 'No se pudo marcar', 'error'); boton.disabled = false; }
+  } catch (e) {
+    console.error('[Notas] No se pudo atender:', e);
+    toast('Error de conexión. Intenta nuevamente.', 'error');
+    boton.disabled = false;
+  }
+}
 
 // Despliega la historia de una cuota: sus abonos y sus visitas sin cobro.
 // El detalle ya viene con la pagina, asi que abrirlo no pide nada al

@@ -50,3 +50,47 @@ def sustituir_sesion(app, fabrica):
     for fn in claves:
         app.dependency_overrides[fn] = fabrica
     return claves
+
+
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _limitador_limpio_entre_pruebas():
+    """Vacia los contadores del rate limit antes de cada prueba.
+
+    InMemoryRateLimitMiddleware guarda sus cubos en el objeto de la
+    aplicacion, que vive una sola vez por proceso: los intentos se suman a
+    lo largo de TODA la suite. Cada modulo que activa licencia e inicia
+    sesion gasta cupo del siguiente, asi que anadir pruebas hacia fallar a
+    las de mas abajo con un 429 -- un fallo que no tiene nada que ver con
+    lo que esas pruebas comprueban y que aparece o no segun el orden.
+
+    Es tambien la causa de que test_login_credenciales_invalidas_no_enumera
+    _usuarios fallara de vez en cuando: pasaba sola y fallaba en la suite
+    completa, que es la firma de un estado compartido entre pruebas.
+
+    Ninguna prueba comprueba el rate limit en si, asi que vaciarlo no tapa
+    nada. El limitador compartido por base de datos no se toca: ese vive en
+    la base de cada modulo y se va con ella.
+    """
+    from app.main import app
+    from app.utils.rate_limit import InMemoryRateLimitMiddleware
+
+    def _cubos():
+        # El middleware instanciado vive en la pila ya construida; antes de
+        # la primera peticion solo existe la definicion en user_middleware.
+        pila = getattr(app, "middleware_stack", None)
+        while pila is not None:
+            if isinstance(pila, InMemoryRateLimitMiddleware):
+                return pila.requests
+            pila = getattr(pila, "app", None)
+        return None
+
+    cubos = _cubos()
+    if cubos is not None:
+        cubos.clear()
+    yield
+    cubos = _cubos()
+    if cubos is not None:
+        cubos.clear()

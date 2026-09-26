@@ -51,6 +51,7 @@ ALTER TABLE usuario_zonas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rutas_cobro ENABLE ROW LEVEL SECURITY;
 ALTER TABLE no_pagos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE archivos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notas_cliente ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS empresa_isolation_empresas ON empresas;
 CREATE POLICY empresa_isolation_empresas ON empresas
@@ -144,6 +145,11 @@ CREATE POLICY empresa_isolation_no_pagos ON no_pagos
 -- es adivinable si alguien conoce el formato.
 DROP POLICY IF EXISTS empresa_isolation_archivos ON archivos;
 CREATE POLICY empresa_isolation_archivos ON archivos
+  USING (empresa_id = public.current_empresa_id())
+  WITH CHECK (empresa_id = public.current_empresa_id());
+
+DROP POLICY IF EXISTS empresa_isolation_notas_cliente ON notas_cliente;
+CREATE POLICY empresa_isolation_notas_cliente ON notas_cliente
   USING (empresa_id = public.current_empresa_id())
   WITH CHECK (empresa_id = public.current_empresa_id());
 

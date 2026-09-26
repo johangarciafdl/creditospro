@@ -5,6 +5,18 @@
 
 {% block content %}
 <!-- STAT CARDS -->
+{# Bandeja de avisos. El cobrador no puede corregir una ficha, asi que
+   deja una nota; aqui es donde el admin se entera. Va arriba del todo
+   porque una direccion mal es dinero que no se recoge. #}
+{% if current_user.rol in ('admin','superadmin') %}
+<div class="card mb-3" id="caja-notas" style="display:none;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span class="fw-600">Avisos de los cobradores <span class="badge badge-yellow" id="notas-total">0</span></span>
+  </div>
+  <div class="card-body" id="notas-pendientes"></div>
+</div>
+{% endif %}
+
 <div class="stats-grid mb-4">
   <div class="stat-card gold card-anim">
     <div class="stat-icon">💰</div>
@@ -177,4 +189,37 @@ function fmt(n) {
   return cop(n);
 }
 </script>
+
+{% if current_user.rol in ('admin','superadmin') %}
+<script nonce="{{ csp_nonce }}">
+// Las notas se piden aparte para no retrasar el panel: son informativas y
+// el resto de cifras son lo que se mira primero.
+(async function cargarNotas() {
+  try {
+    const r = await window.fetch('/clientes/notas/pendientes');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (!d.ok || !d.total) return;
+    document.getElementById('notas-total').textContent = d.total;
+    document.getElementById('notas-pendientes').innerHTML = d.notas.map(n => `
+      <div style="padding:8px 0;border-top:1px solid var(--border);">
+        <div class="fs-12"><span style="color:var(--amber);">●</span> ${esc(n.texto)}</div>
+        <div class="fs-11 text-2" style="margin-top:2px;">
+          <a href="/clientes/${n.cliente_id}">${esc(n.cliente)}</a>
+          · ${esc(n.escrita_por)} · ${esc(n.creado)}
+        </div>
+      </div>`).join('');
+    document.getElementById('caja-notas').style.display = '';
+  } catch (e) {
+    console.error('[Panel] No se pudieron cargar los avisos:', e);
+  }
+})();
+
+function esc(t) {
+  const d = document.createElement('div');
+  d.textContent = t == null ? '' : t;
+  return d.innerHTML;
+}
+</script>
+{% endif %}
 {% endblock %}
