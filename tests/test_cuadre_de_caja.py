@@ -520,3 +520,54 @@ def test_hay_migracion_para_la_caja():
         "ninguna migracion crea movimientos_caja"
     assert any("desembolsado_por_id" in t and "add_column" in t for t in textos), \
         "ninguna migracion anade prestamos.desembolsado_por_id"
+
+
+# ── La migracion tiene que poder repetirse ───────────────────────────────
+
+def test_la_migracion_de_la_caja_se_puede_repetir():
+    """El proveedor arranca dos contenedores a la vez y cada uno ejecuta
+    `alembic upgrade head`.
+
+    Los dos entran al mismo tiempo: uno crea la tabla y el otro se estrella
+    con "la relacion ya existe". El que se estrella tumba el despliegue, y
+    como el trabajo a medias no se deshace, todos los arranques siguientes
+    mueren en el mismo sitio -- un bucle del que no se sale solo. Paso en
+    produccion con esta misma migracion.
+
+    Lo que se exige aqui no es el estilo sino la propiedad: ejecutarla dos
+    veces seguidas tiene que terminar bien las dos.
+    """
+    import importlib.util
+    import pathlib
+    import tempfile
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import create_engine, inspect
+
+    from app.database import Base
+
+    ruta = (pathlib.Path(__file__).resolve().parent.parent / "alembic" / "versions"
+            / "20260926_0021_caja_del_cobrador.py")
+    spec = importlib.util.spec_from_file_location("migracion_caja", ruta)
+    migracion = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migracion)
+
+    bd = pathlib.Path(tempfile.gettempdir()) / "creditospro_migracion_caja.db"
+    bd.unlink(missing_ok=True)
+    motor = create_engine(f"sqlite:///{bd}")
+    try:
+        # Estado de partida: el esquema completo ya creado, que es justo el
+        # caso en que la migracion se encuentra el trabajo hecho.
+        Base.metadata.create_all(motor)
+        with motor.connect() as cx:
+            for _ in range(2):
+                ctx = MigrationContext.configure(cx)
+                with Operations.context(ctx):
+                    migracion.upgrade()
+            cx.commit()
+        columnas = {c["name"] for c in inspect(motor).get_columns("prestamos")}
+        assert {"desembolsado_por_id", "fecha_desembolso"} <= columnas
+    finally:
+        motor.dispose()
+        bd.unlink(missing_ok=True)
