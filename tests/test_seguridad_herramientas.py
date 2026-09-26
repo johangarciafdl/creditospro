@@ -150,3 +150,22 @@ def test_ningun_secreto_versionado():
     assert not hallazgos, (
         "Hay secretos en ficheros versionados:\n  " + "\n  ".join(hallazgos)
     )
+
+
+def test_las_pruebas_no_alcanzan_el_almacen_de_produccion():
+    """Ninguna prueba puede escribir en el bucket real.
+
+    Varias pruebas guardan fotos, y `guardar_imagen` sube a Supabase Storage
+    en cuanto hay credenciales. Con el .env del desarrollador cargado, esas
+    fotos de mentira acababan en el bucket de produccion bajo el prefijo de
+    una empresa real, y sobrevivian a la prueba: lo que se borra al terminar
+    es la base, no el bucket.
+
+    Esta comprobacion vive aqui porque el descuido no se nota: la prueba pasa
+    igual, y el rastro solo aparece si alguien mira el bucket.
+    """
+    from app.utils import supabase_storage
+    assert not supabase_storage.disponible(), (
+        "las pruebas tienen credenciales de Supabase Storage: revisa que "
+        "tests/conftest.py vacie SUPABASE_URL y SUPABASE_SERVICE_KEY"
+    )

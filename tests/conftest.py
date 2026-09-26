@@ -8,6 +8,18 @@ import os
 # conectando el rol restringido de RLS (DATABASE_URL_APP) a la base real.
 os.environ["DATABASE_URL_APP"] = ""
 
+# Lo mismo para el almacen de imagenes, y por la misma razon. `guardar_imagen`
+# sube a Supabase Storage siempre que haya credenciales, y varias pruebas
+# guardan fotos -- de cliente, de evidencia de un cobro, miniaturas. Con el
+# .env del desarrollador cargado, esas fotos de mentira acababan en el bucket
+# REAL de produccion, bajo el prefijo de una empresa real, y se quedaban ahi
+# despues de que la base de la prueba se borrara: la prueba limpia lo suyo, y
+# lo suyo era la base, no el bucket. Vaciar la variable (no setdefault) hace
+# que `disponible()` sea False y los bytes se queden en la columna `datos`,
+# que es justo el camino que estas pruebas quieren ejercitar.
+os.environ["SUPABASE_URL"] = ""
+os.environ["SUPABASE_SERVICE_KEY"] = ""
+
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest")
 os.environ.setdefault("SESSION_SECRET_KEY", "test-session-secret-key-for-pytest")
