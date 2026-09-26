@@ -24,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from app.database import get_db, Cliente, Cobro, NoPago, Prestamo, Usuario, Zona
 from app.utils.almacen_imagenes import borrar_imagen, guardar_imagen
 from app.utils.money import money
+from app.utils.permisos_rol import puede_gestionar_clientes
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
@@ -221,6 +222,15 @@ async def crear_cliente(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
+    # Los clientes los da de alta el administrador. Un cobrador que crea
+    # clientes en la calle acaba con duplicados y con cedulas mal tecleadas
+    # que despues nadie sabe a quien pertenecen.
+    if not puede_gestionar_clientes(user):
+        return JSONResponse(
+            {"error": "Solo el administrador puede registrar clientes nuevos."},
+            status_code=403)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
 
     # Validar inputs
     try:
@@ -306,6 +316,14 @@ async def editar_cliente(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
+    # La ficha de un cliente es el expediente de una deuda: quien es, donde
+    # vive y como se le encuentra. Cambiarlo desde la calle, con prisa y sin
+    # supervision, es como se pierde la direccion de alguien que debe dinero.
+    if not puede_gestionar_clientes(user):
+        return JSONResponse(
+            {"error": "Solo el administrador puede modificar los datos de un cliente. "
+                      "Si algo cambio, dejalo en una nota."},
+            status_code=403)
 
     cliente = db.query(Cliente).filter(
         Cliente.id == cliente_id,
@@ -371,7 +389,11 @@ async def editar_cliente(
 
 
 def _cliente_editable(db: Session, user, cliente_id: int):
-    """Cliente de la empresa del usuario, con permiso de zona. None si no aplica."""
+    """Cliente de la empresa del usuario, con permiso de zona. None si no aplica.
+
+    Comprueba empresa y zona, no el rol: quien llama decide ademas si el rol
+    puede escribir, para poder responder con el motivo correcto.
+    """
     cliente = db.query(Cliente).filter(
         Cliente.id == cliente_id,
         Cliente.empresa_id == user.empresa_id,
@@ -396,6 +418,14 @@ async def actualizar_ubicacion(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
+    # La ficha de un cliente es el expediente de una deuda: quien es, donde
+    # vive y como se le encuentra. Cambiarlo desde la calle, con prisa y sin
+    # supervision, es como se pierde la direccion de alguien que debe dinero.
+    if not puede_gestionar_clientes(user):
+        return JSONResponse(
+            {"error": "Solo el administrador puede modificar los datos de un cliente. "
+                      "Si algo cambio, dejalo en una nota."},
+            status_code=403)
     cliente = _cliente_editable(db, user, cliente_id)
     if not cliente:
         return JSONResponse({"error": "Cliente no encontrado"}, status_code=404)
@@ -421,6 +451,14 @@ async def actualizar_foto(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
+    # La ficha de un cliente es el expediente de una deuda: quien es, donde
+    # vive y como se le encuentra. Cambiarlo desde la calle, con prisa y sin
+    # supervision, es como se pierde la direccion de alguien que debe dinero.
+    if not puede_gestionar_clientes(user):
+        return JSONResponse(
+            {"error": "Solo el administrador puede modificar los datos de un cliente. "
+                      "Si algo cambio, dejalo en una nota."},
+            status_code=403)
     cliente = _cliente_editable(db, user, cliente_id)
     if not cliente:
         return JSONResponse({"error": "Cliente no encontrado"}, status_code=404)

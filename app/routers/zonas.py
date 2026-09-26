@@ -9,6 +9,7 @@ import re
 
 from app.database import get_db, Empresa, Zona, Cliente, Prestamo, Cobro, Usuario
 from app.routers.auth import get_current_user
+from app.utils.permisos_rol import puede_gestionar_zonas
 from app.utils.plan_limits import tiene_funcion
 from app.utils.validators import (
     validar_nombre, limpiar_texto, sin_html, validar_wp_instance, validar_wp_token,
@@ -84,6 +85,11 @@ async def listar_zonas(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/auth/login?next=/zonas", status_code=302)
+    # La pagina entera era visible para un cobrador: solo estaban
+    # protegidas las acciones de escritura, asi que podia leer la lista
+    # completa de zonas de la empresa y la configuracion del bot.
+    if not puede_gestionar_zonas(user):
+        return RedirectResponse(url="/cobros", status_code=302)
 
     eid = user.empresa_id
     allowed_zones = get_allowed_zone_ids(db, user)

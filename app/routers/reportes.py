@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db, Zona, hoy_local
 from app.routers.auth import get_current_user
 from app.services.excel_service import reporte_cobros_diarios, reporte_cartera, reporte_resumen_zonas
+from app.utils.permisos_rol import puede_ver_reportes
 from app.utils.rate_limit import is_rate_limited
 from app.utils.zone_permissions import get_allowed_zone_ids
 
@@ -33,6 +34,11 @@ async def pagina_reportes(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/auth/login?next=/reportes", status_code=302)
+    # Los informes de la empresa son del administrador. Filtran por zona,
+    # asi que un cobrador no veia datos ajenos, pero un listado descargable
+    # de la cartera no le hace falta para trabajar y si puede acabar fuera.
+    if not puede_ver_reportes(user):
+        return RedirectResponse(url="/cobros", status_code=302)
     hoy = hoy_local()
     zonas = db.query(Zona).filter(Zona.empresa_id == user.empresa_id).all()
     return templates.TemplateResponse(request, "reportes.html", {
@@ -54,6 +60,11 @@ async def descargar_cobros_diarios(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autenticado"}, status_code=401)
+    # Los informes de la empresa son del administrador. Filtran por zona,
+    # asi que un cobrador no veia datos ajenos, pero un listado descargable
+    # de la cartera no le hace falta para trabajar y si puede acabar fuera.
+    if not puede_ver_reportes(user):
+        return JSONResponse({"error": "Sin permisos para los informes."}, status_code=403)
     if is_rate_limited(request, "/reportes/cobros-diarios", 20, 60):
         return JSONResponse({"error": "Demasiadas descargas. Intenta en un minuto."}, status_code=429)
     allowed_zones = get_allowed_zone_ids(db, user)
@@ -72,6 +83,11 @@ async def descargar_cartera(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autenticado"}, status_code=401)
+    # Los informes de la empresa son del administrador. Filtran por zona,
+    # asi que un cobrador no veia datos ajenos, pero un listado descargable
+    # de la cartera no le hace falta para trabajar y si puede acabar fuera.
+    if not puede_ver_reportes(user):
+        return JSONResponse({"error": "Sin permisos para los informes."}, status_code=403)
     if is_rate_limited(request, "/reportes/cartera", 10, 60):
         return JSONResponse({"error": "Demasiadas descargas. Intenta en un minuto."}, status_code=429)
     data = reporte_cartera(db, empresa_id=user.empresa_id, zona_ids=get_allowed_zone_ids(db, user))
@@ -88,6 +104,11 @@ async def descargar_resumen_zonas(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autenticado"}, status_code=401)
+    # Los informes de la empresa son del administrador. Filtran por zona,
+    # asi que un cobrador no veia datos ajenos, pero un listado descargable
+    # de la cartera no le hace falta para trabajar y si puede acabar fuera.
+    if not puede_ver_reportes(user):
+        return JSONResponse({"error": "Sin permisos para los informes."}, status_code=403)
     if is_rate_limited(request, "/reportes/resumen-zonas", 10, 60):
         return JSONResponse({"error": "Demasiadas descargas. Intenta en un minuto."}, status_code=429)
     hoy = hoy_local()

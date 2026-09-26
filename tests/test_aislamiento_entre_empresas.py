@@ -56,8 +56,11 @@ def dos_empresas():
         finally:
             db.close()
 
-    app.dependency_overrides[get_db] = _sesion
-    app.dependency_overrides[get_db_system] = _sesion
+    # Sustituye la dependencia en todas las rutas, sea el objeto que sea:
+    # los routers importaron la suya al cargarse y otra prueba recarga
+    # app.database, asi que las identidades no coinciden.
+    from conftest import sustituir_sesion
+    claves = sustituir_sesion(app, _sesion)
 
     datos = {}
     db = SessionLocal()
@@ -112,8 +115,8 @@ def dos_empresas():
         # escribio pese a la negativa; comparten la misma sesion.
         yield c, datos["A"], datos["B"], SessionLocal
 
-    app.dependency_overrides.pop(get_db, None)
-    app.dependency_overrides.pop(get_db_system, None)
+    for clave in claves:
+        app.dependency_overrides.pop(clave, None)
     motor.dispose()
     if bd.exists():
         bd.unlink(missing_ok=True)

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 from app.database import get_db, Prestamo, Cliente, Cuota, NoPago, Zona, hoy_local
+from app.utils.permisos_rol import puede_gestionar_prestamos
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import calcular_cuotas
 from app.utils.money import money
@@ -204,6 +205,12 @@ async def crear_prestamo(
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
+    # El cobrador recoge dinero, no lo presta. Quien decide a quien se le
+    # presta y cuanto es el administrador.
+    if not puede_gestionar_prestamos(user):
+        return JSONResponse(
+            {"error": "Solo el administrador puede crear prestamos."},
+            status_code=403)
 
     # Validar IDs y rangos
     try:

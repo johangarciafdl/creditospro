@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db, Empresa, NotificacionWP, ConfiguracionApp, Cliente, Cuota, Prestamo, hoy_local
 from app.routers.auth import get_current_user
 from app.services.whatsapp_service import ejecutar_recordatorios, enviar_notificacion, get_config_by_empresa
+from app.utils.permisos_rol import puede_ver_whatsapp
 from app.utils.plan_limits import tiene_funcion
 from app.utils.validators import (
     sin_html, validar_entero_positivo, validar_wp_instance, validar_wp_token,
@@ -24,6 +25,11 @@ async def panel_whatsapp(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/auth/login?next=/whatsapp", status_code=302)
+    # La pagina entera era visible para un cobrador: solo estaban
+    # protegidas las acciones de escritura, asi que podia leer la lista
+    # completa de zonas de la empresa y la configuracion del bot.
+    if not puede_ver_whatsapp(user):
+        return RedirectResponse(url="/cobros", status_code=302)
 
     eid = user.empresa_id
     allowed_zones = get_allowed_zone_ids(db, user)
