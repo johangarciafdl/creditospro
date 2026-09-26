@@ -17,11 +17,13 @@ from app.templates import templates
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
-from app.database import get_db, Prestamo, Cliente, Cuota, NoPago, Zona, hoy_local
+from app.database import (get_db, Prestamo, Cliente, Cuota, NoPago, Usuario,
+                          Zona, hoy_local)
 from app.utils.permisos_rol import puede_gestionar_prestamos
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import calcular_cuotas
-from app.utils.money import money
+from app.utils.caja import cuadre
+from app.utils.money import cop, money
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
     validar_numero_positivo, validar_entero_positivo, limpiar_texto, sin_html,
@@ -55,6 +57,15 @@ async def listar_prestamos(request: Request, db: Session = Depends(get_db)):
         total_q = total_q.filter(Prestamo.zona_id.in_(allowed_zones or [-1]))
     total = total_q.scalar() or 0
 
+    # Quien puede entregar el dinero en la calle. El admin tambien esta en la
+    # lista: hay oficinas pequenas donde presta el mismo que aprueba.
+    cobradores = (
+        db.query(Usuario)
+        .filter(Usuario.empresa_id == user.empresa_id, Usuario.activo == True)
+        .order_by(Usuario.nombre)
+        .all()
+    )
+
     return templates.TemplateResponse(request, "prestamos.html", {
         "page": "prestamos",
         "prestamos": [],
@@ -63,10 +74,27 @@ async def listar_prestamos(request: Request, db: Session = Depends(get_db)):
         "zona_id_sel": None,
         "current_user": user,
         "total_prestamos": total,
+        "cobradores": cobradores,
     })
 
 
 # ── GET /buscar-ajax ─────────────────────────────────────────────────────────
+
+def _fecha_iso(texto: str):
+    """La fecha del desembolso, o None si no viene. Devuelve None si no se
+    entiende, para que el llamante caiga en su valor por defecto en vez de
+    reventar por una cadena vacia del formulario."""
+    texto = (texto or "").strip()
+    if not texto:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.datetime.strptime(texto, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 @router.get("/buscar-ajax")
 async def buscar_ajax(
     request: Request,
@@ -200,6 +228,12 @@ async def crear_prestamo(
     plazo_dias: int = Form(1),
     fecha_inicio: str = Form(...),
     observaciones: str = Form(""),
+    # Quien entrega el dinero en la calle. El admin aprueba el prestamo desde
+    # la oficina, pero los billetes salen del bolsillo de un cobrador y hay
+    # que descontarlos de SU caja: sin esto el cuadre del dia le sale
+    # cuadrado a alguien que va corto de dinero.
+    desembolsado_por: str = Form(""),
+    fecha_desembolso: str = Form(""),
     db: Session = Depends(get_db)
 ):
     user = get_current_user(request, db)
@@ -294,6 +328,31 @@ async def crear_prestamo(
             "mensaje": f"Ese préstamo ya se había creado (#{duplicado.id}) — no se duplicó.",
         })
 
+    # ── Quien entrega el dinero, y de que caja sale ────────────────────────
+    entrega_id, entrega_nombre, dia_desembolso = None, None, None
+    if desembolsado_por.strip():
+        try:
+            entrega_id = validar_entero_positivo(desembolsado_por, "Cobrador")
+        except HTTPException as e:
+            return JSONResponse({"error": e.detail}, status_code=e.status_code)
+        quien = db.query(Usuario).filter(
+            Usuario.id == entrega_id,
+            Usuario.empresa_id == user.empresa_id,
+            Usuario.activo == True,
+        ).first()
+        if not quien:
+            return JSONResponse(
+                {"error": "El cobrador que entrega el dinero no existe"},
+                status_code=404)
+        entrega_nombre = quien.nombre or quien.username
+        # Por defecto el dia en que empieza el prestamo, que es cuando se
+        # entrega el dinero; el admin puede anotar otro si lo registra tarde.
+        dia_desembolso = _fecha_iso(fecha_desembolso) or fecha
+        if dia_desembolso > hoy_local():
+            return JSONResponse(
+                {"error": "No se puede anotar un desembolso en el futuro."},
+                status_code=400)
+
     try:
         # Log: Inicio de creación
         logger.info(f"[PRESTAMO-CREAR] Iniciando creación para cliente_id={cliente_id_int}, "
@@ -318,7 +377,9 @@ async def crear_prestamo(
             plazo_dias=int(plazo_dias),
             fecha_inicio=fecha,
             fecha_fin=calc.get("fecha_fin"),
-            cobrador=user.nombre or user.username,
+            cobrador=entrega_nombre or user.nombre or user.username,
+            desembolsado_por_id=entrega_id,
+            fecha_desembolso=dia_desembolso,
             observaciones=observaciones or None,
             estado="Activo",
         )
@@ -347,11 +408,26 @@ async def crear_prestamo(
         logger.info(f"[PRESTAMO-CREAR] ✅ Éxito: Préstamo #{prestamo.id} creado con "
                    f"{num_cuotas_creadas} cuotas para {cliente.nombre}")
         
-        return JSONResponse({
-            "ok": True, 
-            "id": prestamo.id, 
-            "mensaje": f"Préstamo #{prestamo.id} creado exitosamente para {cliente.nombre}"
-        })
+        respuesta = {
+            "ok": True,
+            "id": prestamo.id,
+            "mensaje": f"Préstamo #{prestamo.id} creado exitosamente para {cliente.nombre}",
+        }
+        # Sobregiro: el cobrador presta con lo que recoge, asi que prestar mas
+        # de lo cobrado en el dia significa que echo mano de la base o de
+        # dinero que no era suyo. No se impide -- hay dias en que la oficina
+        # lo autoriza -- pero el admin tiene que enterarse en el momento, no
+        # al cuadrar por la noche.
+        if entrega_id and dia_desembolso:
+            estado_caja = cuadre(db, user.empresa_id, entrega_id, dia_desembolso)
+            if estado_caja["sobregiro"]:
+                respuesta["sobregiro"] = estado_caja["sobregiro_valor"]
+                respuesta["aviso"] = (
+                    f"{entrega_nombre} lleva prestado {cop(estado_caja['prestado'])} "
+                    f"y cobrado {cop(estado_caja['cobrado'])} este dia: "
+                    f"{cop(estado_caja['sobregiro_valor'])} de sobregiro."
+                )
+        return JSONResponse(respuesta)
     except Exception as e:
         db.rollback()
         logger.exception(

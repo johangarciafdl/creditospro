@@ -88,7 +88,22 @@ def puede_atender_notas(user: Usuario | None) -> bool:
 
 
 def puede_ver_cuadre_de(user: Usuario | None, usuario_id: int) -> bool:
-    """El cuadre de caja: el cobrador ve el suyo, el admin ve el de todos."""
+    """El cuadre de caja: el cobrador ve el suyo, el admin ve el de todos.
+
+    Que el cobrador vea el suyo es deliberado y es lo que hace util el
+    cuadre: si solo lo viera el administrador, el cobrador se enteraria de
+    que va descuadrado cuando ya no puede reconstruir el dia.
+    """
     if not user:
         return False
     return es_admin(user) or user.id == usuario_id
+
+
+def puede_registrar_movimientos_caja(user: Usuario | None) -> bool:
+    """Anotar la base, la entrega del dia o una correccion.
+
+    Solo el administrador. Un cobrador que pueda escribir su propia base
+    puede hacerse cuadrar cualquier dia: seria pedirle la cuenta a quien la
+    rinde. El cobrador ve su caja, no la escribe.
+    """
+    return es_admin(user)

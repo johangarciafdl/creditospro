@@ -153,6 +153,12 @@ CREATE POLICY empresa_isolation_notas_cliente ON notas_cliente
   USING (empresa_id = public.current_empresa_id())
   WITH CHECK (empresa_id = public.current_empresa_id());
 
+ALTER TABLE movimientos_caja ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS empresa_isolation_movimientos_caja ON movimientos_caja;
+CREATE POLICY empresa_isolation_movimientos_caja ON movimientos_caja
+  USING (empresa_id = public.current_empresa_id())
+  WITH CHECK (empresa_id = public.current_empresa_id());
+
 COMMIT;
 
 -- En cada transacción autenticada del backend debe ejecutarse, por ejemplo:

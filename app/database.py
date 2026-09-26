@@ -474,6 +474,52 @@ class NoPago(Base):
     )
 
 
+class MovimientoCaja(Base):
+    """Entradas y salidas de la caja de un cobrador que no son cobros.
+
+    La caja de un cobrador se mueve por cuatro motivos: la base que le entrega
+    la oficina por la manana, lo que recoge durante el dia, lo que presta en
+    la calle, y lo que devuelve al final. De esos cuatro, dos ya estan en otras
+    tablas -- los cobros en `cobros` y los desembolsos en `prestamos` -- asi
+    que aqui solo viven los otros dos, mas las correcciones.
+
+    El valor es SIEMPRE positivo y el sentido lo pone el tipo (ver
+    `app/utils/caja.py`). Guardar el signo dentro del numero invita a que una
+    entrega quede sumando en vez de restando por un menos que falta, y eso en
+    un cuadre de caja no se nota: simplemente le cuadra a quien no deberia.
+
+    Los viaticos NO son una fila: son 15.000 al dia y se calculan, porque una
+    fila por cobrador y por dia obliga a una tarea programada que ademas
+    generaria filas los dias que nadie salio a la calle.
+    """
+    __tablename__ = "movimientos_caja"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    # De quien es la caja. No quien lo registra: eso es registrado_por_id.
+    usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    fecha = Column(Date, nullable=False, index=True)
+    tipo = Column(String(20), nullable=False)
+    valor = Column(Numeric(12, 2), nullable=False)
+    concepto = Column(String(300), nullable=True)
+    registrado_por_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"),
+                               nullable=True)
+    registrado_por = Column(String(200), nullable=True)
+    creado = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        # La consulta que se hace siempre: la caja de un cobrador en un dia.
+        Index("ix_movimientos_empresa_usuario_fecha", "empresa_id", "usuario_id", "fecha"),
+        Index("ix_movimientos_empresa_fecha", "empresa_id", "fecha"),
+        CheckConstraint("valor > 0", name="ck_movimiento_valor_pos"),
+        CheckConstraint(
+            "tipo IN ('base','entrega','ajuste_mas','ajuste_menos')",
+            name="ck_movimiento_tipo",
+        ),
+    )
+
+
 class RutaCobro(Base):
     """Que zonas puede cobrar un cobrador en cada dia de la semana.
 
@@ -577,6 +623,14 @@ class Prestamo(Base):
     fecha_fin = Column(Date)
     estado = Column(String(30), default="Activo")
     cobrador = Column(String(200))
+    # Quien entrego el dinero en la calle y que dia. El admin aprueba el
+    # prestamo desde la oficina, pero los billetes salen del bolsillo de un
+    # cobrador, asi que ese desembolso tiene que descontarse de SU caja. Sin
+    # estas dos columnas el prestamo no se puede atribuir a ninguna caja y el
+    # cuadre del dia le sale cuadrado a alguien que va corto de dinero.
+    desembolsado_por_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"),
+                                 nullable=True, index=True)
+    fecha_desembolso = Column(Date, nullable=True, index=True)
     observaciones = Column(Text, nullable=True)
     creado = Column(DateTime, default=func.now())
 

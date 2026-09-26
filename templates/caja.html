@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block title %}Caja{% endblock %}
+{% block topbar_title %}{% if es_admin %}Cuadre de caja{% else %}Mi caja{% endif %}{% endblock %}
+{% block topbar_sub %}{% if not es_admin %}{{ current_user.nombre }}{% endif %}{% endblock %}
+
+{% block content %}
+{#- Cuanto dinero deberia tener encima el cobrador al final del dia:
+
+      base + cobrado - prestado - viaticos - entregado +/- ajustes
+
+    El desglose se muestra entero y siempre, porque lo que hace util un cuadre
+    no es el total sino poder decir donde se rompio. -#}
+<div style="max-width:720px;margin:0 auto;">
+
+<!-- QUIEN Y QUE DIA -->
+<div class="card mb-3">
+  <div class="card-body" style="padding:12px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+      {% if es_admin %}
+      <div style="flex:1;min-width:180px;">
+        <label for="sel-cobrador" style="display:block;font-size:11px;color:var(--t3);margin-bottom:4px;">Cobrador</label>
+        <select id="sel-cobrador" onchange="cargar()">
+          <option value="">Todos</option>
+          {% for c in cobradores %}
+          <option value="{{ c.id }}">{{ c.nombre or c.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div style="flex:0 0 150px;">
+        <label for="sel-fecha" style="display:block;font-size:11px;color:var(--t3);margin-bottom:4px;">Dia</label>
+        <input type="date" id="sel-fecha" value="{{ hoy }}" max="{{ hoy }}" onchange="cargar()">
+      </div>
+      <button class="btn btn-sm" onclick="ayer()">Dia anterior</button>
+    </div>
+    {% if not es_admin %}
+    <div class="fs-11 text-3" style="margin-top:10px;">
+      Esto es lo que deberias tener encima al terminar el dia. Si no cuadra,
+      avisa al administrador: el unico que puede anotar bases y entregas es el.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div id="estado" style="text-align:center;padding:36px 0;color:var(--t3);">
+  <div id="estado-icono" style="font-size:34px;margin-bottom:10px;">💼</div>
+  <div id="estado-txt">Cargando la caja...</div>
+</div>
+
+<!-- UN SOLO COBRADOR -->
+<div id="detalle" style="display:none;">
+  <div class="card mb-3">
+    <div class="card-header">
+      <div class="card-title" id="d-nombre">—</div>
+      <span class="badge" id="d-sobregiro" style="display:none;">Sobregiro</span>
+    </div>
+    <div class="card-body">
+      <div id="d-esperado-caja" style="text-align:center;padding:6px 0 14px;">
+        <div class="stat-label">Deberia tener encima</div>
+        <div class="stat-val" id="d-esperado" style="font-size:30px;">$0</div>
+      </div>
+      <table style="width:100%;">
+        <tbody id="d-desglose"></tbody>
+      </table>
+      <div id="d-aviso" class="fs-12" style="display:none;margin-top:12px;padding:10px;border-radius:var(--r-sm);background:var(--abg);color:#92400E;"></div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Movimientos del dia</div></div>
+    <div class="card-body-flush table-wrap">
+      <table>
+        <thead><tr><th>Concepto</th><th>Anotado por</th><th style="text-align:right;">Valor</th>{% if es_admin %}<th></th>{% endif %}</tr></thead>
+        <tbody id="d-movimientos"></tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if es_admin %}
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Anotar movimiento</div></div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="m-tipo">Que se anota</label>
+          <select id="m-tipo">
+            <option value="base">Base entregada al cobrador</option>
+            <option value="entrega">Entregado a la oficina</option>
+            <option value="ajuste_mas">Ajuste a favor del cobrador</option>
+            <option value="ajuste_menos">Ajuste en contra del cobrador</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="m-valor">Valor</label>
+          <input type="number" id="m-valor" min="1" placeholder="500000">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="m-concepto">Concepto (opcional)</label>
+        <input type="text" id="m-concepto" placeholder="ej: pidio 200 mil mas para la ruta">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="anotar(this)">Anotar</button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- TODOS (solo admin) -->
+<div id="tabla-todos" style="display:none;">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Cuadre del dia</div>
+      <span class="badge badge-blue" id="t-fecha"></span>
+    </div>
+    <div class="card-body-flush table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Cobrador</th><th style="text-align:right;">Base</th>
+            <th style="text-align:right;">Cobrado</th><th style="text-align:right;">Prestado</th>
+            <th style="text-align:right;">Entregado</th><th style="text-align:right;">Debe tener</th>
+          </tr>
+        </thead>
+        <tbody id="t-filas"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+const ES_ADMIN = {{ 'true' if es_admin else 'false' }};
+const YO = {{ current_user.id }};
+let _cuadre = null;
+
+function _dia(){ return document.getElementById('sel-fecha').value || '{{ hoy }}'; }
+function _cobrador(){
+  const s = document.getElementById('sel-cobrador');
+  return s ? s.value : String(YO);
+}
+
+// El dia anterior se calcula con las piezas de la fecha, no con toISOString():
+// esa funcion devuelve la fecha en UTC, y de noche en Colombia UTC ya va por
+// el dia siguiente -- el boton habria retrocedido al dia equivocado justo a
+// la hora en que el cobrador cuadra la ruta.
+function ayer(){
+  const f = document.getElementById('sel-fecha');
+  const [a, m, dd] = (f.value || '{{ hoy }}').split('-').map(Number);
+  const d = new Date(a, m - 1, dd);
+  d.setDate(d.getDate() - 1);
+  const p2 = n => String(n).padStart(2, '0');
+  f.value = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  cargar();
+}
+
+function _estado(txt, icono){
+  document.getElementById('estado').style.display = '';
+  document.getElementById('estado-txt').textContent = txt;
+  if (icono) document.getElementById('estado-icono').textContent = icono;
+  document.getElementById('detalle').style.display = 'none';
+  document.getElementById('tabla-todos').style.display = 'none';
+}
+
+async function cargar(){
+  _estado('Cargando la caja...', '⏳');
+  const p = new URLSearchParams({fecha: _dia()});
+  const quien = _cobrador();
+  if (quien) p.set('usuario_id', quien);
+  try {
+    const r = await window.fetch('/caja/resumen?' + p);
+    const d = await leerRespuesta(r);
+    if (d.error) { _estado(d.error, '⚠️'); return; }
+    if (d.cuadres) pintarTodos(d);
+    else pintarUno(d.cuadre);
+  } catch(e) {
+    console.error('[Caja] No se pudo cargar:', e);
+    _estado('No hay conexion. Intenta de nuevo.', '📡');
+  }
+}
+
+// Una linea del desglose. El signo va en el texto y no solo en el color,
+// porque en un cuadre confundir una suma con una resta lo cambia todo.
+function _linea(nombre, valor, signo, detalle){
+  if (!valor && signo !== 0) return '';
+  const color = signo > 0 ? 'var(--green)' : (signo < 0 ? 'var(--red)' : 'var(--t2)');
+  const marca = signo > 0 ? '+' : (signo < 0 ? '−' : '');
+  return `<tr>
+    <td style="padding:7px 0;">${esc(nombre)}
+      ${detalle ? `<span class="fs-11 text-3"> · ${esc(detalle)}</span>` : ''}</td>
+    <td style="padding:7px 0;text-align:right;font-family:var(--mono);font-weight:600;color:${color};">
+      ${marca}${cop(Math.abs(valor))}</td>
+  </tr>`;
+}
+
+function pintarUno(c){
+  _cuadre = c;
+  document.getElementById('estado').style.display = 'none';
+  document.getElementById('detalle').style.display = '';
+  document.getElementById('d-nombre').textContent = c.nombre || 'Mi caja';
+  document.getElementById('d-esperado').textContent = cop(c.esperado);
+  document.getElementById('d-esperado').style.color =
+    c.esperado < 0 ? 'var(--red)' : 'var(--t1)';
+
+  document.getElementById('d-desglose').innerHTML = [
+    _linea('Base entregada', c.base, 1),
+    _linea('Cobrado', c.cobrado, 1, c.num_cobros + ' cobros'),
+    _linea('Prestado en la calle', c.prestado, -1, c.num_prestamos + ' prestamos'),
+    _linea('Viaticos', c.viaticos, -1, 'almuerzo'),
+    _linea('Entregado a la oficina', c.entregado, -1),
+    c.ajustes ? _linea('Ajustes', c.ajustes, c.ajustes > 0 ? 1 : -1) : '',
+  ].join('');
+
+  const badge = document.getElementById('d-sobregiro');
+  const aviso = document.getElementById('d-aviso');
+  if (c.sobregiro) {
+    badge.style.display = '';
+    badge.className = 'badge badge-red';
+    badge.textContent = 'Sobregiro ' + cop(c.sobregiro_valor);
+    aviso.style.display = '';
+    aviso.textContent = 'Presto ' + cop(c.prestado) + ' y cobro ' + cop(c.cobrado) +
+      ': ' + cop(c.sobregiro_valor) + ' mas de lo que recogio. Ese dinero salio de ' +
+      'la base o de donde no debia.';
+  } else {
+    badge.style.display = 'none';
+    aviso.style.display = 'none';
+  }
+
+  const filas = (c.movimientos || []);
+  document.getElementById('d-movimientos').innerHTML = filas.length
+    ? filas.map(m => `<tr>
+        <td class="fs-13">${esc(m.nombre)}${m.concepto ? `<div class="fs-11 text-3">${esc(m.concepto)}</div>` : ''}</td>
+        <td class="fs-12 text-2">${esc(m.registrado_por)}</td>
+        <td style="text-align:right;font-family:var(--mono);color:${m.efecto > 0 ? 'var(--green)' : 'var(--red)'};">
+          ${m.efecto > 0 ? '+' : '−'}${cop(m.valor)}</td>
+        ${ES_ADMIN ? `<td style="text-align:right;"><button class="btn btn-ghost btn-xs" onclick="borrar(${Number(m.id)||0})">✕</button></td>` : ''}
+      </tr>`).join('')
+    : `<tr><td colspan="${ES_ADMIN ? 4 : 3}" class="fs-12 text-3" style="padding:14px;text-align:center;">
+        Sin movimientos anotados este dia</td></tr>`;
+}
+
+function pintarTodos(d){
+  document.getElementById('estado').style.display = 'none';
+  document.getElementById('detalle').style.display = 'none';
+  document.getElementById('tabla-todos').style.display = '';
+  document.getElementById('t-fecha').textContent = d.fecha;
+
+  const filas = d.cuadres || [];
+  document.getElementById('t-filas').innerHTML = filas.length
+    ? filas.map(c => `<tr>
+        <td class="fw-600 fs-13">${esc(c.nombre)}
+          ${c.sobregiro ? '<span class="badge badge-red" style="margin-left:6px;">Sobregiro</span>' : ''}
+          ${!c.hubo_movimiento ? '<span class="badge badge-gray" style="margin-left:6px;">Sin movimiento</span>' : ''}</td>
+        <td style="text-align:right;font-family:var(--mono);">${cop(c.base)}</td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--green);">${cop(c.cobrado)}</td>
+        <td style="text-align:right;font-family:var(--mono);">${cop(c.prestado)}</td>
+        <td style="text-align:right;font-family:var(--mono);">${cop(c.entregado)}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${c.esperado < 0 ? 'var(--red)' : 'var(--t1)'};">${cop(c.esperado)}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="6" class="fs-12 text-3" style="padding:16px;text-align:center;">
+        La empresa no tiene cobradores activos</td></tr>`;
+}
+
+{% if es_admin %}
+async function anotar(btn){
+  const quien = _cobrador();
+  if (!quien) { toast('Elige primero a que cobrador se lo anotas', 'error'); return; }
+  const valor = document.getElementById('m-valor').value;
+  if (!valor || Number(valor) <= 0) { toast('Escribe el valor', 'error'); return; }
+
+  const fd = new FormData();
+  fd.append('usuario_id', quien);
+  fd.append('tipo', document.getElementById('m-tipo').value);
+  fd.append('valor', valor);
+  fd.append('fecha', _dia());
+  fd.append('concepto', document.getElementById('m-concepto').value.trim());
+
+  await conBoton(btn, 'Anotando...', async () => {
+    try {
+      const r = await window.fetch('/caja/movimiento', {method:'POST', body:fd});
+      const d = await leerRespuesta(r);
+      if (d.ok) {
+        toast(d.mensaje);
+        document.getElementById('m-valor').value = '';
+        document.getElementById('m-concepto').value = '';
+        pintarUno(Object.assign({nombre: _cuadre && _cuadre.nombre}, d.cuadre));
+      } else {
+        toast(d.error || d.detail || 'No se pudo anotar', 'error');
+      }
+    } catch(e) {
+      console.error('[Caja] Error anotando:', e);
+      toast('No hay conexion. Intenta de nuevo.', 'error');
+    }
+  });
+}
+
+async function borrar(id){
+  if (!id || !confirm('Retirar este movimiento de la caja?')) return;
+  try {
+    const r = await window.fetch('/caja/movimiento/' + id + '/borrar', {method:'POST'});
+    const d = await leerRespuesta(r);
+    if (d.ok) {
+      toast(d.mensaje);
+      pintarUno(Object.assign({nombre: _cuadre && _cuadre.nombre}, d.cuadre));
+    } else {
+      toast(d.error || d.detail || 'No se pudo retirar', 'error');
+    }
+  } catch(e) {
+    console.error('[Caja] Error borrando:', e);
+    toast('No hay conexion. Intenta de nuevo.', 'error');
+  }
+}
+{% endif %}
+
+cargar();
+</script>
+{% endblock %}

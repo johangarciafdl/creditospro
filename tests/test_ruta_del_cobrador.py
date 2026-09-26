@@ -430,3 +430,26 @@ def test_el_reporte_csp_devuelve_un_204_de_verdad():
                      headers={"content-type": "application/csp-report"})
         assert r.status_code == 204
         assert r.content == b""
+
+
+# ── Cerrar sesion, arriba y una sola vez ──────────────────────────────────
+
+def test_cerrar_sesion_esta_arriba_y_es_un_solo_boton(entorno):
+    """Al fondo de la barra lateral lo tapaba la barra del sistema.
+
+    En varios celulares la barra de navegacion o el recorte de la pantalla se
+    comen lo que queda pegado al borde inferior, y el cobrador veia el boton a
+    medias o no lo veia. Y uno solo: si el mismo control sale arriba y abajo,
+    uno de los dos es el tapado y nadie sabe cual funciona.
+    """
+    cobra, _, _, _ = entorno
+    html = cobra.get("/ruta").text
+    assert html.count('href="/auth/logout"') == 1, \
+        "debe haber exactamente un boton de cerrar sesion"
+    cabecera = html.split('<header class="topbar"')[1].split("</header>")[0]
+    assert 'href="/auth/logout"' in cabecera, \
+        "cerrar sesion debe estar en la barra superior"
+    assert "sidebar-footer" in html, "el pie de la barra lateral sigue existiendo"
+    pie = html.split('<div class="sidebar-footer">')[1].split("</aside>")[0]
+    assert "/auth/logout" not in pie, \
+        "quedo un segundo boton de cerrar sesion pegado al borde inferior"

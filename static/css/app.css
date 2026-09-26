@@ -59,8 +59,10 @@ input,select,textarea{font-family:var(--font)}
 .user-av{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,var(--gold),#8A6A25);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#0A0A0A;flex-shrink:0}
 .user-name{color:#fff;font-size:12px;font-weight:500;line-height:1.2}
 .user-role{color:rgba(255,255,255,.3);font-size:10px}
-.logout-a{margin-left:auto;color:rgba(255,255,255,.6);display:flex;padding:4px;border-radius:4px;transition:color var(--tf);cursor:pointer}
-.logout-a:hover{color:#fff}
+/* Cerrar sesion se movio al borde superior: al fondo de la barra lateral lo
+   tapaba la barra del sistema en varios celulares. Va siempre visible y es el
+   unico boton de salir de la aplicacion. */
+.btn-salir{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;white-space:nowrap}
 
 /* MAIN */
 .main{margin-left:var(--sw);min-height:100vh;display:flex;flex-direction:column}
@@ -270,6 +272,9 @@ img{max-width:100%;height:auto}
   .topbar-reloj{display:none}
   .topbar-pend{padding:3px 7px;font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis}
   .topbar .btn,.topbar-actions .btn{padding:6px 10px;font-size:12px}
+  /* El icono basta; la palabra le robaria el ancho al nombre de la pantalla. */
+  .salir-txt{display:none}
+  .btn-salir{padding:7px 9px}
   .stats-grid,.stats-grid-3{grid-template-columns:1fr 1fr;gap:10px}
   .grid-2,.grid-3,.grid-2-lateral{grid-template-columns:1fr}
   .btn{white-space:normal}

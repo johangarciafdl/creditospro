@@ -39,6 +39,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.database import BASE_DIR, Cliente, IS_SQLITE, get_db, init_db, revisar_presupuesto_de_conexiones
 from app.routers import (
     auth,
+    caja,
     clientes,
     cobros,
     dashboard,
@@ -284,6 +285,7 @@ app.include_router(reportes.router, prefix="/reportes", tags=["Reportes"])
 app.include_router(whatsapp.router, prefix="/whatsapp", tags=["WhatsApp Bot"])
 app.include_router(plataforma.router, prefix="/plataforma", tags=["Plataforma"])
 app.include_router(ruta.router, tags=["Ruta"])
+app.include_router(caja.router, tags=["Caja"])
 app.include_router(pwa.router, tags=["PWA"])
 
 
