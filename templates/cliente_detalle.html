@@ -4,7 +4,11 @@
 {% block topbar_sub %}CC {{ cliente.cedula }} - {{ zona.nombre if zona else '' }}{% endblock %}
 {% block topbar_actions %}
   <a href="/clientes" class="btn btn-ghost btn-sm">Volver</a>
-  <button class="btn btn-primary" onclick="abrirModalPrestamo()">+ Nuevo Prestamo</button>
+{#- Un boton que responde 403 al pulsarlo es un boton que no debe estar: el
+    cobrador abre esta ficha para consultar y para dejar notas, no para
+    prestar ni para corregir datos. El servidor ya lo negaba; lo que faltaba
+    era no ofrecerselo. -#}
+  {% if puede_prestar %}<button class="btn btn-primary" onclick="abrirModalPrestamo()">+ Nuevo Prestamo</button>{% endif %}
 {% endblock %}
 
 {% set cuotas_vencidas_nav = 0 %}
@@ -14,7 +18,7 @@
   <div class="card">
     <div class="card-header">
       <div class="card-title">Perfil del Afiliado</div>
-      <button class="btn btn-ghost btn-sm" onclick="abrirEditar()">Editar</button>
+      {% if puede_editar %}<button class="btn btn-ghost btn-sm" onclick="abrirEditar()">Editar</button>{% endif %}
     </div>
     <div class="card-body">
       <div class="flex-center gap-3 mb-3">
@@ -363,6 +367,7 @@
   </div>
 </div>
 
+{% if puede_editar %}
 <!-- MODAL EDITAR CLIENTE -->
 <div class="modal-overlay" id="modal-editar-cliente" onclick="if(event.target===this)this.classList.remove('open')">
 <div class="modal modal-lg" onclick="event.stopPropagation()">
@@ -409,7 +414,9 @@
   </div>
 </div>
 </div>
+{% endif %}
 
+{% if puede_prestar %}
 <!-- MODAL NUEVO PRÉSTAMO -->
 <div class="modal-overlay" id="modal-prestamo" onclick="if(event.target===this)this.classList.remove('open')">
 <div class="modal" onclick="event.stopPropagation()">
@@ -484,6 +491,7 @@
   </div>
 </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}

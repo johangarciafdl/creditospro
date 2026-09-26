@@ -30,6 +30,7 @@ from app.utils.permisos_rol import (
     puede_atender_notas,
     puede_escribir_notas,
     puede_gestionar_clientes,
+    puede_gestionar_prestamos,
 )
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
@@ -635,6 +636,11 @@ async def detalle_cliente(
 
     return templates.TemplateResponse(request, "cliente_detalle.html", {
         "page": "clientes", "current_user": user,
+        # La ficha la abre tambien el cobrador -- es donde consulta y donde
+        # deja sus notas -- asi que tiene que saber que botones ofrecerle.
+        # Un boton que responde 403 al pulsarlo es un boton que no debe estar.
+        "puede_editar": puede_gestionar_clientes(user),
+        "puede_prestar": puede_gestionar_prestamos(user),
         "cliente": cliente, "zona": zona, "zonas": zonas,
         "prestamos": prestamos_data,
         "cobradores": cobradores,

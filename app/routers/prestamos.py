@@ -48,6 +48,14 @@ async def listar_prestamos(request: Request, db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse(url="/auth/login?next=/prestamos", status_code=302)
 
+    # El modulo entero es del administrador. La fase que cerro los prestamos
+    # puso la comprobacion en POST /nuevo y dejo abierta esta pagina: el menu
+    # ya no la ofrecia, pero escribiendo la direccion a mano un cobrador
+    # entraba y se encontraba el formulario de crear prestamos. Cerrar solo la
+    # accion y dejar abierta la pantalla que la ofrece es media restriccion.
+    if not puede_gestionar_prestamos(user):
+        return RedirectResponse(url="/cobros", status_code=302)
+
     allowed_zones = get_allowed_zone_ids(db, user)
     zonas = visible_zonas_query(db, user).all()
     total_q = db.query(func.count(Prestamo.id)).filter(

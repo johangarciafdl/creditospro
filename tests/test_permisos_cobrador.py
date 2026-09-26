@@ -279,3 +279,36 @@ def test_si_puede_consultar_sus_clientes(entorno):
     assert cli.get("/cobros").status_code == 200
     assert cli.get("/clientes").status_code == 200
     assert cli.get(f"/clientes/{d['cliente_id']}").status_code == 200
+
+
+# ── Cerrar la accion no basta: hay que cerrar la pantalla que la ofrece ───
+
+def test_no_puede_entrar_al_modulo_de_prestamos(entorno):
+    """La comprobacion estaba en POST /prestamos/nuevo y esta pagina se quedo
+    abierta: el menu ya no la ofrecia, pero escribiendo la direccion a mano un
+    cobrador entraba y se encontraba el formulario de crear prestamos.
+
+    Se descubrio probando en produccion con un cobrador real, no aqui: las
+    pruebas cubrian la accion y no la pantalla.
+    """
+    cli, _, _ = entorno
+    r = cli.get("/prestamos", follow_redirects=False)
+    assert _niega(r), f"devolvio {r.status_code}"
+
+
+def test_la_ficha_del_cliente_no_le_ofrece_lo_que_no_puede_hacer(entorno):
+    """El cobrador abre la ficha para consultar y para dejar notas.
+
+    El servidor ya negaba crear prestamos y editar al cliente, pero la ficha
+    seguia mostrando los dos botones. Un boton que responde 403 al pulsarlo es
+    un boton que no debe estar: el cobrador no puede saber si fallo el sistema
+    o si no le correspondia.
+    """
+    cli, d, _ = entorno
+    html = cli.get(f"/clientes/{d['cliente_id']}").text
+    assert 'onclick="abrirModalPrestamo()"' not in html, "le ofrece crear un prestamo"
+    assert 'onclick="abrirEditar()"' not in html, "le ofrece editar la ficha"
+    assert 'id="modal-prestamo"' not in html, "el formulario de prestamo sigue en la pagina"
+    assert 'id="modal-editar-cliente"' not in html, "el formulario de edicion sigue en la pagina"
+    # Lo que si es suyo sigue estando.
+    assert "guardarNota" in html, "le quito la unica escritura que si tiene"
