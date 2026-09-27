@@ -32,4 +32,11 @@ templates.env.globals["estatico"] = estatico
 # formulario de cobro. Dos implementaciones del mismo concepto siempre
 # terminan separandose; la de money.py es la unica.
 templates.env.filters["cop"] = cop
+
+# {{ fecha | hora_local }}: toda hora guardada esta en UTC; a una persona se
+# le enseña la de Colombia. Sin esto el "ultimo acceso" de un usuario salia
+# con cinco horas de adelanto.
+from app.database import a_hora_local  # noqa: E402
+
+templates.env.filters["hora_local"] = a_hora_local
 templates.env.globals["cop"] = cop

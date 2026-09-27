@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 from sqlalchemy import case, func
 from app.database import Cobro, Prestamo, Cliente, Cuota, Zona, hoy_local
+from app.database import a_hora_local, ahora_local
 
 
 # Paleta de colores
@@ -84,7 +85,7 @@ def encabezado_reporte(ws, titulo: str, subtitulo: str, empresa: str):
     ws["A2"].font = Font(color=COLOR_VERDE, bold=True, size=12, name="Calibri")
     ws["A2"].alignment = Alignment(horizontal="left", vertical="center")
 
-    ws["A3"] = f"Generado: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}  |  {subtitulo}"
+    ws["A3"] = f"Generado: {ahora_local().strftime('%d/%m/%Y %H:%M')}  |  {subtitulo}"
     ws["A3"].font = Font(color="888888", italic=True, size=9, name="Calibri")
 
 
@@ -166,7 +167,7 @@ def reporte_cobros_diarios(db: Session, empresa_id: int = None, zona_id: int = N
             c.valor_cobrado,
             c.metodo_pago,
             c.cobrador,
-            c.hora.strftime("%H:%M") if c.hora else "—",
+            a_hora_local(c.hora).strftime("%H:%M") if c.hora else "—",
             c.observaciones or "",
         ]
         estilo_fila(ws, fila, vals, par=(idx % 2 == 0))
@@ -209,7 +210,7 @@ def reporte_cartera(db: Session, empresa_id: int = None, zona_ids: list[int] | N
 
     ws.append([safe_excel_value(empresa)])
     ws.append(["ESTADO DE CARTERA"])
-    ws.append([f"Generado: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')} | Saldos vigentes por cliente"])
+    ws.append([f"Generado: {ahora_local().strftime('%d/%m/%Y %H:%M')} | Saldos vigentes por cliente"])
     ws.append([])
 
     estados_activos = ["Activo", "activo", "Atrasado", "atrasado", "Mora", "mora"]

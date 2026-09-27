@@ -22,7 +22,8 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from app.utils.audit import log_action
-from app.database import get_db, Cliente, NotaCliente, Cobro, NoPago, Prestamo, Usuario, Zona
+from app.database import (a_hora_local, ahora_utc, get_db, Cliente, NotaCliente,
+                          Cobro, NoPago, Prestamo, Usuario, Zona)
 from app.utils.almacen_imagenes import borrar_imagen, guardar_imagen
 from app.utils.interfaz import redirigir_a_vista_simple
 from app.utils.money import money
@@ -624,7 +625,7 @@ async def detalle_cliente(
         "id": n.id,
         "texto": n.texto,
         "escrita_por": n.escrita_por or "",
-        "creado": n.creado.strftime("%d/%m/%Y %H:%M") if n.creado else "",
+        "creado": a_hora_local(n.creado).strftime("%d/%m/%Y %H:%M") if n.creado else "",
         "atendida": bool(n.atendida),
         "atendida_por": n.atendida_por or "",
     } for n in (
@@ -708,7 +709,7 @@ async def crear_nota(
             "id": nota.id,
             "texto": nota.texto,
             "escrita_por": nota.escrita_por,
-            "creado": nota.creado.strftime("%d/%m/%Y %H:%M") if nota.creado else "",
+            "creado": a_hora_local(nota.creado).strftime("%d/%m/%Y %H:%M") if nota.creado else "",
             "atendida": False,
         },
     })
@@ -739,7 +740,7 @@ async def notas_pendientes(request: Request, db: Session = Depends(get_db)):
             "id": n.id,
             "texto": n.texto,
             "escrita_por": n.escrita_por or "",
-            "creado": n.creado.strftime("%d/%m/%Y %H:%M") if n.creado else "",
+            "creado": a_hora_local(n.creado).strftime("%d/%m/%Y %H:%M") if n.creado else "",
             "cliente_id": c.id,
             "cliente": c.nombre,
             "cedula": c.cedula,
@@ -768,7 +769,7 @@ async def atender_nota(request: Request, nota_id: int, db: Session = Depends(get
     nota.atendida = True
     nota.atendida_por_id = user.id
     nota.atendida_por = user.nombre or user.username
-    nota.atendida_en = datetime.datetime.now()
+    nota.atendida_en = ahora_utc()
     db.commit()
     log_action(db, user, "nota_cliente_atender", "clientes", f"nota_id={nota_id}")
     db.commit()

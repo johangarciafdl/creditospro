@@ -68,11 +68,14 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
             Prestamo.estado.in_(["Activo", "activo", "Atrasado", "atrasado"]),
         )
     )
+    # Contar las vencidas era el 84 % del tiempo de esta consulta (40 de 48 ms,
+    # medido en produccion). La cuota ya lleva empresa_id: el JOIN con
+    # prestamos solo hace falta para filtrar por zona, que es el caso de un
+    # cobrador. Para el admin se cuenta directamente sobre el indice
+    # (empresa_id, estado, ...), sin tocar la tabla de prestamos.
     q_vencidas = (
         select(func.count(Cuota.id))
-        .select_from(Cuota)
-        .join(Prestamo, Cuota.prestamo_id == Prestamo.id)
-        .where(Cuota.empresa_id == eid, Prestamo.empresa_id == eid, Cuota.estado == "Vencida")
+        .where(Cuota.empresa_id == eid, Cuota.estado == "Vencida")
     )
     q_cobrado_hoy = (
         select(func.coalesce(func.sum(Cobro.valor_cobrado), 0))
@@ -83,7 +86,11 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         .where(Cobro.empresa_id == eid, Cobro.fecha >= inicio_mes)
     )
     if zone_filter is not None:
-        q_vencidas = q_vencidas.where(Prestamo.zona_id.in_(zone_filter))
+        # Aqui si hace falta el prestamo: la zona es suya, no de la cuota.
+        q_vencidas = (q_vencidas
+                      .join(Prestamo, Cuota.prestamo_id == Prestamo.id)
+                      .where(Prestamo.empresa_id == eid,
+                             Prestamo.zona_id.in_(zone_filter)))
         q_cobrado_hoy = q_cobrado_hoy.where(Cobro.zona_id.in_(zone_filter))
         q_cobrado_mes = q_cobrado_mes.where(Cobro.zona_id.in_(zone_filter))
 

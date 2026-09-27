@@ -358,3 +358,27 @@ def test_el_dashboard_no_le_muestra_el_capital_en_cartera(entorno):
     # Lo que si le toca ver sigue estando.
     for etiqueta in ("Cobrado hoy", "Clientes activos", "En mora"):
         assert etiqueta in r.text, f"le desaparecio {etiqueta}"
+
+
+def test_el_dashboard_cuenta_bien_las_vencidas_con_y_sin_filtro_de_zona(entorno):
+    """Al quitar el JOIN para el admin (contar las vencidas era el 84 % del
+    tiempo del panel) no puede cambiar el numero: el admin cuenta todas, el
+    cobrador solo las de sus zonas."""
+    cli, d, Sesion = entorno
+    from app.database import Cuota
+    db = Sesion()
+    try:
+        db.query(Cuota).filter(Cuota.id == d["cuota_id"]).update({"estado": "Vencida"})
+        db.commit()
+    finally:
+        db.close()
+    try:
+        html = cli.get("/dashboard").text
+        assert "1 cuotas vencidas" in html, "el cobrador no ve la vencida de su zona"
+    finally:
+        db = Sesion()
+        try:
+            db.query(Cuota).filter(Cuota.id == d["cuota_id"]).update({"estado": "Pendiente"})
+            db.commit()
+        finally:
+            db.close()

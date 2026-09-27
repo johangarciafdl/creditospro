@@ -19,7 +19,7 @@ from app.templates import templates
 from sqlalchemy.orm import Session
 
 from app.database import (
-    get_db, get_db_system, Usuario, Zona, Empresa, ConfiguracionApp, RutaCobro,
+    ahora_utc, get_db, get_db_system, Usuario, Zona, Empresa, ConfiguracionApp, RutaCobro,
     SessionLocal, set_tenant_context,
 )
 from app.repositories.usuario_repository import UsuarioRepository
@@ -243,7 +243,7 @@ async def login_submit(
         request.session["two_factor_pending_at"] = datetime.datetime.now(datetime.timezone.utc).timestamp()
         return RedirectResponse(url="/auth/2fa", status_code=303)
 
-    user.ultimo_login = datetime.datetime.now()
+    user.ultimo_login = ahora_utc()
     db.commit()
 
     token = create_access_token({
@@ -328,7 +328,7 @@ async def two_factor_submit(
 
     request.session.pop("two_factor_pending_user_id", None)
     request.session.pop("two_factor_pending_at", None)
-    user.ultimo_login = datetime.datetime.now()
+    user.ultimo_login = ahora_utc()
     db.commit()
     token = create_access_token({
         "sub": str(user.id), "rol": user.rol, "nombre": user.nombre, "empresa_id": user.empresa_id,

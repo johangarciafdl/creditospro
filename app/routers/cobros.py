@@ -11,7 +11,7 @@ from pathlib import Path
 
 from app.database import (
     get_db, Cobro, Cuota, NoPago, Prestamo, Cliente, Zona, IS_SQLITE,
-    dia_semana_local, hoy_local,
+    a_hora_local, ahora_utc, dia_semana_local, hoy_local,
 )
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import get_estado_prestamo
@@ -163,7 +163,7 @@ async def buscar_cobros(request: Request, q: str="", zona_id: int=None, fecha: s
         "valor": float(co.valor_cobrado),
         "metodo": co.metodo_pago or "Efectivo",
         "observaciones": co.observaciones or "",
-        "hora": co.hora.strftime("%H:%M") if co.hora else "—",
+        "hora": a_hora_local(co.hora).strftime("%H:%M") if co.hora else "—",
         "cuota_num": cu.numero,
         "cobrador": co.cobrador or "—",
     } for co, cl, cu in rows], "total": len(rows)})
@@ -399,7 +399,7 @@ async def registrar_cobro(
             zona_id=prestamo.zona_id,
             valor_cobrado=valor_cobrado_dec,
             fecha=fecha_pago,
-            hora=datetime.datetime.now(),
+            hora=ahora_utc(),
             cobrador=user.nombre or user.username,
             metodo_pago=metodo_pago,
             observaciones=observaciones or None,
@@ -577,7 +577,7 @@ async def registrar_cobro_cliente_rapido(
             zona_id=prestamo.zona_id,
             valor_cobrado=valor_cobrado,
             fecha=hoy,
-            hora=datetime.datetime.now(),
+            hora=ahora_utc(),
             cobrador=user.nombre or user.username,
             metodo_pago=metodo_pago,
             observaciones="Cobro rapido desde lista de clientes",

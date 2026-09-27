@@ -6,6 +6,7 @@ from app.templates import templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db, Empresa, NotificacionWP, ConfiguracionApp, Cliente, Cuota, Prestamo, hoy_local
+from app.database import a_hora_local
 from app.routers.auth import get_current_user
 from app.services.whatsapp_service import ejecutar_recordatorios, enviar_notificacion, get_config_by_empresa
 from app.utils.permisos_rol import puede_ver_whatsapp
@@ -55,8 +56,8 @@ async def panel_whatsapp(request: Request, db: Session = Depends(get_db)):
             "id": n.id, "cliente": c.nombre if c else "—",
             "telefono": n.telefono, "tipo": n.tipo, "estado": n.estado,
             "mensaje": n.mensaje[:80] + "..." if len(n.mensaje) > 80 else n.mensaje,
-            "enviado": n.enviado_at.strftime("%d/%m %H:%M") if n.enviado_at else "—",
-            "creado": n.creado.strftime("%d/%m %H:%M") if n.creado else "—",
+            "enviado": a_hora_local(n.enviado_at).strftime("%d/%m %H:%M") if n.enviado_at else "—",
+            "creado": a_hora_local(n.creado).strftime("%d/%m %H:%M") if n.creado else "—",
         })
 
     proximas_q = db.query(Cuota, Prestamo, Cliente).join(

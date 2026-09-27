@@ -18,7 +18,7 @@ from sqlalchemy import func
 
 from app.database import (
     get_db_system, AuditLog, Cobro, Empresa, SesionJWT, Usuario, ConfiguracionApp, Zona,
-    hoy_local,
+    ahora_utc, hoy_local,
 )
 from app.routers.auth import get_current_user, SESSION_COOKIE, IS_PRODUCTION
 from app.templates import templates
@@ -508,7 +508,9 @@ async def panel_monitoreo(request: Request, db: Session = Depends(get_db_system)
         return RedirectResponse(url=destino, status_code=302)
 
     hoy = hoy_local()
-    hace_24h = datetime.datetime.now() - datetime.timedelta(hours=24)
+    # En UTC, como lo guardado: con la hora de la maquina, la ventana de
+    # "ultimas 24 horas" se corria cinco horas fuera del servidor.
+    hace_24h = ahora_utc() - datetime.timedelta(hours=24)
 
     # Actividad real del negocio, leida de la base de datos: estas cifras si
     # son exactas y sobreviven a un reinicio, a diferencia de las metricas

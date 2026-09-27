@@ -6,7 +6,7 @@ import time
 import logging
 
 from app.database import (SessionLocal, Cuota, Empresa, IS_SQLITE, ahora_local,
-                          hoy_local, inicio_dia_negocio)
+                          ahora_utc, hoy_local, inicio_dia_negocio)
 from sqlalchemy import and_, text
 
 logger = logging.getLogger(__name__)
@@ -220,7 +220,7 @@ def loop_scheduler():
         _scheduler_heartbeat = time.time()
 
     while True:
-        ahora = datetime.datetime.now()
+        ahora = ahora_utc()   # solo mide intervalos; UTC por coherencia
 
         with _scheduler_lock:
             _scheduler_heartbeat = time.time()

@@ -9,7 +9,7 @@ import datetime
 import logging
 import httpx
 from sqlalchemy.orm import Session
-from app.database import Empresa, NotificacionWP, ConfiguracionApp, Cuota, Zona
+from app.database import ahora_utc, Empresa, NotificacionWP, ConfiguracionApp, Cuota, Zona
 from app.services.prestamo_service import get_cuotas_proximas_vencer, get_cuotas_vencidas_hoy
 from app.utils.plan_limits import tiene_funcion
 
@@ -133,7 +133,7 @@ async def enviar_a_zona(
     try:
         ok = await _ejecutar_envio(_resolver_creds(zona, config), tel_fmt, mensaje)
         notif.estado = "Enviado" if ok else "Error"
-        notif.enviado_at = datetime.datetime.now()
+        notif.enviado_at = ahora_utc()
         db.commit()
     except Exception:
         logger.exception("Error enviando WhatsApp a %s (cliente=%s, cuota=%s)",
@@ -204,7 +204,7 @@ async def _enviar_lote(db: Session, empresa_id: int, items: list[dict], tipo: st
     exitosos = []
     for p, ok in resultados:
         p["notif"].estado = "Enviado" if ok else "Error"
-        p["notif"].enviado_at = datetime.datetime.now()
+        p["notif"].enviado_at = ahora_utc()
         if ok:
             enviados += 1
             exitosos.append(p["item"])

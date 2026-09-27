@@ -240,19 +240,50 @@ def ahora_local() -> datetime.datetime:
         return datetime.datetime.now()
 
 
+def ahora_utc() -> datetime.datetime:
+    """El instante actual en UTC, sin zona adjunta: asi se guarda TODO.
+
+    Las columnas de hora son `timestamp` sin zona. La base (Postgres en
+    Supabase) rellena las que usan func.now() en UTC. Las que se escribian
+    desde Python con datetime.now() tomaban la hora de la maquina: UTC en el
+    servidor, pero la de Colombia en el portatil de quien desarrolla. Una
+    misma columna quedaba con dos escalas segun donde corriera el codigo, y
+    ninguna conversion al mostrarla podia acertar con las dos. Con esto, todo
+    lo que se guarda esta en la misma escala que lo que pone la base.
+    """
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
+def a_hora_local(momento: datetime.datetime | None) -> datetime.datetime | None:
+    """Una marca de tiempo guardada (UTC, sin zona) en la hora de Colombia.
+
+    Sin esto las pantallas enseñaban la hora UTC tal cual: un cobro hecho a
+    las 8:36 de la noche en Medellin salia registrado a la 1:36, del dia
+    siguiente. Toda hora que se le enseña a una persona pasa por aqui.
+    """
+    if momento is None:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+
+        return (momento.replace(tzinfo=datetime.timezone.utc)
+                .astimezone(ZoneInfo(TZ_NEGOCIO)).replace(tzinfo=None))
+    except Exception:
+        return momento - datetime.timedelta(hours=5)
+
+
 def dia_semana_local() -> int:
     """0=lunes .. 6=domingo, en la hora local del negocio."""
     return hoy_local().weekday()
 
 
 def inicio_dia_negocio() -> datetime.datetime:
-    """Medianoche del dia de negocio, en la hora del servidor.
+    """Medianoche del dia de negocio, en UTC y sin zona.
 
-    Las marcas de tiempo (AuditLog.created_at, Cobro.hora) se guardan con
-    datetime.now(), es decir en la hora del servidor. Para preguntar "¿paso
-    esto hoy?" hay que comparar contra la medianoche local del negocio
-    traducida a esa misma escala; usar la medianoche del servidor corre el
-    corte del dia cinco horas y parte la jornada en dos.
+    Las marcas de tiempo se guardan en UTC (ver ahora_utc). Para preguntar
+    "¿paso esto hoy?" hay que comparar contra la medianoche de Colombia
+    traducida a esa misma escala; usar la medianoche UTC corre el corte del
+    dia cinco horas y parte la jornada en dos.
     """
     try:
         from zoneinfo import ZoneInfo
@@ -260,7 +291,9 @@ def inicio_dia_negocio() -> datetime.datetime:
         medianoche = datetime.datetime.combine(
             hoy_local(), datetime.time.min, tzinfo=ZoneInfo(TZ_NEGOCIO)
         )
-        return medianoche.astimezone().replace(tzinfo=None)
+        # A UTC explicito, no a la zona de la maquina: en el portatil de quien
+        # desarrolla esa zona es la de Colombia, y el corte salia 5 horas mal.
+        return medianoche.astimezone(datetime.timezone.utc).replace(tzinfo=None)
     except Exception:
         return datetime.datetime.combine(datetime.date.today(), datetime.time.min)
 

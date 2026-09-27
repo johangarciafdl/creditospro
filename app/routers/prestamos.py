@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 from app.database import (get_db, Prestamo, Cliente, Cuota, NoPago, Usuario,
-                          Zona, hoy_local)
+                          Zona, ahora_utc, hoy_local)
 from app.utils.permisos_rol import es_admin, puede_gestionar_prestamos
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import calcular_cuotas
@@ -314,7 +314,10 @@ async def crear_prestamo(
     # un prestamo nuevo -- es la misma peticion repetida. Se devuelve el que ya
     # existe en vez de crear otro. El bloqueo del boton en el frontend es la
     # primera linea; esto cubre a cualquier cliente que no sea el navegador.
-    hace_poco = datetime.datetime.now() - datetime.timedelta(seconds=VENTANA_DEDUP_SEGUNDOS)
+    # En UTC, como Prestamo.creado. Con la hora de la maquina, en un portatil
+    # de Colombia la ventana de unos segundos se convertia en cinco horas y
+    # cualquier prestamo igual de esa tarde se tomaba por un doble clic.
+    hace_poco = ahora_utc() - datetime.timedelta(seconds=VENTANA_DEDUP_SEGUNDOS)
     duplicado = db.query(Prestamo).filter(
         Prestamo.empresa_id == user.empresa_id,
         Prestamo.cliente_id == cliente_id_int,

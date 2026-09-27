@@ -67,7 +67,7 @@
             {% else %}<span class="badge badge-gray">Cobrador</span>{% endif %}
           </td>
           <td class="fs-12 text-2">{% if u.zonas_asignadas %}{% for z in u.zonas_asignadas %}{{ z.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}{% elif u.zona_id %}{% for z in zonas %}{% if z.id == u.zona_id %}{{ z.nombre }}{% endif %}{% endfor %}{% else %}-{% endif %}</td>
-          <td class="fs-12 text-2">{{ u.ultimo_login.strftime('%d/%m/%y %H:%M') if u.ultimo_login else '—' }}</td>
+          <td class="fs-12 text-2">{{ (u.ultimo_login | hora_local).strftime('%d/%m/%y %H:%M') if u.ultimo_login else '—' }}</td>
           <td>{% if u.activo %}<span class="badge badge-green">Activo</span>{% else %}<span class="badge badge-gray">Inactivo</span>{% endif %}</td>
           <td>
             <button class="btn btn-ghost btn-xs" data-uid="{{ u.id }}" data-username="{{ u.username }}" data-nombre="{{ u.nombre }}" data-rol="{{ u.rol }}" data-zonas="{% if u.zonas_asignadas %}{% for z in u.zonas_asignadas %}{{ z.id }}{% if not loop.last %},{% endif %}{% endfor %}{% elif u.zona_id %}{{ u.zona_id }}{% endif %}" data-activo="{{ 'true' if u.activo else 'false' }}" onclick="editarUsuarioBtn(this)">Editar</button>
