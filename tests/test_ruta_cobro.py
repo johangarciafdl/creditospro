@@ -70,9 +70,37 @@ def test_con_ruta_solo_ve_las_zonas_del_dia(escenario, monkeypatch):
 def test_dia_sin_zonas_en_la_ruta_no_habilita_ninguna(escenario, monkeypatch):
     db, cobrador, _ = escenario
     _ruta(db, 10, 0, [1])
-    monkeypatch.setattr(zp, "dia_semana_local", lambda: 6)   # domingo
+    monkeypatch.setattr(zp, "dia_semana_local", lambda: 3)   # jueves
     cobrador._ruta_hoy_cache = None
     assert zp.get_allowed_zone_ids(db, cobrador) == []
+
+
+@pytest.mark.parametrize("dia", [5, 6])      # sabado y domingo
+def test_el_fin_de_semana_ve_todas_sus_zonas_aunque_tenga_ruta(escenario, monkeypatch, dia):
+    """El fin de semana se recoge lo pendiente de cualquiera de sus zonas."""
+    db, cobrador, _ = escenario
+    _ruta(db, 10, 0, [1])
+    _ruta(db, 10, dia, [2])     # aunque hubiera algo guardado ese dia
+    monkeypatch.setattr(zp, "dia_semana_local", lambda: dia)
+    cobrador._ruta_hoy_cache = None
+    assert sorted(zp.get_allowed_zone_ids(db, cobrador)) == [1, 2, 3]
+
+
+def test_el_fin_de_semana_tampoco_amplia_permisos(escenario, monkeypatch):
+    """"Todas" son las suyas: una zona que no tiene asignada sigue cerrada."""
+    db, cobrador, _ = escenario
+    _ruta(db, 10, 0, [1])
+    monkeypatch.setattr(zp, "dia_semana_local", lambda: 6)
+    cobrador._ruta_hoy_cache = None
+    assert 4 not in zp.get_allowed_zone_ids(db, cobrador)
+
+
+def test_de_lunes_a_viernes_sigue_mandando_la_ruta(escenario, monkeypatch):
+    db, cobrador, _ = escenario
+    _ruta(db, 10, 4, [3])        # viernes: Niquia
+    monkeypatch.setattr(zp, "dia_semana_local", lambda: 4)
+    cobrador._ruta_hoy_cache = None
+    assert zp.get_allowed_zone_ids(db, cobrador) == [3]
 
 
 def test_la_ruta_nunca_amplia_permisos(escenario, monkeypatch):

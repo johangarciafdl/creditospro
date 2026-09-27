@@ -10,6 +10,15 @@ MAX_ZONAS_POR_DIA = 3
 
 DIAS_SEMANA = ("Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo")
 
+# Sabado y domingo el cobrador ve todas sus zonas asignadas, tenga o no ruta
+# semanal: el fin de semana se recoge lo que quedo pendiente en cualquiera de
+# ellas. La ruta por dias solo rige de lunes a viernes.
+DIAS_CON_TODAS_LAS_ZONAS = frozenset({5, 6})
+
+
+def es_dia_con_todas_las_zonas(dia: int | None = None) -> bool:
+    return (dia_semana_local() if dia is None else dia) in DIAS_CON_TODAS_LAS_ZONAS
+
 
 def zonas_asignadas_ids(user: Usuario) -> list[int]:
     """Todas las zonas del usuario, sin mirar el dia."""
@@ -36,8 +45,9 @@ def get_allowed_zone_ids(db: Session, user: Usuario) -> list[int] | None:
     """Zonas que este usuario puede ver y cobrar AHORA.
 
     Un administrador las ve todas (None). Un cobrador ve sus zonas asignadas,
-    salvo que tenga una ruta semanal configurada: entonces solo las zonas que
-    le tocan hoy. Si tiene ruta pero hoy no le toca ninguna, no ve ninguna.
+    salvo que tenga una ruta semanal configurada: entonces, de lunes a
+    viernes, solo las zonas que le tocan hoy (si hoy no le toca ninguna, no ve
+    ninguna). Sabado y domingo ve todas sus zonas asignadas.
 
     Sin ruta configurada no se restringe nada, para que activar esta funcion
     no deje de golpe sin trabajo a los cobradores que ya existian.
@@ -59,7 +69,7 @@ def get_allowed_zone_ids(db: Session, user: Usuario) -> list[int] | None:
             pass
     ruta, hoy = cache
 
-    if not ruta:
+    if not ruta or hoy in DIAS_CON_TODAS_LAS_ZONAS:
         return asignadas
 
     permitidas = ruta.get(hoy, [])

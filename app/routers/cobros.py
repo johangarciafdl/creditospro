@@ -25,7 +25,7 @@ from app.utils.validators import (
     filtro_busqueda,
 )
 from app.utils.zone_permissions import (
-    DIAS_SEMANA, get_allowed_zone_ids, require_zone_access, ruta_semanal,
+    DIAS_SEMANA, es_dia_con_todas_las_zonas, get_allowed_zone_ids, require_zone_access, ruta_semanal,
     visible_zonas_query,
 )
 
@@ -128,7 +128,8 @@ async def listar_cobros(request: Request, db: Session = Depends(get_db)):
         "cuotas_vencidas_nav": vencidas,
         "zonas": zonas, "total_hoy": total_hoy,
         "num_hoy": num_hoy, "vencidas": vencidas,
-        "ruta_activa": bool(ruta),
+        # El fin de semana ve todas sus zonas: no hay aviso de "hoy te toca".
+        "ruta_activa": bool(ruta) and not es_dia_con_todas_las_zonas(),
         "dia_hoy": DIAS_SEMANA[dia_semana_local()],
     })
 

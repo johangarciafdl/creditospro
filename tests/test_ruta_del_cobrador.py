@@ -485,10 +485,14 @@ def test_la_vista_solo_ofrece_las_zonas_que_le_tocan_hoy(entorno):
     podria configurar la semana entera y el cobrador seguir viendolo todo.
     """
     cobra, _, d, Sesion = entorno
-    from app.database import RutaCobro, dia_semana_local
+    from app.database import RutaCobro
+    from app.utils import zone_permissions as zp
 
-    hoy = dia_semana_local()
-    manana = (hoy + 1) % 7
+    # Un miercoles: el fin de semana ve todas sus zonas y aqui no habria
+    # nada que probar (y la prueba fallaria segun el dia en que se corra).
+    hoy, manana = 2, 3
+    original = zp.dia_semana_local
+    zp.dia_semana_local = lambda: hoy
     db = Sesion()
     try:
         db.query(RutaCobro).delete()
@@ -522,7 +526,14 @@ def test_la_vista_solo_ofrece_las_zonas_que_le_tocan_hoy(entorno):
         html = cobra.get("/ruta").text
         assert 'id="sel-zona"' in html and "Centro" in html, \
             "le toca la zona hoy y no se la ofrece"
+
+        # Y el fin de semana ve todas sus zonas aunque la ruta no se lo diga.
+        zp.dia_semana_local = lambda: 6
+        r = cobra.get("/ruta/zona", params={"zona_id": d["zona_a"],
+                                            "fecha": d["hoy"].isoformat()})
+        assert r.json()["clientes"], "el domingo no le abrio su zona"
     finally:
+        zp.dia_semana_local = original
         db = Sesion()
         try:
             db.query(RutaCobro).delete()

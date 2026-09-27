@@ -296,7 +296,14 @@ async function abrirRuta(btn) {
     document.getElementById('btn-ruta').disabled = sinZonas;
     if (sinZonas) { cont.innerHTML = ''; return; }
 
+    const libres = d.dias_con_todas || [];
     cont.innerHTML = d.dias.map((nombreDia, dia) => {
+      // Sabado y domingo ve todas sus zonas: no hay nada que elegir.
+      if (libres.includes(dia)) return `
+        <div class="ruta-dia">
+          <div class="ruta-dia-nombre">${esc(nombreDia)}</div>
+          <div class="fs-12 text-3">Ve todas sus zonas asignadas</div>
+        </div>`;
       const marcadas = d.ruta[String(dia)] || [];
       const casillas = d.zonas.map(z => `
         <label class="ruta-zona">
@@ -312,7 +319,7 @@ async function abrirRuta(btn) {
           <div class="ruta-zonas">${casillas}</div>
         </div>`;
     }).join('');
-    for (let dia = 0; dia < 7; dia++) validarDia(dia);
+    for (let dia = 0; dia < 7; dia++) if (!libres.includes(dia)) validarDia(dia);
   } catch (e) {
     console.error('[Ruta] Error cargando:', e);
     toast('No hay conexion. Intenta de nuevo.', 'error');

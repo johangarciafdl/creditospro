@@ -57,7 +57,8 @@ from app.utils.interfaz import (
     normalizar as normalizar_interfaz,
 )
 from app.utils.zone_permissions import (
-    DIAS_SEMANA, MAX_ZONAS_POR_DIA, ruta_semanal, zonas_asignadas_ids,
+    DIAS_CON_TODAS_LAS_ZONAS, DIAS_SEMANA, MAX_ZONAS_POR_DIA, ruta_semanal,
+    zonas_asignadas_ids,
 )
 from app.utils.validators import validar_nombre, validar_username
 
@@ -725,6 +726,8 @@ async def ver_ruta(request: Request, user_id: int, db: Session = Depends(get_db)
         "max_por_dia": MAX_ZONAS_POR_DIA,
         "zonas": [{"id": z.id, "nombre": z.nombre} for z in zonas],
         "ruta": {str(d): ruta.get(d, []) for d in range(7)},
+        # Dias en que el cobrador ve todas sus zonas: no se configuran.
+        "dias_con_todas": sorted(DIAS_CON_TODAS_LAS_ZONAS),
         "configurada": bool(ruta),
     })
 
@@ -797,7 +800,9 @@ async def guardar_ruta(
                 {"error": f"{DIAS_SEMANA[dia]}: maximo {MAX_ZONAS_POR_DIA} zonas por dia"},
                 status_code=400,
             )
-        if ids:
+        # Sabado y domingo no se guardan: ese dia ve todas sus zonas igual,
+        # y una asignacion guardada ahi solo confundiria al leerla.
+        if ids and dia not in DIAS_CON_TODAS_LAS_ZONAS:
             limpio[dia] = ids
 
     db.query(RutaCobro).filter(RutaCobro.usuario_id == objetivo.id).delete(synchronize_session=False)
