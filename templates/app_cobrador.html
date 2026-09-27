@@ -37,11 +37,16 @@
       <button class="btn btn-sm" onclick="verTodas()" title="Todas las zonas de hoy">Ver todos</button>
       {% endif %}
     </div>
+    {#- El dia solo lo elige el administrador. El cobrador recorre la ruta de
+        hoy, y un semaforo calculado para otro dia le pintaria de rojo a
+        quien hoy esta al corriente. -#}
     <div style="display:flex;gap:6px;">
+      {% if es_admin %}
       <div style="flex:0 0 140px;">
         <label for="sel-fecha" style="display:block;font-size:11px;color:var(--t3);margin-bottom:4px;">Dia</label>
         <input type="date" id="sel-fecha" value="{{ hoy }}" max="{{ hoy }}" onchange="recargar()">
       </div>
+      {% endif %}
       <div style="flex:1;">
         <label for="inp-buscar" style="display:block;font-size:11px;color:var(--t3);margin-bottom:4px;">Buscar</label>
         <input type="text" id="inp-buscar" placeholder="Nombre o cedula" oninput="buscarDebounce()">
@@ -52,38 +57,23 @@
 </div>
 
 <!-- RESUMEN DE LA ZONA -->
-<div id="resumen" style="display:none;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-  {#- El total por cobrar de la zona solo lo ve el administrador: al cobrador
-      el servidor ni se lo manda. Lo que el necesita -- cuanto le debe cada
-      cliente -- sigue en cada fila de la lista. -#}
-  <div class="stat-card gold card-anim" id="tarjeta-por-cobrar" style="display:none;">
-    <div class="stat-label">Por cobrar</div>
-    <div class="stat-val gold" style="font-size:19px;" id="r-esperado">$0</div>
-    <div class="fs-11 text-3" id="r-por-cobrar">0 clientes</div>
-  </div>
-  <div class="stat-card green card-anim">
-    <div class="stat-label">Cobrado</div>
-    <div class="stat-val" style="font-size:19px;color:var(--green);" id="r-cobrado">$0</div>
-    <div class="fs-11 text-3" id="r-cobrados">0 clientes</div>
-  </div>
-  <div class="stat-card red card-anim">
-    <div class="stat-label">Vencidos</div>
-    <div class="stat-val red" style="font-size:19px;" id="r-vencidos">0</div>
-    <div class="fs-11 text-3">clientes atrasados</div>
-  </div>
-  <div class="stat-card blue card-anim">
-    <div class="stat-label">Clientes de la zona</div>
-    <div class="stat-val" style="font-size:19px;color:var(--blue);" id="r-clientes">0</div>
-    <div class="fs-11 text-3" id="r-no-pagos">&nbsp;</div>
-  </div>
+{#- Una linea y no tres tarjetas: las tarjetas empujaban la lista -- que es
+    lo que el cobrador vino a ver -- media pantalla hacia abajo. El total por
+    cobrar solo lo ve el administrador; al cobrador el servidor ni se lo
+    manda. -#}
+<div id="resumen" class="resumen-linea" style="display:none;">
+  <span class="rl-dato"><b id="r-cobrado" style="color:var(--green);">$0</b> cobrado</span>
+  <span class="rl-dato"><b id="r-vencidos" style="color:var(--red);">0</b> deben</span>
+  <span class="rl-dato"><b id="r-clientes">0</b> clientes</span>
+  <span class="rl-dato" id="tarjeta-por-cobrar" style="display:none;">
+    <b id="r-esperado" style="color:var(--gold);">$0</b> por cobrar</span>
 </div>
 
-<!-- PESTANAS -->
-<div id="pestanas" style="display:none;background:var(--bg-2);border-radius:var(--r-sm);padding:3px;gap:2px;margin-bottom:10px;">
-  <button class="tab-btn active" id="tab-cobrar" onclick="verPestana('cobrar')">Por cobrar <span id="n-cobrar">0</span></button>
-  <button class="tab-btn" id="tab-todos" onclick="verPestana('todos')">Todos <span id="n-todos">0</span></button>
-  <button class="tab-btn" id="tab-cobrados" onclick="verPestana('cobrados')">Cobrados <span id="n-cobrados">0</span></button>
-</div>
+{#- Habia tres pestañas -- Por cobrar, Todos, Cobrados -- sobre el mismo
+    conjunto de clientes. Se quitaron: al elegir la zona salen todos, en el
+    orden en que se recorre la calle, y el color de cada uno dice en que
+    estado esta. Una pestaña que hay que acertar antes de ver nada es una
+    decision mas que tomar con el cliente delante. -#}
 
 <!-- ESTADO / LISTA -->
 <div id="estado" style="text-align:center;padding:40px 0;color:var(--t3);">
@@ -232,9 +222,12 @@
 // esta. Y en un celular con mala senal, cargar una lista que nadie ha pedido
 // es la peticion que se queda colgada.
 let _zona = null, _elegida = false, _deb = null;
-let _filas = [], _pestana = 'cobrar';
+let _filas = [];
 
-function _dia(){ return document.getElementById('sel-fecha').value || hoyLocal(); }
+function _dia(){
+  const f = document.getElementById('sel-fecha');   // solo lo tiene el admin
+  return (f && f.value) || hoyLocal();
+}
 
 function _estado(txt, icono){
   document.getElementById('estado').style.display = '';
@@ -246,7 +239,6 @@ function _vaciar(){
   _filas = [];
   document.getElementById('lista-ruta').innerHTML = '';
   document.getElementById('resumen').style.display = 'none';
-  document.getElementById('pestanas').style.display = 'none';
   document.getElementById('recortada').style.display = 'none';
 }
 
@@ -288,7 +280,7 @@ async function cargar(){
     pintarResumen(d.resumen || {});
     document.getElementById('recortada').style.display =
       (d.resumen && d.resumen.recortada) ? 'block' : 'none';
-    verPestana(_pestana);
+    pintar(_filas);
   } catch(e) {
     console.error('[Ruta] No se pudo cargar la zona:', e);
     _estado('No hay conexion. Intenta de nuevo.', '📡');
@@ -296,8 +288,7 @@ async function cargar(){
 }
 
 function pintarResumen(r){
-  document.getElementById('resumen').style.display = 'grid';
-  document.getElementById('pestanas').style.display = 'flex';
+  document.getElementById('resumen').style.display = 'flex';
   // Si el servidor no manda el total, es que a quien mira no le corresponde.
   const tarjeta = document.getElementById('tarjeta-por-cobrar');
   if (r.esperado === null || r.esperado === undefined) {
@@ -305,95 +296,61 @@ function pintarResumen(r){
   } else {
     tarjeta.style.display = '';
     document.getElementById('r-esperado').textContent = cop(r.esperado);
-    document.getElementById('r-por-cobrar').textContent = (r.por_cobrar || 0) + ' clientes';
   }
   document.getElementById('r-cobrado').textContent = cop(r.cobrado || 0);
-  document.getElementById('r-cobrados').textContent = (r.cobrados || 0) + ' clientes';
   document.getElementById('r-vencidos').textContent = r.vencidos || 0;
   document.getElementById('r-clientes').textContent = r.clientes || 0;
-  document.getElementById('r-no-pagos').innerHTML =
-    (r.no_pagos || 0) > 0 ? esc(r.no_pagos + ' marcados sin pago') : '&nbsp;';
-
-  document.getElementById('n-cobrar').textContent = _filas.filter(esPorCobrar).length;
-  document.getElementById('n-todos').textContent = _filas.length;
-  document.getElementById('n-cobrados').textContent = _filas.filter(f => f.cobrado_hoy > 0).length;
-}
-
-function esPorCobrar(f){ return f.semaforo === 'rojo' || f.semaforo === 'amarillo'; }
-
-function verPestana(cual){
-  _pestana = cual;
-  ['cobrar','todos','cobrados'].forEach(k => {
-    document.getElementById('tab-'+k).classList.toggle('active', k === cual);
-  });
-  let filas = _filas;
-  if (cual === 'cobrar')   filas = _filas.filter(esPorCobrar);
-  if (cual === 'cobrados') filas = _filas.filter(f => f.cobrado_hoy > 0);
-  pintar(filas, cual);
 }
 
 // El texto del semaforo va SIEMPRE junto al color: un cobrador con la
 // pantalla al sol, o que no distingue el rojo del verde, tiene que poder
 // leer en que estado esta el cliente.
 const LUCES = {
-  rojo:     {clase:'luz-roja',     texto:'Vencida'},
-  amarillo: {clase:'luz-amarilla', texto:'Vence hoy'},
+  rojo:     {clase:'luz-roja',     texto:'Debe'},
+  amarillo: {clase:'luz-amarilla', texto:'Hoy'},
   verde:    {clase:'luz-verde',    texto:'Al dia'},
-  gris:     {clase:'luz-gris',     texto:'Sin deuda'},
 };
 
-function pintar(filas, cual){
+function pintar(filas){
   const lista = document.getElementById('lista-ruta');
   if (!filas.length) {
     lista.innerHTML = '';
-    const vacios = {
-      cobrar:   ['✅', 'No queda nada por cobrar en esta zona'],
-      cobrados: ['💸', 'Todavia no has cobrado nada este dia'],
-      todos:    ['👥', 'La zona no tiene clientes activos'],
-    };
-    _estado(vacios[cual][1], vacios[cual][0]);
+    _estado('La zona no tiene clientes activos', '👥');
     return;
   }
   document.getElementById('estado').style.display = 'none';
 
   lista.innerHTML = filas.map(f => {
-    const luz = LUCES[f.semaforo] || LUCES.gris;
+    const luz = LUCES[f.semaforo] || LUCES.verde;
     const p = f.pendiente;
     const wa = String(f.whatsapp || '').replace(/\D/g,'').slice(0,20);
-    const tel = String(f.telefono || '').replace(/[^\d+\-\s()]/g,'').slice(0,20);
     const inicial = esc((f.nombre || '?').trim().slice(0,2).toUpperCase());
-    const detalle = p
-      ? `Cuota ${Number(p.cuota_num)||0}/${Number(p.total_cuotas)||0} · ${esc(p.vencimiento)}`
-      : 'Sin cuotas pendientes';
-    const atraso = (f.semaforo === 'rojo' && p && Number(p.dias) > 0)
-      ? ` · ${Number(p.dias)}d` : '';
+    // La fila entera abre el cobro: en un celular es un blanco mucho mas
+    // grande que un boton, y el cobrador la pulsa con el telefono en una
+    // mano. El unico boton que queda es el de WhatsApp, que hace otra cosa.
+    const cobrable = p ? `onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(f.nombre||''))},${Number(p.falta)||0},${Number(p.cuota_num)||0})"` : '';
 
     return `
-    <div class="fila-cliente ${luz.clase}">
+    <div class="fila-cliente ${luz.clase}${p ? ' cobrable' : ''}" ${cobrable}>
       <div class="fila-top">
         <div class="mini-av">${inicial}${
           f.miniatura ? `<img data-mini="${attr(f.miniatura)}" alt="">` : ''}</div>
         <div style="flex:1;min-width:0;">
           <div class="fila-nombre">${esc(f.nombre)}</div>
-          <div class="fs-11 text-3">${detalle}</div>
-          <div class="fila-luz">${luz.texto}${atraso}</div>
+          <div class="fila-luz">${luz.texto}${
+            f.cobrado_hoy > 0 ? ` · cobrado ${cop(f.cobrado_hoy)}` : ''}${
+            f.no_pago_hoy ? ' · sin pago' : ''}</div>
         </div>
-        <div style="text-align:right;">
-          <div style="font-family:var(--mono);font-weight:700;font-size:15px;">${cop(p ? p.falta : 0)}</div>
-          ${f.cobrado_hoy > 0 ? `<div class="fs-11" style="color:var(--green);font-weight:600;">✓ ${cop(f.cobrado_hoy)}</div>` : ''}
-          ${f.no_pago_hoy ? `<div class="fs-11" style="color:var(--amber);font-weight:600;">Sin pago</div>` : ''}
-        </div>
+        ${wa ? `<a href="https://wa.me/57${attr(wa)}" target="_blank" rel="noopener"
+             class="btn btn-sm btn-wa" onclick="event.stopPropagation()">💬</a>` : ''}
       </div>
-      <div class="fila-acciones">
-        ${p ? `<button class="btn btn-gold btn-sm" style="flex:1;justify-content:center;"
-                  onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(f.nombre||''))},${Number(p.falta)||0},${Number(p.cuota_num)||0})">💰 Cobrar</button>` : ''}
-        ${p ? (f.no_pago_hoy
-              ? `<button class="btn btn-sm" onclick="deshacerNoPago(${Number(p.cuota_id)||0})" title="${attr(f.no_pago_motivo||'')}">↩ Si pago</button>`
-              : `<button class="btn btn-sm" onclick="marcarNoPago(${Number(p.cuota_id)||0},${attr(JSON.stringify(f.nombre||''))})">No pago</button>`) : ''}
-        <a class="btn btn-sm" href="/clientes/${Number(f.cliente_id)||0}" title="Ficha, historial y notas">Ficha</a>
-        ${wa ? `<a href="https://wa.me/57${attr(wa)}" target="_blank" rel="noopener" class="btn btn-sm btn-wa">💬</a>` : ''}
-        ${tel ? `<a href="tel:${attr(tel)}" class="btn btn-sm">📞</a>` : ''}
-      </div>
+      ${p ? `
+      <div class="fila-cifras">
+        <div><span>Prestado</span><b>${cop(f.prestado)}</b></div>
+        <div><span>Le falta</span><b class="falta">${cop(f.restante)}</b></div>
+        <div><span>Cuota ${Number(p.cuota_num)||0}/${Number(p.total_cuotas)||0}</span><b>${cop(p.cuota)}</b></div>
+      </div>` : `
+      <div class="fila-cifras"><div><span>Sin cuotas pendientes</span></div></div>`}
     </div>`;
   }).join('');
 
@@ -658,17 +615,22 @@ _zona = {{ zona_unica }}; _elegida = true; cargar();
 </script>
 
 <style>
-.tab-btn{flex:1;padding:7px 8px;border:none;background:none;border-radius:var(--r-sm);font-size:12px;font-weight:500;color:var(--t2);cursor:pointer;transition:all .15s}
-.tab-btn.active{background:var(--surface);color:var(--t1);box-shadow:var(--shadow-xs)}
-.tab-btn span{opacity:.6;font-weight:700}
-
-.fila-cliente{background:var(--surface);border:1px solid var(--border);border-left-width:4px;border-radius:var(--r-sm);box-shadow:var(--shadow-xs)}
-.fila-top{display:flex;gap:10px;align-items:flex-start;padding:11px 12px 8px}
-.fila-nombre{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fila-luz{font-size:10px;font-weight:700;margin-top:3px;text-transform:uppercase;letter-spacing:.3px}
-.fila-acciones{display:flex;gap:6px;padding:0 12px 11px;flex-wrap:wrap}
-.fila-acciones .btn{padding:5px 9px;font-size:12px}
-.btn-wa{background:#25D366;color:#fff;border-color:#25D366}
+.fila-cliente{background:var(--surface);border:1px solid var(--border);border-left-width:5px;border-radius:var(--r-sm);box-shadow:var(--shadow-xs)}
+/* La fila entera es el boton de cobrar: en un celular es un blanco mucho mas
+   grande que un boton pequeño, y se pulsa con el telefono en una mano. */
+.fila-cobrable{cursor:pointer}
+.fila-cliente.cobrable:active{background:var(--bg-2)}
+.fila-top{display:flex;gap:10px;align-items:center;padding:11px 12px 6px}
+.fila-nombre{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fila-luz{font-size:10px;font-weight:700;margin-top:2px;text-transform:uppercase;letter-spacing:.3px}
+/* Las tres cifras que el cobrador canta en la puerta, en una sola linea y
+   con la etiqueta encima: leerlas no puede exigir interpretar nada. */
+.fila-cifras{display:flex;gap:4px;padding:0 12px 11px}
+.fila-cifras>div{flex:1;min-width:0}
+.fila-cifras span{display:block;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fila-cifras b{font-family:var(--mono);font-size:14px;font-weight:700;white-space:nowrap}
+.fila-cifras b.falta{color:var(--red)}
+.btn-wa{background:#25D366;color:#fff;border-color:#25D366;flex-shrink:0;padding:8px 12px}
 
 .luz-roja{border-left-color:var(--red)}
 .luz-roja .fila-luz{color:var(--red)}
@@ -676,13 +638,13 @@ _zona = {{ zona_unica }}; _elegida = true; cargar();
 .luz-amarilla .fila-luz{color:var(--amber)}
 .luz-verde{border-left-color:var(--green)}
 .luz-verde .fila-luz{color:var(--green)}
-.luz-gris{border-left-color:var(--border)}
-.luz-gris .fila-luz{color:var(--t3)}
 
 /* La inicial esta siempre en la caja y la foto se monta encima cuando llega.
    Asi, mientras la miniatura viaja -- que en la calle puede tardar -- la fila
    no muestra un cuadro gris vacio, y si la foto no se puede leer se retira y
    la inicial ya estaba puesta. */
+.resumen-linea{gap:14px;flex-wrap:wrap;align-items:baseline;padding:4px 2px 10px;font-size:13px;color:var(--t2)}
+.resumen-linea b{font-family:var(--mono);font-size:15px}
 .mini-av{position:relative;width:42px;height:42px;border-radius:10px;flex-shrink:0;overflow:hidden;background:var(--bg-2);color:var(--t2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
 .mini-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 </style>

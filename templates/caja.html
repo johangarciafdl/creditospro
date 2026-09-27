@@ -27,11 +27,20 @@
         </select>
       </div>
       {% endif %}
+      {#- El cobrador cuadra el dia que esta viviendo: lo de atras, hecho
+          esta, y mirarlo no le sirve para trabajar. El administrador si
+          elige dia, que es quien tiene que revisarlos. -#}
+      {% if es_admin %}
       <div style="flex:0 0 150px;">
         <label for="sel-fecha" style="display:block;font-size:11px;color:var(--t3);margin-bottom:4px;">Dia</label>
         <input type="date" id="sel-fecha" value="{{ hoy }}" max="{{ hoy }}" onchange="cargar()">
       </div>
       <button class="btn btn-sm" onclick="ayer()">Dia anterior</button>
+      {% else %}
+      <div style="flex:1;font-size:13px;color:var(--t2);align-self:center;">
+        Tu caja de hoy
+      </div>
+      {% endif %}
     </div>
     {% if not es_admin %}
     <div class="fs-11 text-3" style="margin-top:10px;">
@@ -164,7 +173,10 @@ const ES_ADMIN = {{ 'true' if es_admin else 'false' }};
 const YO = {{ current_user.id }};
 let _cuadre = null;
 
-function _dia(){ return document.getElementById('sel-fecha').value || '{{ hoy }}'; }
+function _dia(){
+  const f = document.getElementById('sel-fecha');   // solo lo tiene el admin
+  return (f && f.value) || '{{ hoy }}';
+}
 function _cobrador(){
   const s = document.getElementById('sel-cobrador');
   return s ? s.value : String(YO);
@@ -233,7 +245,8 @@ function pintarUno(c){
     c.esperado < 0 ? 'var(--red)' : 'var(--t1)';
 
   document.getElementById('d-desglose').innerHTML = [
-    _linea('Base entregada', c.base, 1),
+    _linea('Base entregada', c.base, 1,
+           c.base_automatica ? 'puesta automaticamente' : ''),
     _linea('Cobrado', c.cobrado, 1, c.num_cobros + ' cobros'),
     _linea('Prestado en la calle', c.prestado, -1, c.num_prestamos + ' prestamos'),
     _linea('Gastos', c.gastos, -1, 'transporte, almuerzo, lo de la calle'),

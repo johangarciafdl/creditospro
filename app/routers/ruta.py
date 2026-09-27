@@ -19,6 +19,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import (Cliente, Cobro, Cuota, NoPago, Prestamo, Zona, get_db,
@@ -69,18 +70,25 @@ async def mi_ruta(request: Request, db: Session = Depends(get_db)):
         "zona_unica": zonas[0].id if len(zonas) == 1 else None,
         "sin_zonas": not zonas and get_allowed_zone_ids(db, user) is not None,
         "hoy": hoy_local().isoformat(),
+        # El selector de dia solo lo tiene el administrador.
+        "es_admin": es_admin(user),
     })
 
 
 def _semaforo(vence: datetime.date | None, dia: datetime.date, tiene_deuda: bool) -> str:
-    """Rojo vencida, amarillo vence hoy, verde al dia, gris sin nada pendiente.
+    """Tres colores y nada mas: rojo debe, amarillo le toca hoy, verde al dia.
 
-    Es lo unico que el cobrador mira antes de decidir si toca el timbre, asi
-    que se calcula en el servidor: si cada pantalla lo dedujera por su cuenta,
-    el mismo cliente podria salir amarillo en una y verde en otra.
+    Habia un cuarto, gris, para quien no debia nada. Se quito: para el
+    cobrador que mira la lista, "no debe nada" y "esta al dia" son lo mismo
+    -- ninguno de los dos le hace parar -- y dos grises que significan casi
+    lo mismo es justo lo que hace que un semaforo deje de leerse de un
+    vistazo.
+
+    Se calcula en el servidor porque si cada pantalla lo dedujera por su
+    cuenta, el mismo cliente podria salir amarillo en una y verde en otra.
     """
     if not tiene_deuda or vence is None:
-        return "gris"
+        return "verde"
     if vence < dia:
         return "rojo"
     if vence == dia:
@@ -117,6 +125,12 @@ async def datos_de_la_zona(
         dia = datetime.date.fromisoformat(fecha.strip()) if fecha.strip() else hoy_local()
     except ValueError:
         return JSONResponse({"error": "Fecha invalida. Usa AAAA-MM-DD."}, status_code=400)
+    # El cobrador recorre la ruta de hoy. Poder mirar otro dia le obligaba a
+    # comprobar cada vez que la fecha era la buena, y un semaforo calculado
+    # para otro dia le pinta de rojo a quien hoy esta al corriente. Revisar
+    # dias pasados es del administrador.
+    if not es_admin(user):
+        dia = hoy_local()
 
     # ── Los clientes de la zona ────────────────────────────────────────────
     consulta = db.query(Cliente).filter(Cliente.empresa_id == eid,
@@ -151,14 +165,23 @@ async def datos_de_la_zona(
     pendiente_de: dict[int, dict] = {}
     deuda_de: dict[int, Decimal] = {}
     vencidas_de: dict[int, int] = {}
+    # Lo que se le presto y lo que le queda del prestamo ENTERO, no de la
+    # cuota. Es lo que el cobrador canta en la puerta: "de los trescientos
+    # que te preste te faltan ciento veinte", y hasta ahora habia que abrir
+    # la ficha para saberlo.
+    prestado_de: dict[int, Decimal] = {}
+    restante_de: dict[int, Decimal] = {}
     for cu, p in filas:
         falta = max(Decimal("0"), money(cu.valor) - money(cu.valor_pagado or 0))
         deuda_de[p.cliente_id] = deuda_de.get(p.cliente_id, Decimal("0")) + falta
         if cu.fecha_vencimiento and cu.fecha_vencimiento < dia:
             vencidas_de[p.cliente_id] = vencidas_de.get(p.cliente_id, 0) + 1
         # La primera que aparece es la mas urgente: la consulta viene
-        # ordenada por vencimiento.
+        # ordenada por vencimiento. Ese es tambien el prestamo del que se
+        # muestra el capital y el saldo -- si tuviera dos abiertos, el que le
+        # toca pagar antes es el que importa en la puerta.
         if p.cliente_id not in pendiente_de:
+            prestado_de[p.cliente_id] = money(p.capital or 0)
             pendiente_de[p.cliente_id] = {
                 "cuota_id": cu.id,
                 "prestamo_id": p.id,
@@ -173,6 +196,25 @@ async def datos_de_la_zona(
                 "dias": (dia - cu.fecha_vencimiento).days if cu.fecha_vencimiento else 0,
                 "_vence": cu.fecha_vencimiento,
             }
+
+    # Lo que falta del prestamo entero: la suma de lo que queda en todas sus
+    # cuotas, tambien las que aun no vencen. Se pide aparte porque la consulta
+    # de arriba solo trae las pendientes, y "te faltan ciento veinte" incluye
+    # las de la semana que viene.
+    prestamos_en_pantalla = {v["prestamo_id"] for v in pendiente_de.values()}
+    if prestamos_en_pantalla:
+        saldos = (
+            db.query(Cuota.prestamo_id,
+                     func.sum(Cuota.valor - func.coalesce(Cuota.valor_pagado, 0)))
+            .filter(Cuota.empresa_id == eid,
+                    Cuota.prestamo_id.in_(prestamos_en_pantalla))
+            .group_by(Cuota.prestamo_id)
+            .all()
+        )
+        por_prestamo = {pid: money(total or 0) for pid, total in saldos}
+        for cliente_id, pend in pendiente_de.items():
+            restante_de[cliente_id] = max(
+                Decimal("0"), por_prestamo.get(pend["prestamo_id"], Decimal("0")))
 
     # ── Lo que ya se cobro ese dia ─────────────────────────────────────────
     cobrado_de: dict[int, Decimal] = {}
@@ -205,20 +247,24 @@ async def datos_de_la_zona(
         fila = {
             "cliente_id": c.id,
             "nombre": c.nombre,
-            "cedula": c.cedula,
-            "telefono": c.telefono or "",
             "whatsapp": c.whatsapp or c.telefono or "",
-            "direccion": c.direccion or "",
             # El nombre del archivo, no la foto: la lista pide las miniaturas
             # una a una al hacer scroll.
             "miniatura": (c.foto_path or "").replace("fotos/", "") or None,
             "semaforo": luz,
-            "deuda": float(deuda),
-            "vencidas": vencidas_de.get(c.id, 0),
+            # Las cuatro cifras de la fila: lo que se le presto, lo que le
+            # queda, en que cuota va y cuanto es esa cuota.
+            "prestado": float(prestado_de.get(c.id, Decimal("0"))),
+            "restante": float(restante_de.get(c.id, Decimal("0"))),
             "cobrado_hoy": float(cobrado),
             "no_pago_hoy": c.id in no_pago_de,
-            "no_pago_motivo": no_pago_de.get(c.id, ""),
-            "pendiente": {k: v for k, v in pend.items() if k != "_vence"} if pend else None,
+            "pendiente": {
+                "cuota_id": pend["cuota_id"],
+                "cuota_num": pend["cuota_num"],
+                "total_cuotas": pend["total_cuotas"],
+                "cuota": pend["valor"],
+                "falta": pend["falta"],
+            } if pend else None,
         }
         salida.append(fila)
 

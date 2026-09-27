@@ -107,3 +107,39 @@ def test_las_librerias_locales_son_las_mismas_que_servia_el_cdn():
     # El mismo SRI que declaraba el <script> cuando venia de cdnjs.
     assert firma == ("sha512-aNMyYYxdIxIaot0Y1/PLuEu3eipGCmsEUBrUq+7aVyPGMFH8z0e"
                      "TP0tkqAvv34fzN6z+201d3T8HPb1svWSKHQ==")
+
+
+# ── El celular no puede hacer zoom solo al escribir ─────────────────────
+
+def test_ningun_campo_baja_de_16px():
+    """Por debajo de 16px, Safari en iPhone amplia la pagina al tocar un
+    campo y la deja ampliada: el cobrador tiene que separar los dedos para
+    volver a verla entera, con el cliente esperando. Cualquier regla que baje
+    un campo de 16px reintroduce el problema."""
+    patron = re.compile(
+        r"(?:^|[,}\s])(?:[^{}]*\b(?:input|select|textarea)\b[^{}]*)\{([^}]*)\}")
+    fallos = []
+    archivos = list(PLANTILLAS) + [RAIZ / "static" / "css" / "app.css"]
+    for archivo in archivos:
+        texto = archivo.read_text(encoding="utf-8")
+        for m in patron.finditer(texto):
+            tam = re.search(r"font-size:\s*(\d+)px", m.group(1))
+            if tam and int(tam.group(1)) < 16:
+                fallos.append(f"{archivo.name}: font-size {tam.group(1)}px")
+    assert not fallos, "campos que provocan zoom en iPhone:\n  " + "\n  ".join(fallos)
+
+
+@pytest.mark.parametrize("plantilla", PLANTILLAS, ids=lambda p: p.name)
+def test_el_viewport_deja_ampliar_y_se_adapta_al_teclado(plantilla):
+    """El zoom molesto se arregla con campos de 16px, no prohibiendo el
+    gesto: impedir ampliar deja fuera a quien ve mal, y eso no es un precio
+    razonable por quitarse un problema que tiene otro arreglo."""
+    html = plantilla.read_text(encoding="utf-8")
+    m = re.search(r'<meta name="viewport" content="([^"]+)"', html)
+    if not m:
+        return          # parciales que no son pagina completa
+    contenido = m.group(1)
+    assert "user-scalable=no" not in contenido, f"{plantilla.name} prohibe ampliar"
+    assert "maximum-scale" not in contenido, f"{plantilla.name} limita el zoom"
+    assert "interactive-widget=resizes-content" in contenido, \
+        f"{plantilla.name}: el teclado tapa la pagina en vez de encogerla"

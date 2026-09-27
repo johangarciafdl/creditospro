@@ -662,3 +662,69 @@ def test_el_almuerzo_ya_no_se_descuenta_solo():
         "el viatico automatico sigue en el codigo"
     assert "gasto" in caja.TIPOS
     assert caja.EFECTO["gasto"] == -1
+
+
+# ── La base se pone sola ─────────────────────────────────────────────────
+
+def test_la_base_de_500_mil_se_pone_sola_el_dia_que_el_cobrador_trabaja(entorno):
+    """Un dato que hay que teclear todos los dias acaba sin teclearse, y una
+    caja sin base da un cuadre que no significa nada."""
+    s, d, _ = entorno
+    r = s["luis"].post("/cobros/registrar", data={
+        "cuota_id": d["cuotas"][0], "valor_cobrado": "60000",
+        "metodo_pago": "Efectivo"})
+    assert r.status_code == 200, r.text
+    c = _cuadre(s["luis"], d)["cuadre"]
+    assert c["base"] == 500000.0
+    assert c["base_automatica"] is True
+    assert c["esperado"] == 560000.0
+
+
+def test_sin_trabajo_no_hay_base(entorno):
+    """Si la base se pusiera todos los dias, el que no salio a la calle
+    apareceria debiendo quinientos mil."""
+    s, d, _ = entorno
+    c = _cuadre(s["marta"], d)["cuadre"]
+    assert c["base"] == 0.0 and c["base_automatica"] is False
+    assert c["esperado"] == 0.0
+
+
+def test_la_base_que_anota_el_admin_manda_sobre_la_automatica(entorno):
+    """Si ese dia le dieron mas, o menos, lo que el admin escribe es lo bueno."""
+    s, d, _ = entorno
+    s["luis"].post("/cobros/registrar", data={
+        "cuota_id": d["cuotas"][0], "valor_cobrado": "60000",
+        "metodo_pago": "Efectivo"})
+    _anotar(s["admin"], d, d["luis_id"], "base", 700000, concepto="pidio mas")
+    c = _cuadre(s["admin"], d, d["luis_id"])["cuadre"]
+    assert c["base"] == 700000.0, "sumo la automatica a la anotada"
+    assert c["base_automatica"] is False
+    assert c["esperado"] == 760000.0
+
+
+# ── El cobrador solo ve el dia de hoy ────────────────────────────────────
+
+def test_el_cobrador_no_ve_su_caja_de_otros_dias(entorno):
+    """Lo de atras, hecho esta: mirarlo no le sirve para trabajar."""
+    s, d, _ = entorno
+    ayer = d["hoy"] - datetime.timedelta(days=1)
+    r = s["luis"].get("/caja/resumen", params={"fecha": ayer.isoformat()})
+    assert r.status_code == 403, f"devolvio {r.status_code}"
+
+
+def test_el_admin_si_ve_la_caja_de_otros_dias(entorno):
+    """Es quien tiene que revisarlos."""
+    s, d, _ = entorno
+    ayer = d["hoy"] - datetime.timedelta(days=1)
+    r = s["admin"].get("/caja/resumen", params={"usuario_id": d["luis_id"],
+                                                "fecha": ayer.isoformat()})
+    assert r.status_code == 200, r.text
+
+
+def test_la_pantalla_del_cobrador_no_ofrece_elegir_dia(entorno):
+    s, _, _ = entorno
+    html = s["luis"].get("/caja").text
+    assert 'id="sel-fecha"' not in html, "le ofrece elegir dia"
+    assert "ayer()" not in html.split("<script")[0], "le ofrece el dia anterior"
+    assert 'id="sel-fecha"' in s["admin"].get("/caja").text, \
+        "al admin le quito el selector de dia"

@@ -86,6 +86,13 @@ async def resumen(request: Request, usuario_id: int = None, fecha: str = "",
     if dia > hoy_local():
         return JSONResponse({"error": "Todavia no se puede cuadrar un dia que no ha pasado."},
                             status_code=400)
+    # El cobrador cuadra el dia que esta viviendo. Mirar los de atras no le
+    # sirve para trabajar -- lo que se hizo, hecho esta -- y si invita a
+    # discutir un cuadre viejo en la puerta de un cliente. El administrador
+    # si los ve: es quien tiene que revisarlos.
+    if not es_admin(user) and dia != hoy_local():
+        return JSONResponse(
+            {"error": "Solo puedes ver tu caja de hoy."}, status_code=403)
 
     if usuario_id is None:
         if es_admin(user):

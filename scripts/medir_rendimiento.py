@@ -47,13 +47,20 @@ REPETICIONES = 5
 
 
 def _pedir(url: str, galletas: str = "") -> tuple[int, float, int]:
+    # Solo http(s). urlopen tambien abre file:// y esquemas raros, asi que un
+    # --base mal puesto (o copiado de otro sitio) podria hacer que esto leyera
+    # archivos del disco en vez de medir un servidor.
+    if not url.startswith(("http://", "https://")):
+        raise ValueError(f"Solo se puede medir http o https, no: {url[:40]}")
     pet = urllib.request.Request(url, headers={
         "User-Agent": "medir-rendimiento/1.0",
         **({"Cookie": galletas} if galletas else {}),
     })
     inicio = time.perf_counter()
     try:
-        with urllib.request.urlopen(pet, timeout=60) as r:
+        # nosec B310: el esquema se comprueba arriba (solo http/https);
+        # bandit lo marca porque no puede seguir esa comprobacion.
+        with urllib.request.urlopen(pet, timeout=60) as r:  # nosec B310
             cuerpo = r.read()
             return r.status, (time.perf_counter() - inicio) * 1000, len(cuerpo)
     except urllib.error.HTTPError as e:

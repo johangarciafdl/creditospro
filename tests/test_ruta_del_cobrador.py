@@ -267,7 +267,11 @@ def test_una_fecha_invalida_se_rechaza(entorno):
     ("cliente_vencido", "rojo"),
     ("cliente_hoy", "amarillo"),
     ("cliente_aldia", "verde"),
-    ("cliente_sin_deuda", "gris"),
+    # Quien no debe nada sale verde igual que quien esta al dia: para el
+    # cobrador que mira la lista son lo mismo -- ninguno le hace parar -- y
+    # dos colores que significan casi lo mismo es lo que hace que un
+    # semaforo deje de leerse de un vistazo.
+    ("cliente_sin_deuda", "verde"),
 ])
 def test_el_semaforo_lo_decide_el_servidor(entorno, clave, esperado):
     cobra, _, d, _ = entorno
@@ -279,11 +283,12 @@ def test_el_semaforo_lo_decide_el_servidor(entorno, clave, esperado):
 
 
 def test_el_semaforo_sigue_a_la_fecha_elegida(entorno):
-    """Un cobrador que cuadra la ruta por la noche mira otro dia, y lo que
-    vencia hoy ya no vence hoy."""
-    cobra, _, d, _ = entorno
+    """El administrador revisa otros dias, y lo que vencia hoy ya no vence
+    hoy vista desde mañana. (Al cobrador se le fija el dia de hoy: ver
+    test_la_ruta_del_cobrador_es_la_de_hoy.)"""
+    _, _, d, _ = entorno
     manana = (d["hoy"] + datetime.timedelta(days=1)).isoformat()
-    cuerpo = _zona(cobra, d, fecha=manana)
+    cuerpo = _zona(d["sesion_admin"], d, fecha=manana)
     assert _por_id(cuerpo, d["cliente_hoy"])["semaforo"] == "rojo", \
         "vista desde mañana, la cuota de hoy esta vencida"
     assert _por_id(cuerpo, d["cliente_aldia"])["semaforo"] == "verde"
@@ -296,8 +301,7 @@ def test_lo_que_falta_es_el_saldo_y_no_el_valor_de_la_cuota(entorno):
     el servidor rechace el cobro con el cliente delante."""
     cobra, _, d, _ = entorno
     fila = _por_id(_zona(cobra, d), d["cliente_parcial"])
-    assert fila["pendiente"]["valor"] == 50000.0
-    assert fila["pendiente"]["valor_pagado"] == 20000.0
+    assert fila["pendiente"]["cuota"] == 50000.0
     assert fila["pendiente"]["falta"] == 30000.0
 
 
@@ -342,7 +346,6 @@ def test_una_visita_sin_cobro_queda_marcada(entorno):
     assert r.status_code == 200, r.text
     fila = _por_id(_zona(cobra, d), d["cliente_vencido"])
     assert fila["no_pago_hoy"] is True
-    assert "no tenia" in fila["no_pago_motivo"]
 
 
 # ── Las miniaturas ────────────────────────────────────────────────────────
@@ -554,8 +557,9 @@ def test_cada_cliente_sigue_trayendo_lo_que_debe(entorno):
     """Quitarle esto le impediria cobrar."""
     cobra, _, d, _ = entorno
     fila = _por_id(_zona(cobra, d), d["cliente_vencido"])
-    assert fila["pendiente"]["falta"] > 0
-    assert fila["deuda"] > 0
+    assert fila["pendiente"]["falta"] > 0, "no sabe cuanto cobrarle"
+    assert fila["prestado"] > 0, "no sabe cuanto se le presto"
+    assert fila["restante"] > 0, "no sabe cuanto le falta del prestamo"
 
 
 def test_la_pantalla_esconde_la_tarjeta_si_no_llega_el_total():
@@ -594,3 +598,67 @@ def test_registrar_un_cliente_desde_la_vista_simple(entorno):
         assert c is not None and c.zona_id == d["zona_a"]
     finally:
         db.close()
+
+
+# ── La lista simplificada ────────────────────────────────────────────────
+
+def test_cada_fila_trae_las_cuatro_cifras(entorno):
+    """Lo que el cobrador canta en la puerta: cuanto se le presto, cuanto le
+    falta, en que cuota va y cuanto es esa cuota."""
+    cobra, _, d, _ = entorno
+    fila = _por_id(_zona(cobra, d), d["cliente_vencido"])
+    assert fila["prestado"] == 100000.0
+    assert fila["restante"] > 0
+    assert fila["pendiente"]["cuota_num"] == 1
+    assert fila["pendiente"]["total_cuotas"] == 2
+    assert fila["pendiente"]["cuota"] == 60000.0
+
+
+def test_lo_que_falta_baja_con_cada_pago(entorno):
+    """El "le falta" es del prestamo entero y tiene que bajar al cobrar."""
+    cobra, _, d, _ = entorno
+    antes = _por_id(_zona(cobra, d), d["cliente_parcial"])["restante"]
+    r = cobra.post("/cobros/registrar", data={
+        "cuota_id": d["cuota_parcial"], "valor_cobrado": "10000",
+        "metodo_pago": "Efectivo"})
+    assert r.status_code == 200, r.text
+    despues = _por_id(_zona(cobra, d), d["cliente_parcial"])["restante"]
+    assert despues == antes - 10000.0, f"antes {antes}, despues {despues}"
+
+
+def test_la_fila_no_manda_datos_que_no_se_pintan(entorno):
+    """La lista de una zona grande pesaba decenas de kilobytes; lo que no se
+    pinta no viaja."""
+    cobra, _, d, _ = entorno
+    fila = _por_id(_zona(cobra, d), d["cliente_vencido"])
+    for campo in ("cedula", "direccion", "telefono", "deuda", "no_pago_motivo"):
+        assert campo not in fila, f"la fila sigue mandando {campo}"
+
+
+def test_la_pantalla_no_tiene_pestanas_y_solo_el_boton_de_whatsapp():
+    import pathlib
+    html = (pathlib.Path(__file__).resolve().parent.parent / "templates"
+            / "app_cobrador.html").read_text(encoding="utf-8")
+    for resto in ("verPestana", 'id="tab-cobrar"', 'id="tab-todos"', 'id="tab-cobrados"'):
+        assert resto not in html, f"quedan pestañas: {resto}"
+    pintar = html.split("function pintar(filas)")[1].split("\nfunction ")[0]
+    assert "wa.me" in pintar, "falta el boton de WhatsApp"
+    for quitado in ("marcarNoPago", "tel:", "/clientes/${", "💰 Cobrar"):
+        assert quitado not in pintar, f"la fila sigue ofreciendo {quitado}"
+    # Cobrar sigue siendo posible: la fila entera lo abre.
+    assert "abrirCobro(" in pintar, "ya no hay forma de cobrar desde la lista"
+
+
+def test_la_ruta_del_cobrador_es_la_de_hoy(entorno):
+    """Un semaforo calculado para otro dia le pintaria de rojo a quien hoy
+    esta al corriente. El admin si puede revisar otros dias."""
+    cobra, _, d, _ = entorno
+    manana_iso = (d["hoy"] + datetime.timedelta(days=1)).isoformat()
+    # Pedir otro dia no cambia nada: se le calcula el de hoy.
+    hoy = _por_id(_zona(cobra, d), d["cliente_hoy"])["semaforo"]
+    otro = _por_id(_zona(cobra, d, fecha=manana_iso), d["cliente_hoy"])["semaforo"]
+    assert otro == hoy, "al cobrador se le calculo el semaforo de otro dia"
+    html = cobra.get("/ruta").text
+    assert 'id="sel-fecha"' not in html, "le ofrece elegir dia"
+    assert 'id="sel-fecha"' in d["sesion_admin"].get("/ruta").text, \
+        "al admin le quito el selector de dia"

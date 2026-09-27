@@ -39,6 +39,17 @@ from sqlalchemy.orm import Session
 from app.database import Cobro, MovimientoCaja, Prestamo, Usuario
 from app.utils.money import money
 
+# Lo que la oficina le entrega a un cobrador para empezar el dia. Es
+# practicamente siempre esta cifra, asi que se da por puesta en vez de
+# obligar al administrador a teclearla cada manana para cada uno: un dato que
+# hay que escribir todos los dias acaba sin escribirse, y una caja sin base
+# anotada da un cuadre que no significa nada.
+#
+# No es una fila que se cree sola en la base -- eso llenaria la tabla de
+# movimientos los dias que nadie salio a la calle. Se supone al calcular, y
+# en cuanto el administrador anota una base de verdad, la suya manda.
+BASE_DIARIA = Decimal("500000")
+
 TIPOS = ("base", "gasto", "entrega", "ajuste_mas", "ajuste_menos")
 
 # Que le hace cada tipo al dinero que el cobrador lleva encima.
@@ -137,12 +148,25 @@ def cuadre(db: Session, empresa_id: int, usuario_id: int,
 
     hubo_movimiento = bool(filas or num_cobros or num_prestamos)
 
+    # La base va sola los dias que el cobrador se movio, salvo que el
+    # administrador haya anotado una: si la anoto, esa es la buena, sea mas
+    # o sea menos. Por eso se mira si hay filas de tipo "base", y no si la
+    # suma es distinta de cero -- una base anotada de 0 tambien es una
+    # decision.
+    base_anotada = any(m["tipo"] == "base" for m in movimientos)
+    base_automatica = not base_anotada and hubo_movimiento
+    if base_automatica:
+        base = BASE_DIARIA
+
     esperado = base + cobrado - gastos - prestado - entregado + ajustes
 
     return {
         "usuario_id": usuario_id,
         "fecha": fecha.isoformat(),
         "base": float(base),
+        # Para que la pantalla pueda decir "puesta automaticamente" y el
+        # administrador sepa que puede cambiarla.
+        "base_automatica": base_automatica,
         "cobrado": float(cobrado),
         "num_cobros": num_cobros,
         "prestado": float(prestado),
