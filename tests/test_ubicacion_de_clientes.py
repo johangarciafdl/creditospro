@@ -260,6 +260,65 @@ def test_solo_las_ultimas_visitas_cuentan(entorno):
         db.close()
 
 
+def test_el_punto_desde_donde_se_cobra_a_muchos_no_ubica_a_nadie(entorno):
+    """Si el cobrador registra los pagos desde su casa, ese punto no es la
+    casa de esos clientes: se descarta, y quedan sin ubicar."""
+    _, d, Sesion = entorno
+    from app.database import Cliente, Cobro, Cuota
+    from app.utils.ubicacion import CLIENTES_POR_PUNTO_SOSPECHOSO
+    db = Sesion()
+    try:
+        cu = db.get(Cuota, d["cuota_visitado"])
+        oficina = (6.3179, -75.5579)
+        ids = []
+        for i in range(CLIENTES_POR_PUNTO_SOSPECHOSO):
+            c = Cliente(empresa_id=d["empresa_id"], cedula=f"OF{i}", nombre=f"Oficina {i}",
+                        telefono="3000000000", zona_id=d["zona"], activo=True)
+            db.add(c); db.flush()
+            ids.append(c.id)
+            # unos metros de baile del GPS, como en la realidad
+            db.add(Cobro(empresa_id=d["empresa_id"], cuota_id=cu.id,
+                         prestamo_id=cu.prestamo_id, cliente_id=c.id, zona_id=d["zona"],
+                         valor_cobrado=Decimal("100"),
+                         lat_cobro=oficina[0] + i * 0.00003, lng_cobro=oficina[1]))
+        # Y uno de ellos tiene ademas visitas reales en su puerta.
+        for k in range(3):
+            db.add(Cobro(empresa_id=d["empresa_id"], cuota_id=cu.id,
+                         prestamo_id=cu.prestamo_id, cliente_id=ids[0], zona_id=d["zona"],
+                         valor_cobrado=Decimal("100"), lat_cobro=LAT, lng_cobro=LNG))
+        db.flush()
+        pos = posiciones_de_clientes(db, d["empresa_id"], ids)
+        assert set(pos) == {ids[0]}, "los demas solo tienen el punto de la oficina"
+        assert (pos[ids[0]]["lat"], pos[ids[0]]["lng"]) == (LAT, LNG)
+        db.rollback()
+    finally:
+        db.close()
+
+
+def test_dos_vecinos_en_el_mismo_punto_si_se_ubican(entorno):
+    """Por debajo del umbral es una casa compartida o un conjunto, no la
+    oficina: se respeta."""
+    _, d, Sesion = entorno
+    from app.database import Cliente, Cobro, Cuota
+    db = Sesion()
+    try:
+        cu = db.get(Cuota, d["cuota_visitado"])
+        ids = []
+        for i in range(2):
+            c = Cliente(empresa_id=d["empresa_id"], cedula=f"VE{i}", nombre=f"Vecino {i}",
+                        telefono="3000000000", zona_id=d["zona"], activo=True)
+            db.add(c); db.flush()
+            ids.append(c.id)
+            db.add(Cobro(empresa_id=d["empresa_id"], cuota_id=cu.id,
+                         prestamo_id=cu.prestamo_id, cliente_id=c.id, zona_id=d["zona"],
+                         valor_cobrado=Decimal("100"), lat_cobro=6.30, lng_cobro=-75.50))
+        db.flush()
+        assert set(posiciones_de_clientes(db, d["empresa_id"], ids)) == set(ids)
+        db.rollback()
+    finally:
+        db.close()
+
+
 def test_no_mezcla_visitas_de_otra_empresa(entorno):
     _, d, Sesion = entorno
     db = Sesion()

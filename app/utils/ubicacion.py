@@ -29,6 +29,15 @@ from app.database import Cliente, Cobro, NoPago
 # y si alarga la consulta.
 VISITAS_POR_CLIENTE = 10
 
+# Un punto donde "estan" varios clientes distintos no es la casa de ninguno:
+# es donde el cobrador registra los pagos (su casa, la oficina, la tienda
+# donde le pagan). En produccion aparecio asi: 29 clientes con cobros desde
+# el mismo punto. Desde cuantos clientes se descarta el punto, y el tamaño de
+# la celda (0,0001 grados, unos 11 m; se miran tambien las 8 vecinas, asi que
+# el radio efectivo es de unos 30 m).
+CLIENTES_POR_PUNTO_SOSPECHOSO = 4
+_CELDA = 1e-4
+
 
 def leer_coordenadas(lat: str | None, lng: str | None) -> tuple[float | None, float | None]:
     """Las coordenadas de un formulario, o (None, None) si no sirven.
@@ -120,11 +129,18 @@ def posiciones_de_clientes(db: Session, empresa_id: int,
         .where(numeradas.c.orden <= VISITAS_POR_CLIENTE)
     ).all()
 
-    por_cliente: dict[int, list[tuple[float, float]]] = {}
+    puntos_validos: list[tuple[int, float, float]] = []
     for cid, lat, lng in filas:
         la, lo = leer_coordenadas(lat, lng)
         if la is not None:
-            por_cliente.setdefault(cid, []).append((la, lo))
+            puntos_validos.append((cid, la, lo))
+
+    sospechosas = _celdas_compartidas(puntos_validos)
+    por_cliente: dict[int, list[tuple[float, float]]] = {}
+    for cid, la, lo in puntos_validos:
+        if _celda(la, lo) in sospechosas:
+            continue
+        por_cliente.setdefault(cid, []).append((la, lo))
 
     for cid, puntos in por_cliente.items():
         posiciones[cid] = {
@@ -134,3 +150,29 @@ def posiciones_de_clientes(db: Session, empresa_id: int,
             "visitas": len(puntos),
         }
     return posiciones
+
+
+def _celda(lat: float, lng: float) -> tuple[int, int]:
+    return round(lat / _CELDA), round(lng / _CELDA)
+
+
+def _celdas_compartidas(puntos: list[tuple[int, float, float]]) -> set[tuple[int, int]]:
+    """Celdas donde hay visitas de demasiados clientes distintos.
+
+    Se cuenta cada celda junto con sus ocho vecinas: un mismo sitio medido
+    por un GPS de celular baila unos metros y cae a veces en la celda de al
+    lado, y contarlas por separado partiria el grupo en trozos pequeños que
+    no llegarian al umbral.
+    """
+    clientes_en: dict[tuple[int, int], set[int]] = {}
+    for cid, la, lo in puntos:
+        clientes_en.setdefault(_celda(la, lo), set()).add(cid)
+    sospechosas = set()
+    for (x, y) in clientes_en:
+        vecinos: set[int] = set()
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                vecinos |= clientes_en.get((x + dx, y + dy), set())
+        if len(vecinos) >= CLIENTES_POR_PUNTO_SOSPECHOSO:
+            sospechosas.add((x, y))
+    return sospechosas
