@@ -280,6 +280,16 @@ async def datos_de_la_zona(
         if fila["no_pago_hoy"]:
             resumen["no_pagos"] += 1
 
+    # Una sola lista, ordenada por lo que hay que hacer: primero quien debe,
+    # luego a quien le toca hoy, y al final quien esta al dia. Al quitar la
+    # pestaña "Por cobrar", el orden es lo unico que le dice al cobrador por
+    # donde empezar; en orden alfabetico, los que ya pagaron todo salian
+    # arriba y habia que bajar entre ellos para encontrar el trabajo. No se
+    # esconde a nadie: siguen saliendo todos los de la zona.
+    urgencia = {"rojo": 0, "amarillo": 1, "verde": 2}
+    salida.sort(key=lambda f: (urgencia.get(f["semaforo"], 3),
+                               (f["nombre"] or "").lower()))
+
     resumen["esperado"] = round(resumen["esperado"], 2)
     resumen["cobrado"] = round(resumen["cobrado"], 2)
     resumen["recortada"] = len(clientes) >= MAX_CLIENTES

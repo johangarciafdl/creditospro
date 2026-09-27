@@ -662,3 +662,19 @@ def test_la_ruta_del_cobrador_es_la_de_hoy(entorno):
     assert 'id="sel-fecha"' not in html, "le ofrece elegir dia"
     assert 'id="sel-fecha"' in d["sesion_admin"].get("/ruta").text, \
         "al admin le quito el selector de dia"
+
+
+def test_la_lista_pone_primero_a_quien_debe(entorno):
+    """Sin la pestaña "Por cobrar", el orden es lo unico que dice por donde
+    empezar. En orden alfabetico, los que ya pagaron salian arriba."""
+    cobra, _, d, _ = entorno
+    luces = [f["semaforo"] for f in _zona(cobra, d)["clientes"]]
+    orden = {"rojo": 0, "amarillo": 1, "verde": 2}
+    assert luces == sorted(luces, key=orden.get), f"orden: {luces}"
+    assert luces[0] == "rojo", "el primero de la lista no es alguien que debe"
+    # Y no se esconde a nadie: los cinco sembrados siguen ahi (otras pruebas
+    # del modulo pueden haber dado de alta alguno mas).
+    ids = {f["cliente_id"] for f in _zona(cobra, d)["clientes"]}
+    for clave in ("cliente_vencido", "cliente_hoy", "cliente_parcial",
+                  "cliente_aldia", "cliente_sin_deuda"):
+        assert d[clave] in ids, f"el orden escondio a {clave}"
