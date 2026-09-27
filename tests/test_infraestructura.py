@@ -137,7 +137,7 @@ def test_las_metricas_reportan_percentiles_no_solo_el_promedio():
         metricas.registrar("/prueba", "GET", 200, 12)
     metricas.registrar("/prueba", "GET", 200, 5000)
 
-    fila = next(r for r in metricas.resumen()["rutas"] if r["ruta"] == "GET /prueba")
+    fila = next(r for r in metricas.resumen(top=100_000)["rutas"] if r["ruta"] == "GET /prueba")
     assert fila["mediana_ms"] < 100, "la mediana no debe arrastrar el caso lento"
     # Con 20 muestras y una sola lenta, esa muestra ES el 5% superior, asi
     # que por definicion queda por encima del p95 y este no la refleja. El
@@ -147,7 +147,7 @@ def test_las_metricas_reportan_percentiles_no_solo_el_promedio():
 
     # Con dos lentas de veinte (10%), el p95 si tiene que moverse.
     metricas.registrar("/prueba", "GET", 200, 5000)
-    fila = next(r for r in metricas.resumen()["rutas"] if r["ruta"] == "GET /prueba")
+    fila = next(r for r in metricas.resumen(top=100_000)["rutas"] if r["ruta"] == "GET /prueba")
     assert fila["p95_ms"] >= 5000
 
 

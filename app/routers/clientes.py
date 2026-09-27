@@ -27,6 +27,7 @@ from app.database import (a_hora_local, ahora_utc, get_db, Cliente, NotaCliente,
 from app.utils.almacen_imagenes import borrar_imagen, guardar_imagen
 from app.utils.interfaz import redirigir_a_vista_simple
 from app.utils.money import money
+from app.utils.ubicacion import leer_coordenadas
 from app.utils.permisos_rol import (
     puede_atender_notas,
     puede_crear_clientes,
@@ -232,6 +233,10 @@ async def crear_cliente(
     barrio: str = Form(""),
     tipo_cliente: str = Form("Regular"),
     foto: UploadFile = File(None),
+    # Donde se le da de alta. Solo al crearlo: corregir la ubicacion de un
+    # cliente que ya existe sigue siendo del administrador.
+    lat: str = Form(""),
+    lng: str = Form(""),
     db: Session = Depends(get_db)
 ):
     user = get_current_user(request, db)
@@ -244,6 +249,8 @@ async def crear_cliente(
         return JSONResponse(
             {"error": "No tienes permiso para registrar clientes."},
             status_code=403)
+    # Un GPS malo no impide dar de alta al cliente: se guarda sin posicion.
+    lat_alta, lng_alta = leer_coordenadas(lat, lng)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
 
@@ -300,6 +307,9 @@ async def crear_cliente(
         tipo_cliente=tipo_cliente,
         foto_path=foto_path,
         activo=True,
+        # Donde se le dio de alta: la primera posicion conocida del cliente.
+        lat=lat_alta,
+        lng=lng_alta,
     )
     db.add(cliente)
     try:

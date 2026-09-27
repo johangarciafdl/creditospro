@@ -69,6 +69,14 @@
     <b id="r-esperado" style="color:var(--gold);">$0</b> por cobrar</span>
 </div>
 
+{#- Ordenar por cercania. El calculo se hace en el propio celular con las
+    posiciones que ya vinieron en la lista: no se vuelve a preguntar al
+    servidor, asi que reordenar es instantaneo aunque la señal sea mala. -#}
+<div id="cercania" class="cercania" style="display:none;">
+  <button class="btn btn-sm" id="btn-cercania" onclick="alternarCercania(this)">📍 Más cercanos primero</button>
+  <span class="fs-11 text-3" id="cercania-txt"></span>
+</div>
+
 {#- Habia tres pestañas -- Por cobrar, Todos, Cobrados -- sobre el mismo
     conjunto de clientes. Se quitaron: al elegir la zona salen todos, en el
     orden en que se recorre la calle, y el color de cada uno dice en que
@@ -223,6 +231,15 @@
 // es la peticion que se queda colgada.
 let _zona = null, _elegida = false, _deb = null;
 let _filas = [];
+// Orden por cercania. Se calcula entero en el celular, sobre la lista que ya
+// llego: ni una peticion mas al servidor, ni a ningun servicio de mapas.
+let _porCercania = false, _miPos = null, _ubicados = 0;
+// Cuanto hay que andar hasta cada parada, desde la anterior (o desde el
+// cobrador, la primera): es lo que explica el orden de la lista.
+let _tramos = new Map();
+// La ventana del cobro trae el boton "No pagó": aqui no hay otro sitio
+// donde marcarlo, y asi la visita sin pago tambien deja su GPS.
+window.MODAL_CON_NO_PAGO = true;
 
 function _dia(){
   const f = document.getElementById('sel-fecha');   // solo lo tiene el admin
@@ -280,7 +297,9 @@ async function cargar(){
     pintarResumen(d.resumen || {});
     document.getElementById('recortada').style.display =
       (d.resumen && d.resumen.recortada) ? 'block' : 'none';
-    pintar(_filas);
+    // Si esta ordenando por cercania, se mantiene al recargar (p. ej. tras
+    // un cobro), desde la ultima posicion conocida.
+    pintar(_porCercania && _miPos ? ordenarPorCercania(_filas, _miPos) : _filas);
   } catch(e) {
     console.error('[Ruta] No se pudo cargar la zona:', e);
     _estado('No hay conexion. Intenta de nuevo.', '📡');
@@ -289,6 +308,12 @@ async function cargar(){
 
 function pintarResumen(r){
   document.getElementById('resumen').style.display = 'flex';
+  // Cuantos se pueden ordenar por cercania. Dicho en voz alta para que el
+  // cobrador entienda por que algunos quedan al final: aun no se les ha
+  // visitado con el GPS encendido.
+  _ubicados = r.ubicados || 0;
+  document.getElementById('cercania').style.display = 'flex';
+  _pintarEstadoCercania(r.clientes || 0);
   // Si el servidor no manda el total, es que a quien mira no le corresponde.
   const tarjeta = document.getElementById('tarjeta-por-cobrar');
   if (r.esperado === null || r.esperado === undefined) {
@@ -329,6 +354,21 @@ function pintar(filas){
     // grande que un boton, y el cobrador la pulsa con el telefono en una
     // mano. El unico boton que queda es el de WhatsApp, que hace otra cosa.
     const cobrable = p ? `onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(f.nombre||''))},${Number(p.falta)||0},${Number(p.cuota_num)||0})"` : '';
+    // La posicion del cliente, si ya se le ha visitado con GPS.
+    const conPos = typeof f.lat === 'number' && typeof f.lng === 'number';
+    // La distancia solo se enseña ordenando por cercania: es cuando ya se
+    // sabe donde esta el cobrador, sin pedir el GPS solo para pintar esto.
+    // Solo en la primera fila del cliente: con dos prestamos es una sola parada.
+    const t = _porCercania ? _tramos.get(f.cliente_id) : null;
+    const tramo = t && t.fila === f ? t : null;
+    const distancia = tramo
+      ? `<span class="fila-dist">${_textoDistancia(tramo.m, tramo.primero)}</span>` : '';
+    // Google Maps con la navegacion hasta ese punto: gratis, y no manda a
+    // nadie la lista de clientes -- solo el destino de ese.
+    const llegar = conPos
+      ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${Number(f.lat)},${Number(f.lng)}"
+           target="_blank" rel="noopener" class="btn btn-sm btn-llegar" title="Como llegar"
+           onclick="event.stopPropagation()">Ir</a>` : '';
 
     return `
     <div class="fila-cliente ${luz.clase}${p ? ' cobrable' : ''}" ${cobrable}>
@@ -340,8 +380,9 @@ function pintar(filas){
           <div class="fila-luz">${luz.texto}${
             f.prestamos_total > 1 ? ` · prestamo ${Number(f.prestamo_n)} de ${Number(f.prestamos_total)}` : ''}${
             f.cobrado_hoy > 0 ? ` · cobrado ${cop(f.cobrado_hoy)}` : ''}${
-            f.no_pago_hoy ? ' · sin pago' : ''}</div>
+            f.no_pago_hoy ? ' · sin pago' : ''}${distancia}</div>
         </div>
+        ${llegar}
         ${wa ? `<a href="https://wa.me/57${attr(wa)}" target="_blank" rel="noopener"
              class="btn btn-sm btn-wa" onclick="event.stopPropagation()">💬</a>` : ''}
       </div>
@@ -399,6 +440,154 @@ function cargarMiniatura(img){
   img.src = '/uploads/miniaturas/' + encodeURIComponent(nombre);
 }
 
+// ── CERCANIA ─────────────────────────────────────────────────────────────
+// Distancia en metros. Equirectangular: en los pocos km de una ruta de
+// cobro el error frente a la formula exacta es de centimetros, y cuesta
+// una fraccion.
+function _dist(a, b){
+  const rad = Math.PI / 180;
+  const x = (b.lng - a.lng) * rad * Math.cos((a.lat + b.lat) / 2 * rad);
+  const y = (b.lat - a.lat) * rad;
+  return Math.sqrt(x * x + y * y) * 6371000;
+}
+
+function _textoDistancia(m, primero){
+  if (!isFinite(m)) return '';
+  const cifra = m < 1000 ? (Math.round(m / 10) * 10) + ' m'
+                         : (m / 1000).toFixed(1).replace('.', ',') + ' km';
+  return primero ? ' · a ' + cifra + ' de ti' : ' · ' + cifra + ' del anterior';
+}
+
+// Vecino mas cercano y luego 2-opt (deshacer cruces), con un tope de tiempo.
+// La primera parada no se toca: es la mas cercana al cobrador, que es lo que
+// promete el boton; el 2-opt solo reordena lo que viene despues.
+// con 200 paradas cabe de sobra, y si un celular viejo no llega, se queda
+// con la mejor ruta encontrada hasta ahi -- nunca se congela la pantalla.
+function _ordenarParadas(origen, paradas){
+  const pend = paradas.slice(), ruta = [];
+  let aqui = origen;
+  while (pend.length) {
+    let mejor = 0, dMejor = Infinity;
+    for (let i = 0; i < pend.length; i++) {
+      const d = _dist(aqui, pend[i]);
+      if (d < dMejor) { dMejor = d; mejor = i; }
+    }
+    aqui = pend.splice(mejor, 1)[0];
+    ruta.push(aqui);
+  }
+  // El reloj se mira en cada fila, no por pasada: una pasada entera sobre
+  // 300 paradas ya son decenas de miles de distancias.
+  const limite = performance.now() + 30;
+  let mejoro = true;
+  pasadas: while (mejoro) {
+    mejoro = false;
+    for (let i = 1; i < ruta.length - 1; i++) {
+      if (performance.now() > limite) break pasadas;
+      const a = ruta[i - 1];
+      for (let k = i + 1; k < ruta.length; k++) {
+        const b = ruta[i], c = ruta[k], dd = ruta[k + 1];   // dd no existe en la ultima
+        const antes = _dist(a, b) + (dd ? _dist(c, dd) : 0);
+        const despues = _dist(a, c) + (dd ? _dist(b, dd) : 0);
+        if (despues + 0.5 < antes) {
+          // Invertir el tramo i..k deshace el cruce.
+          for (let x = i, y = k; x < y; x++, y--) { const t = ruta[x]; ruta[x] = ruta[y]; ruta[y] = t; }
+          mejoro = true;
+        }
+      }
+    }
+  }
+  return ruta;
+}
+
+// Solo se enruta a quien falta visitar: rojo o amarillo y sin visita hoy
+// (ni cobro ni "no pago"; si no, el que acaba de atender volveria a salir
+// primero, a 0 m). Los que no tienen posicion van despues, en el orden de
+// siempre; los ya visitados y los verdes, al final. No se esconde a nadie.
+function ordenarPorCercania(filas, origen){
+  const porCliente = new Map();
+  filas.forEach(f => {
+    const k = f.cliente_id != null ? f.cliente_id : f.nombre;
+    if (!porCliente.has(k)) porCliente.set(k, []);
+    porCliente.get(k).push(f);
+  });
+  const conPos = [], sinPos = [], verdes = [];
+  porCliente.forEach(grupo => {
+    const visitado = grupo.some(f => f.cobrado_hoy > 0 || f.no_pago_hoy);
+    const visitar = !visitado &&
+      grupo.some(f => f.semaforo === 'rojo' || f.semaforo === 'amarillo');
+    const f0 = grupo[0];
+    if (!visitar) verdes.push(grupo);
+    else if (typeof f0.lat === 'number' && typeof f0.lng === 'number')
+      conPos.push({lat: f0.lat, lng: f0.lng, grupo});
+    else sinPos.push(grupo);
+  });
+  const ruta = _ordenarParadas(origen, conPos);
+  _tramos = new Map();
+  ruta.forEach((p, i) => {
+    const k = p.grupo[0].cliente_id;
+    if (k != null) _tramos.set(k, {m: _dist(i ? ruta[i - 1] : origen, p), primero: !i,
+                                   fila: p.grupo[0]});
+  });
+  return [].concat(...ruta.map(p => p.grupo), ...sinPos, ...verdes);
+}
+
+function obtenerPosicion(){
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({lat: p.coords.latitude, lng: p.coords.longitude}),
+      () => resolve(null),
+      {enableHighAccuracy: true, timeout: 8000, maximumAge: 60000});
+  });
+}
+
+function _contarClientes(){
+  return new Set(_filas.map(f => f.cliente_id != null ? f.cliente_id : f.nombre)).size;
+}
+
+function _pintarEstadoCercania(total){
+  const txt = document.getElementById('cercania-txt');
+  if (txt) txt.textContent = '📍 ' + _ubicados + ' de ' + total + ' ubicados';
+  const btn = document.getElementById('btn-cercania');
+  if (btn) btn.textContent = _porCercania ? '↩ Orden normal' : '📍 Más cercanos primero';
+}
+
+async function alternarCercania(btn){
+  if (_porCercania) {
+    _porCercania = false;
+    pintar(_filas);
+    _pintarEstadoCercania(_contarClientes());
+    return;
+  }
+  if (!_ubicados) {
+    toast('Aun no hay clientes ubicados aqui. Se ubican solos al cobrarles o visitarlos con el GPS encendido.', 'warn', 7000);
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Buscando tu ubicación…';
+  const pos = await obtenerPosicion();
+  btn.disabled = false;
+  if (!pos) {
+    toast('No se pudo leer tu ubicación. Activa el GPS y dale permiso al navegador.', 'error', 7000);
+    _pintarEstadoCercania(_contarClientes());
+    return;
+  }
+  _miPos = pos; _porCercania = true;
+  pintar(ordenarPorCercania(_filas, _miPos));
+  _pintarEstadoCercania(_contarClientes());
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// Posicion de fondo para las altas: se pide al abrir la ventana y, si llega
+// antes de guardar, va con el cliente. Guardar nunca la espera.
+let _posAlta = null;
+function _pedirPosAlta(){
+  _posAlta = null;
+  obtenerPosicion().then(p => { _posAlta = p; });
+}
+function _anexarPosAlta(fd){
+  if (_posAlta) { fd.append('lat', _posAlta.lat); fd.append('lng', _posAlta.lng); }
+}
+
 // ── NO PAGO ──────────────────────────────────────────────────────────────
 // Se anota en el dia que muestra el selector, no siempre en hoy: un cobrador
 // que cuadra la ruta por la noche esta registrando lo que paso en la fecha
@@ -447,6 +636,7 @@ function abrirCliente(){
   if (_zona) sel.value = _zona;          // la zona en la que esta trabajando
   ['c-cedula','c-nombre','c-telefono','c-whatsapp','c-direccion','c-barrio']
     .forEach(id => { const c = document.getElementById(id); if (c) c.value = ''; });
+  _pedirPosAlta();
   document.getElementById('modal-cliente').classList.add('open');
 }
 
@@ -460,6 +650,7 @@ async function guardarClienteNuevo(btn){
   fd.append('direccion', document.getElementById('c-direccion').value.trim());
   fd.append('barrio', document.getElementById('c-barrio').value.trim());
   fd.append('tipo_cliente', 'Regular');
+  _anexarPosAlta(fd);
 
   await conBoton(btn, 'Registrando...', async () => {
     try {
@@ -492,6 +683,7 @@ function abrirPrestar(){
     const c = document.getElementById(id); if (c) c.value = '';
   });
   document.getElementById('p-previo').style.display = 'none';
+  _pedirPosAlta();
   document.getElementById('modal-prestar').classList.add('open');
 }
 
@@ -581,6 +773,7 @@ async function confirmarPrestamo(btn){
     fd.append('nombre', document.getElementById('p-nombre').value.trim());
     fd.append('telefono', document.getElementById('p-telefono').value.trim());
     fd.append('direccion', document.getElementById('p-direccion').value.trim());
+    _anexarPosAlta(fd);
   }
 
   await conBoton(btn, 'Prestando...', async () => {
@@ -609,7 +802,14 @@ async function confirmarPrestamo(btn){
 
 // El modal de cobro es el compartido con Cobros y Clientes; cada pantalla
 // dice como refrescarse despues de un cobro.
-window.alRegistrarCobro = () => cargar();
+window.alRegistrarCobro = () => {
+  // El cobrador esta donde acaba de cobrar: si se ordena por cercania, la
+  // ruta sigue desde ahi. Se usa el GPS que ya capturo la ventana.
+  const lat = parseFloat(document.getElementById('mc-lat').value);
+  const lng = parseFloat(document.getElementById('mc-lng').value);
+  if (isFinite(lat) && isFinite(lng)) _miPos = {lat, lng};
+  cargar();
+};
 
 {% if zona_unica %}
 // Con una sola zona posible no hay nada que elegir: se carga directo.
@@ -651,6 +851,9 @@ _zona = {{ zona_unica }}; _elegida = true; cargar();
    Asi, mientras la miniatura viaja -- que en la calle puede tardar -- la fila
    no muestra un cuadro gris vacio, y si la foto no se puede leer se retira y
    la inicial ya estaba puesta. */
+.cercania{gap:10px;align-items:center;flex-wrap:wrap;margin:0 2px 10px}
+.fila-dist{text-transform:none;color:var(--t2);font-weight:600}
+.btn-llegar{flex-shrink:0;font-weight:700}
 .resumen-linea{gap:14px;flex-wrap:wrap;align-items:baseline;padding:4px 2px 10px;font-size:13px;color:var(--t2)}
 .resumen-linea b{font-family:var(--mono);font-size:15px}
 .mini-av{position:relative;width:42px;height:42px;border-radius:10px;flex-shrink:0;overflow:hidden;background:var(--bg-2);color:var(--t2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}

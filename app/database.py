@@ -497,6 +497,12 @@ class NoPago(Base):
     motivo = Column(String(300), nullable=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True, index=True)
     registrado_por = Column(String(200), nullable=True)
+    # Donde estaba el cobrador cuando el cliente no pago. Es la mitad que
+    # faltaba para saber donde vive cada cliente: el GPS del cobro solo existe
+    # para quien paga, y los que no pagan son justo los que mas hay que
+    # visitar. Es dato de la VISITA, como la foto del cobro, no de la ficha.
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
     creado = Column(DateTime, default=func.now())
 
     __table_args__ = (

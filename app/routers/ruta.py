@@ -31,6 +31,7 @@ from app.utils.audit import log_action
 from app.utils.caja import cuadre
 from app.utils.money import cop, money
 from app.utils.permisos_rol import es_admin, puede_gestionar_prestamos
+from app.utils.ubicacion import leer_coordenadas, posiciones_de_clientes
 from app.utils.validators import (filtro_busqueda, sin_html, validar_cedula,
                                   validar_entero_positivo, validar_nombre,
                                   validar_numero_positivo, validar_telefono)
@@ -149,6 +150,12 @@ async def datos_de_la_zona(
 
     ids = [c.id for c in clientes]
 
+    # Donde esta cada uno, para poder ordenar la ruta por cercania en el
+    # celular. Viaja en esta misma respuesta y no en una aparte: el orden se
+    # calcula en el telefono, sin volver a preguntar al servidor, que es lo que
+    # hace que reordenar no tarde nada aunque la señal sea mala.
+    posiciones = posiciones_de_clientes(db, eid, ids)
+
     # ── Lo que se debe, PRESTAMO A PRESTAMO ───────────────────────────────
     # Una fila por prestamo activo, no por cliente. Con una por cliente, un
     # cliente con dos prestamos enseñaba las cifras del que vencia antes: en
@@ -233,6 +240,10 @@ async def datos_de_la_zona(
             # El nombre del archivo, no la foto: la lista pide las miniaturas
             # una a una al hacer scroll.
             "miniatura": (c.foto_path or "").replace("fotos/", "") or None,
+            # Posicion deducida de sus visitas (o la de la ficha). null si
+            # todavia no se le ha visitado con GPS.
+            "lat": posiciones.get(c.id, {}).get("lat"),
+            "lng": posiciones.get(c.id, {}).get("lng"),
         }
         pids = prestamos_de.get(c.id, [])
         luces_del_cliente = []
@@ -286,6 +297,8 @@ async def datos_de_la_zona(
         # El resumen cuenta CLIENTES, no filas: un cliente con dos prestamos
         # vencidos es una persona que debe, no dos.
         resumen["clientes"] += 1
+        if c.id in posiciones:
+            resumen["ubicados"] += 1
         if "rojo" in luces_del_cliente or "amarillo" in luces_del_cliente:
             resumen["por_cobrar"] += 1
         if "rojo" in luces_del_cliente:
@@ -321,7 +334,7 @@ async def datos_de_la_zona(
 
 
 def _resumen_vacio() -> dict:
-    return {"clientes": 0, "por_cobrar": 0, "cobrados": 0, "vencidos": 0,
+    return {"clientes": 0, "ubicados": 0, "por_cobrar": 0, "cobrados": 0, "vencidos": 0,
             "no_pagos": 0, "esperado": 0.0, "cobrado": 0.0, "recortada": False}
 
 
@@ -375,6 +388,9 @@ async def prestar(
     nombre: str = Form(""),
     telefono: str = Form(""),
     direccion: str = Form(""),
+    # Donde se le da de alta, si es nuevo. A uno que ya existe no se le toca.
+    lat: str = Form(""),
+    lng: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Da de alta al cliente si hace falta y le presta, todo en una."""
@@ -446,10 +462,12 @@ async def prestar(
                 "cliente_id": repetido.id, "duplicado": True,
             }, status_code=409)
 
+        lat_alta, lng_alta = leer_coordenadas(lat, lng)
         cliente = Cliente(
             empresa_id=user.empresa_id, cedula=cedula_v, nombre=nombre_v,
             telefono=telefono_v, whatsapp=telefono_v,
             direccion=direccion_v or None, zona_id=zona_id, activo=True,
+            lat=lat_alta, lng=lng_alta,
         )
         db.add(cliente)
         db.flush()

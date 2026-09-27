@@ -17,6 +17,7 @@ from app.routers.auth import get_current_user
 from app.services.prestamo_service import get_estado_prestamo
 from app.utils.audit import log_action
 from app.utils.interfaz import redirigir_a_vista_simple
+from app.utils.ubicacion import leer_coordenadas
 from app.utils.money import cop, money, money_int
 from app.utils.almacen_imagenes import guardar_imagen
 from app.utils.validators import (
@@ -663,6 +664,10 @@ async def registrar_no_pago(
     cuota_id: int = Form(...),
     fecha: str = Form(""),
     motivo: str = Form(""),
+    # Donde estaba el cobrador. Opcional: un GPS que no contesta no puede
+    # impedir dejar constancia de la visita.
+    lat: str = Form(""),
+    lng: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Deja constancia de que se visito al cliente y no pago.
@@ -678,6 +683,8 @@ async def registrar_no_pago(
         motivo = sin_html(motivo, "Motivo", 300)
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
+    # Coordenadas malas no rechazan la visita: se guarda sin posicion.
+    lat_visita, lng_visita = leer_coordenadas(lat, lng)
 
     hoy = hoy_local()
     if fecha.strip():
@@ -728,6 +735,10 @@ async def registrar_no_pago(
         motivo=motivo or None,
         usuario_id=user.id,
         registrado_por=user.nombre or user.username,
+        # Sin esto, los clientes que no pagan -- justo los que mas hay que
+        # visitar -- no tendrian nunca una posicion para ordenar la ruta.
+        lat=lat_visita,
+        lng=lng_visita,
     ))
     try:
         db.commit()

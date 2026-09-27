@@ -91,6 +91,12 @@
   </div>
   <div class="modal-footer">
     <button class="btn" onclick="document.getElementById('modal-cobro').classList.remove('open')">Cancelar</button>
+    {#- "No pago" dentro del cobro: solo lo enciende la pantalla que pone
+        window.MODAL_CON_NO_PAGO (la vista simple, que no tiene otro sitio
+        para marcarlo). En Cobros y Clientes queda oculto: esas pantallas ya
+        tienen su propio boton y aqui no cambia nada. -#}
+    <button class="btn" id="btn-no-pago-modal" style="display:none;"
+            onclick="noPagoDesdeModal(this)">No pagó</button>
     <button class="btn btn-gold" id="btn-confirmar" onclick="confirmarCobro()">Registrar Cobro</button>
   </div>
 </div>

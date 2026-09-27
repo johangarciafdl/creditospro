@@ -27,10 +27,43 @@ function abrirCobro(cuotaId,cliente,valor,numCuota){
     document.getElementById('mc-fecha-aviso').style.display = campoFecha.value<iso ? 'block' : 'none';
   };
   document.getElementById('mc-fecha-aviso').style.display='none';
+  // El boton de "No pago" solo aparece donde la pantalla lo pide.
+  const botonNoPago = document.getElementById('btn-no-pago-modal');
+  if (botonNoPago) botonNoPago.style.display = window.MODAL_CON_NO_PAGO ? '' : 'none';
   document.getElementById('modal-cobro').classList.add('open');
   setTimeout(()=>document.getElementById('mc-valor').focus(),300);
   // Auto-capturar GPS
   captureGPS();
+}
+
+// La visita sin pago, desde la misma ventana del cobro. Manda el GPS que ya
+// se capturo al abrirla: para cuando el cobrador decide que no pago, casi
+// siempre ha llegado. Si no ha llegado, se registra igual, sin posicion --
+// esperar al GPS con el cliente delante seria peor que perder un punto.
+async function noPagoDesdeModal(btn){
+  const cuotaId = document.getElementById('mc-cuota-id').value;
+  if (!cuotaId) return;
+  const fd = new FormData();
+  fd.append('cuota_id', cuotaId);
+  fd.append('motivo', document.getElementById('mc-obs').value.trim());
+  fd.append('lat', document.getElementById('mc-lat').value || '');
+  fd.append('lng', document.getElementById('mc-lng').value || '');
+  await conBoton(btn, 'Registrando...', async () => {
+    try {
+      const r = await window.fetch('/cobros/no-pago', {method:'POST', body:fd});
+      const d = await leerRespuesta(r);
+      if (d.ok) {
+        document.getElementById('modal-cobro').classList.remove('open');
+        toast(d.mensaje, d.duplicado ? 'warn' : 'success');
+        setTimeout(refrescarTrasCobro, 400);
+      } else {
+        toast(d.error || d.detail || 'No se pudo registrar', 'error');
+      }
+    } catch(e) {
+      console.error('[Cobros] Error registrando no pago:', e);
+      toast('No hay conexion. Intenta de nuevo.', 'error');
+    }
+  });
 }
 
 // GPS
