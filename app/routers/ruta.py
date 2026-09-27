@@ -149,146 +149,161 @@ async def datos_de_la_zona(
 
     ids = [c.id for c in clientes]
 
-    # ── Lo que cada uno debe ───────────────────────────────────────────────
+    # ── Lo que se debe, PRESTAMO A PRESTAMO ───────────────────────────────
+    # Una fila por prestamo activo, no por cliente. Con una por cliente, un
+    # cliente con dos prestamos enseñaba las cifras del que vencia antes: en
+    # produccion, un cobrador estaba cobrando uno de 500.000 y la fila le
+    # mostraba el "le falta" y la cuota de otro de 200.000 del mismo cliente,
+    # sin ningun aviso. Ninguna cuenta estaba mal en la base; lo que estaba
+    # mal era mezclar en una fila cifras de dos prestamos. Y tocar la fila
+    # cobraba el que vencia antes, no el que el cobrador creia.
+    #
     # Se traen las cuotas pendientes de todos de una vez y se agrupan aqui:
-    # una consulta por cliente serian ochenta idas y vueltas a la base para
-    # pintar una pantalla.
+    # una consulta por cliente serian ochenta idas y vueltas a la base.
     filas = (
         db.query(Cuota, Prestamo)
         .join(Prestamo, Cuota.prestamo_id == Prestamo.id)
         .filter(Prestamo.empresa_id == eid,
                 Prestamo.cliente_id.in_(ids),
                 Cuota.estado.in_(ESTADOS_PENDIENTES))
-        .order_by(Cuota.fecha_vencimiento)
+        .order_by(Cuota.fecha_vencimiento, Cuota.numero)
         .all()
     )
-    pendiente_de: dict[int, dict] = {}
-    deuda_de: dict[int, Decimal] = {}
-    vencidas_de: dict[int, int] = {}
-    # Lo que se le presto y lo que le queda del prestamo ENTERO, no de la
-    # cuota. Es lo que el cobrador canta en la puerta: "de los trescientos
-    # que te preste te faltan ciento veinte", y hasta ahora habia que abrir
-    # la ficha para saberlo.
-    prestado_de: dict[int, Decimal] = {}
-    restante_de: dict[int, Decimal] = {}
-    for cu, p in filas:
-        falta = max(Decimal("0"), money(cu.valor) - money(cu.valor_pagado or 0))
-        deuda_de[p.cliente_id] = deuda_de.get(p.cliente_id, Decimal("0")) + falta
-        if cu.fecha_vencimiento and cu.fecha_vencimiento < dia:
-            vencidas_de[p.cliente_id] = vencidas_de.get(p.cliente_id, 0) + 1
-        # La primera que aparece es la mas urgente: la consulta viene
-        # ordenada por vencimiento. Ese es tambien el prestamo del que se
-        # muestra el capital y el saldo -- si tuviera dos abiertos, el que le
-        # toca pagar antes es el que importa en la puerta.
-        if p.cliente_id not in pendiente_de:
-            prestado_de[p.cliente_id] = money(p.capital or 0)
-            pendiente_de[p.cliente_id] = {
-                "cuota_id": cu.id,
-                "prestamo_id": p.id,
-                "cuota_num": cu.numero,
-                "total_cuotas": p.num_cuotas,
-                "valor": float(money(cu.valor)),
-                "valor_pagado": float(money(cu.valor_pagado or 0)),
-                "falta": float(falta),
-                "estado": cu.estado,
-                "vence_iso": cu.fecha_vencimiento.isoformat() if cu.fecha_vencimiento else "",
-                "vencimiento": cu.fecha_vencimiento.strftime("%d/%m/%Y") if cu.fecha_vencimiento else "—",
-                "dias": (dia - cu.fecha_vencimiento).days if cu.fecha_vencimiento else 0,
-                "_vence": cu.fecha_vencimiento,
-            }
+    # La cuota mas urgente de cada prestamo (la consulta viene ordenada por
+    # vencimiento, asi que la primera que aparece es esa).
+    siguiente: dict[int, tuple] = {}
+    # Los prestamos de cada cliente, en el orden en que vencen.
+    prestamos_de: dict[int, list[int]] = {}
+    for cu, pr in filas:
+        if pr.id not in siguiente:
+            siguiente[pr.id] = (cu, pr)
+            prestamos_de.setdefault(pr.cliente_id, []).append(pr.id)
 
-    # Lo que falta del prestamo entero: la suma de lo que queda en todas sus
-    # cuotas, tambien las que aun no vencen. Se pide aparte porque la consulta
-    # de arriba solo trae las pendientes, y "te faltan ciento veinte" incluye
-    # las de la semana que viene.
-    prestamos_en_pantalla = {v["prestamo_id"] for v in pendiente_de.values()}
-    if prestamos_en_pantalla:
-        saldos = (
-            db.query(Cuota.prestamo_id,
-                     func.sum(Cuota.valor - func.coalesce(Cuota.valor_pagado, 0)))
-            .filter(Cuota.empresa_id == eid,
-                    Cuota.prestamo_id.in_(prestamos_en_pantalla))
+    # Total y saldo de cada prestamo, con TODAS sus cuotas -- tambien las ya
+    # pagadas y las que aun no vencen. El total se suma de las cuotas y no se
+    # lee de prestamos.total_pagar porque los prestamos importados de antes no
+    # lo tienen guardado; las cuotas si, siempre.
+    total_de: dict[int, Decimal] = {}
+    restante_de: dict[int, Decimal] = {}
+    if siguiente:
+        for pid, total, pagado in (
+            db.query(Cuota.prestamo_id, func.sum(Cuota.valor),
+                     func.sum(func.coalesce(Cuota.valor_pagado, 0)))
+            .filter(Cuota.empresa_id == eid, Cuota.prestamo_id.in_(list(siguiente)))
             .group_by(Cuota.prestamo_id)
             .all()
-        )
-        por_prestamo = {pid: money(total or 0) for pid, total in saldos}
-        for cliente_id, pend in pendiente_de.items():
-            restante_de[cliente_id] = max(
-                Decimal("0"), por_prestamo.get(pend["prestamo_id"], Decimal("0")))
+        ):
+            total_de[pid] = money(total or 0)
+            restante_de[pid] = max(Decimal("0"), money(total or 0) - money(pagado or 0))
 
     # ── Lo que ya se cobro ese dia ─────────────────────────────────────────
-    cobrado_de: dict[int, Decimal] = {}
-    for cliente_id, valor in (
-        db.query(Cobro.cliente_id, Cobro.valor_cobrado)
+    # Por prestamo para las filas, y por cliente para el que ya no debe nada
+    # (si termino de pagar hoy, su fila tiene que decir que hoy pago).
+    cobrado_prestamo: dict[int, Decimal] = {}
+    cobrado_cliente: dict[int, Decimal] = {}
+    for cliente_id, prestamo_id, valor in (
+        db.query(Cobro.cliente_id, Cobro.prestamo_id, Cobro.valor_cobrado)
         .filter(Cobro.empresa_id == eid, Cobro.fecha == dia,
                 Cobro.cliente_id.in_(ids))
         .all()
     ):
-        cobrado_de[cliente_id] = cobrado_de.get(cliente_id, Decimal("0")) + money(valor)
+        cobrado_prestamo[prestamo_id] = cobrado_prestamo.get(prestamo_id, Decimal("0")) + money(valor)
+        cobrado_cliente[cliente_id] = cobrado_cliente.get(cliente_id, Decimal("0")) + money(valor)
 
     # ── Y por donde ya se paso sin cobrar ──────────────────────────────────
-    no_pago_de: dict[int, str] = {}
+    no_pago_prestamo: set[int] = set()
+    no_pago_cliente: set[int] = set()
     for np in (
         db.query(NoPago)
         .filter(NoPago.empresa_id == eid, NoPago.fecha == dia,
                 NoPago.cliente_id.in_(ids))
         .all()
     ):
-        no_pago_de[np.cliente_id] = np.motivo or "Sin motivo"
+        no_pago_prestamo.add(np.prestamo_id)
+        no_pago_cliente.add(np.cliente_id)
 
     # ── Armar la lista ─────────────────────────────────────────────────────
     salida = []
     resumen = _resumen_vacio()
     for c in clientes:
-        pend = pendiente_de.get(c.id)
-        deuda = deuda_de.get(c.id, Decimal("0"))
-        cobrado = cobrado_de.get(c.id, Decimal("0"))
-        luz = _semaforo(pend["_vence"] if pend else None, dia, deuda > 0)
-        fila = {
+        base_fila = {
             "cliente_id": c.id,
             "nombre": c.nombre,
             "whatsapp": c.whatsapp or c.telefono or "",
             # El nombre del archivo, no la foto: la lista pide las miniaturas
             # una a una al hacer scroll.
             "miniatura": (c.foto_path or "").replace("fotos/", "") or None,
-            "semaforo": luz,
-            # Las cuatro cifras de la fila: lo que se le presto, lo que le
-            # queda, en que cuota va y cuanto es esa cuota.
-            "prestado": float(prestado_de.get(c.id, Decimal("0"))),
-            "restante": float(restante_de.get(c.id, Decimal("0"))),
-            "cobrado_hoy": float(cobrado),
-            "no_pago_hoy": c.id in no_pago_de,
-            "pendiente": {
-                "cuota_id": pend["cuota_id"],
-                "cuota_num": pend["cuota_num"],
-                "total_cuotas": pend["total_cuotas"],
-                "cuota": pend["valor"],
-                "falta": pend["falta"],
-            } if pend else None,
         }
-        salida.append(fila)
+        pids = prestamos_de.get(c.id, [])
+        luces_del_cliente = []
 
+        if not pids:
+            # No debe nada: una sola fila, verde, sin cifras.
+            fila = dict(base_fila, fila_id=f"{c.id}-0", semaforo="verde",
+                        prestamo_id=None, prestamo_n=0, prestamos_total=0,
+                        prestado=0.0, total=0.0, restante=0.0,
+                        cobrado_hoy=float(cobrado_cliente.get(c.id, Decimal("0"))),
+                        no_pago_hoy=c.id in no_pago_cliente, pendiente=None)
+            salida.append(fila)
+            luces_del_cliente.append("verde")
+        else:
+            for n, pid in enumerate(pids, start=1):
+                cu, pr = siguiente[pid]
+                falta = max(Decimal("0"), money(cu.valor) - money(cu.valor_pagado or 0))
+                luz = _semaforo(cu.fecha_vencimiento, dia, True)
+                fila = dict(
+                    base_fila,
+                    fila_id=f"{c.id}-{pid}",
+                    semaforo=luz,
+                    prestamo_id=pid,
+                    # "Prestamo 2 de 3": cuando un cliente tiene mas de uno,
+                    # la pantalla lo dice, para que no parezca repetido.
+                    prestamo_n=n,
+                    prestamos_total=len(pids),
+                    # Las cifras de la fila, TODAS del mismo prestamo: lo que
+                    # se le presto, lo que tiene que devolver con el interes,
+                    # lo que le queda, y la cuota en la que va.
+                    prestado=float(money(pr.capital or 0)),
+                    total=float(total_de.get(pid, Decimal("0"))),
+                    restante=float(restante_de.get(pid, Decimal("0"))),
+                    cobrado_hoy=float(cobrado_prestamo.get(pid, Decimal("0"))),
+                    no_pago_hoy=pid in no_pago_prestamo,
+                    pendiente={
+                        "cuota_id": cu.id,
+                        "cuota_num": cu.numero,
+                        "total_cuotas": pr.num_cuotas,
+                        "cuota": float(money(cu.valor)),
+                        # Lo que queda de ESTA cuota: si abono una parte,
+                        # es menos que la cuota, y es lo que se le cobra.
+                        "falta": float(falta),
+                    },
+                )
+                salida.append(fila)
+                luces_del_cliente.append(luz)
+                if luz in ("rojo", "amarillo"):
+                    resumen["esperado"] += float(falta)
+
+        # El resumen cuenta CLIENTES, no filas: un cliente con dos prestamos
+        # vencidos es una persona que debe, no dos.
         resumen["clientes"] += 1
-        if luz in ("rojo", "amarillo"):
+        if "rojo" in luces_del_cliente or "amarillo" in luces_del_cliente:
             resumen["por_cobrar"] += 1
-            resumen["esperado"] += fila["pendiente"]["falta"] if pend else 0.0
+        if "rojo" in luces_del_cliente:
+            resumen["vencidos"] += 1
+        cobrado = cobrado_cliente.get(c.id, Decimal("0"))
         if cobrado > 0:
             resumen["cobrados"] += 1
             resumen["cobrado"] += float(cobrado)
-        if luz == "rojo":
-            resumen["vencidos"] += 1
-        if fila["no_pago_hoy"]:
+        if c.id in no_pago_cliente:
             resumen["no_pagos"] += 1
 
-    # Una sola lista, ordenada por lo que hay que hacer: primero quien debe,
-    # luego a quien le toca hoy, y al final quien esta al dia. Al quitar la
-    # pestaña "Por cobrar", el orden es lo unico que le dice al cobrador por
-    # donde empezar; en orden alfabetico, los que ya pagaron todo salian
-    # arriba y habia que bajar entre ellos para encontrar el trabajo. No se
-    # esconde a nadie: siguen saliendo todos los de la zona.
+    # Una sola lista, ordenada por lo que hay que hacer: primero lo que se
+    # debe, luego lo que toca hoy, y al final lo que esta al dia. Los
+    # prestamos de un mismo cliente quedan juntos dentro de cada color.
     urgencia = {"rojo": 0, "amarillo": 1, "verde": 2}
     salida.sort(key=lambda f: (urgencia.get(f["semaforo"], 3),
-                               (f["nombre"] or "").lower()))
+                               (f["nombre"] or "").lower(),
+                               f["prestamo_n"]))
 
     resumen["esperado"] = round(resumen["esperado"], 2)
     resumen["cobrado"] = round(resumen["cobrado"], 2)

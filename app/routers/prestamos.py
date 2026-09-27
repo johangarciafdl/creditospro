@@ -439,6 +439,12 @@ async def crear_prestamo(
                     f"{cop(estado_caja['sobregiro_valor'])} de sobregiro."
                 )
         return JSONResponse(respuesta)
+    except ValueError as e:
+        # Un plan que no se puede calcular (p. ej. cuotas de menos de un peso)
+        # es un dato mal puesto, no un fallo del servidor: el motivo tiene que
+        # llegarle a quien lo escribio, y no una traza al registro de errores.
+        db.rollback()
+        return JSONResponse({"error": str(e)}, status_code=400)
     except Exception as e:
         db.rollback()
         logger.exception(

@@ -34,6 +34,17 @@ def calcular_cuotas(capital: float, tasa: float, num_cuotas: int,
     interes = _peso(capital * (tasa / Decimal("100")))
     total = capital + interes
     valor_cuota = (total / Decimal(num_cuotas)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    # Redondear cada cuota hacia arriba y dejar el ajuste en la ultima solo
+    # funciona si las anteriores no se comen el total. Con un plan de muchas
+    # cuotas sobre un monto muy pequeño -- 1.000 pesos en 365 cuotas diarias --
+    # la cuota redondeada a 3 por 364 dias ya suma mas que el total, y la
+    # ultima salia en NEGATIVO: el sistema habria guardado un prestamo en el
+    # que el cliente debe -92 pesos en su ultima cuota. Mejor rechazarlo con
+    # un mensaje que se entienda que guardar un plan imposible.
+    if valor_cuota * (num_cuotas - 1) >= total:
+        raise ValueError(
+            "Con ese monto y ese numero de cuotas, cada cuota quedaria por "
+            "debajo de un peso. Usa menos cuotas o un monto mayor.")
     cuotas = []
     acumulado = Decimal("0.00")
     for i in range(1, num_cuotas + 1):

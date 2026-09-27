@@ -338,6 +338,7 @@ function pintar(filas){
         <div style="flex:1;min-width:0;">
           <div class="fila-nombre">${esc(f.nombre)}</div>
           <div class="fila-luz">${luz.texto}${
+            f.prestamos_total > 1 ? ` · prestamo ${Number(f.prestamo_n)} de ${Number(f.prestamos_total)}` : ''}${
             f.cobrado_hoy > 0 ? ` · cobrado ${cop(f.cobrado_hoy)}` : ''}${
             f.no_pago_hoy ? ' · sin pago' : ''}</div>
         </div>
@@ -346,9 +347,11 @@ function pintar(filas){
       </div>
       ${p ? `
       <div class="fila-cifras">
-        <div><span>Prestado</span><b>${cop(f.prestado)}</b></div>
+        <div><span>Prestado</span><b>${cop(f.prestado)}</b>
+          ${f.total > f.prestado ? `<small>total ${cop(f.total)}</small>` : ''}</div>
         <div><span>Le falta</span><b class="falta">${cop(f.restante)}</b></div>
-        <div><span>Cuota ${Number(p.cuota_num)||0}/${Number(p.total_cuotas)||0}</span><b>${cop(p.cuota)}</b></div>
+        <div><span>Cuota ${Number(p.cuota_num)||0}/${Number(p.total_cuotas)||0}</span><b>${cop(p.cuota)}</b>
+          ${p.falta < p.cuota ? `<small>faltan ${cop(p.falta)}</small>` : ''}</div>
       </div>` : `
       <div class="fila-cifras"><div><span>Sin cuotas pendientes</span></div></div>`}
     </div>`;
@@ -630,6 +633,11 @@ _zona = {{ zona_unica }}; _elegida = true; cargar();
 .fila-cifras span{display:block;font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fila-cifras b{font-family:var(--mono);font-size:14px;font-weight:700;white-space:nowrap}
 .fila-cifras b.falta{color:var(--red)}
+/* El total con interes, debajo de lo prestado: es lo que permite leer la
+   resta. Sin el, 'prestado 500.000' y 'le falta 450.000' tras una cuota de
+   150.000 no cuadraban a la vista, porque el interes no salia en ninguna
+   parte. */
+.fila-cifras small{display:block;font-size:10px;color:var(--t3);font-family:var(--mono);white-space:nowrap}
 .btn-wa{background:#25D366;color:#fff;border-color:#25D366;flex-shrink:0;padding:8px 12px}
 
 .luz-roja{border-left-color:var(--red)}
