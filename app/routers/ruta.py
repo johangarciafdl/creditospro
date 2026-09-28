@@ -19,11 +19,11 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import func
+from sqlalchemy import func, nulls_last
 from sqlalchemy.orm import Session
 
-from app.database import (Cliente, Cobro, Cuota, NoPago, Prestamo, Zona, get_db,
-                          hoy_local)
+from app.database import (Cliente, Cobro, Cuota, NoPago, Prestamo, Zona, ahora_utc,
+                          get_db, hoy_local)
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import calcular_cuotas
 from app.templates import templates
@@ -48,6 +48,12 @@ ESTADOS_PENDIENTES = ("Pendiente", "Vencida", "Parcial")
 # a tener miles, es mejor recortar la lista que mandar al celular una pagina
 # que no acaba de cargar nunca.
 MAX_CLIENTES = 400
+
+# Lo que se dio de alta hace menos de esto sale arriba de la lista, del mas
+# nuevo al mas viejo. Sin esto, el cliente al que se le acaba de prestar
+# quedaba al fondo: su primera cuota aun no vence, asi que sale "al dia", y
+# el cobrador tenia que buscarlo entre doscientos.
+RECIENTE = datetime.timedelta(days=3)
 
 
 @router.get("/ruta")
@@ -144,7 +150,11 @@ async def datos_de_la_zona(
         from app.utils.validators import filtro_busqueda
         consulta = consulta.filter(filtro_busqueda(q.strip(), Cliente.nombre,
                                                    Cliente.cedula))
-    clientes = consulta.order_by(Cliente.nombre).limit(MAX_CLIENTES).all()
+    # Si la lista se recorta, que no se lleve por delante a los nuevos: se
+    # piden primero los mas recientes. El orden de la pantalla se decide
+    # abajo; esto solo decide quien entra si hay mas de MAX_CLIENTES.
+    clientes = (consulta.order_by(nulls_last(Cliente.creado.desc()), Cliente.nombre)
+                .limit(MAX_CLIENTES).all())
     if not clientes:
         return JSONResponse({"clientes": [], "resumen": _resumen_vacio()})
 
@@ -232,6 +242,12 @@ async def datos_de_la_zona(
     # ── Armar la lista ─────────────────────────────────────────────────────
     salida = []
     resumen = _resumen_vacio()
+    desde = ahora_utc() - RECIENTE
+
+    def _nuevo(momento):
+        """El momento del alta si es reciente, en texto; si no, None."""
+        return momento.isoformat() if momento and momento >= desde else None
+
     for c in clientes:
         base_fila = {
             "cliente_id": c.id,
@@ -251,6 +267,7 @@ async def datos_de_la_zona(
         if not pids:
             # No debe nada: una sola fila, verde, sin cifras.
             fila = dict(base_fila, fila_id=f"{c.id}-0", semaforo="verde",
+                        nuevo=_nuevo(c.creado),
                         prestamo_id=None, prestamo_n=0, prestamos_total=0,
                         prestado=0.0, total=0.0, restante=0.0,
                         cobrado_hoy=float(cobrado_cliente.get(c.id, Decimal("0"))),
@@ -266,6 +283,8 @@ async def datos_de_la_zona(
                     base_fila,
                     fila_id=f"{c.id}-{pid}",
                     semaforo=luz,
+                    # Un prestamo nuevo a un cliente de siempre tambien lo es.
+                    nuevo=_nuevo(pr.creado),
                     prestamo_id=pid,
                     # "Prestamo 2 de 3": cuando un cliente tiene mas de uno,
                     # la pantalla lo dice, para que no parezca repetido.
@@ -313,10 +332,14 @@ async def datos_de_la_zona(
     # Una sola lista, ordenada por lo que hay que hacer: primero lo que se
     # debe, luego lo que toca hoy, y al final lo que esta al dia. Los
     # prestamos de un mismo cliente quedan juntos dentro de cada color.
+    # Antes que todo, lo recien dado de alta (cliente o prestamo), del mas
+    # nuevo al mas viejo: es lo que el cobrador acaba de hacer y lo que busca.
     urgencia = {"rojo": 0, "amarillo": 1, "verde": 2}
     salida.sort(key=lambda f: (urgencia.get(f["semaforo"], 3),
                                (f["nombre"] or "").lower(),
                                f["prestamo_n"]))
+    # Orden estable: los nuevos suben manteniendo entre si el del mas reciente.
+    salida.sort(key=lambda f: f["nuevo"] or "", reverse=True)
 
     resumen["esperado"] = round(resumen["esperado"], 2)
     resumen["cobrado"] = round(resumen["cobrado"], 2)

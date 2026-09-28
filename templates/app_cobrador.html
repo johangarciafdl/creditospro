@@ -377,7 +377,7 @@ function pintar(filas){
           f.miniatura ? `<img data-mini="${attr(f.miniatura)}" alt="">` : ''}</div>
         <div style="flex:1;min-width:0;">
           <div class="fila-nombre">${esc(f.nombre)}</div>
-          <div class="fila-luz">${luz.texto}${
+          <div class="fila-luz">${f.nuevo ? '<span class="fila-nuevo">Nuevo</span> ' : ''}${luz.texto}${
             f.prestamos_total > 1 ? ` · prestamo ${Number(f.prestamo_n)} de ${Number(f.prestamos_total)}` : ''}${
             f.cobrado_hoy > 0 ? ` · cobrado ${cop(f.cobrado_hoy)}` : ''}${
             f.no_pago_hoy ? ' · sin pago' : ''}${distancia}</div>
@@ -852,6 +852,7 @@ _zona = {{ zona_unica }}; _elegida = true; cargar();
    no muestra un cuadro gris vacio, y si la foto no se puede leer se retira y
    la inicial ya estaba puesta. */
 .cercania{gap:10px;align-items:center;flex-wrap:wrap;margin:0 2px 10px}
+.fila-nuevo{background:var(--gold);color:#fff;border-radius:4px;padding:1px 5px;margin-right:2px}
 .fila-dist{text-transform:none;color:var(--t2);font-weight:600}
 .btn-llegar{flex-shrink:0;font-weight:700}
 .resumen-linea{gap:14px;flex-wrap:wrap;align-items:baseline;padding:4px 2px 10px;font-size:13px;color:var(--t2)}

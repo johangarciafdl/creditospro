@@ -678,7 +678,8 @@ def test_la_ruta_del_cobrador_es_la_de_hoy(entorno):
 def test_la_lista_pone_primero_a_quien_debe(entorno):
     """Sin la pestaña "Por cobrar", el orden es lo unico que dice por donde
     empezar. En orden alfabetico, los que ya pagaron salian arriba."""
-    cobra, _, d, _ = entorno
+    cobra, _, d, Sesion = entorno
+    _envejecer(Sesion, d)
     luces = [f["semaforo"] for f in _zona(cobra, d)["clientes"]]
     orden = {"rojo": 0, "amarillo": 1, "verde": 2}
     assert luces == sorted(luces, key=orden.get), f"orden: {luces}"
@@ -689,3 +690,66 @@ def test_la_lista_pone_primero_a_quien_debe(entorno):
     for clave in ("cliente_vencido", "cliente_hoy", "cliente_parcial",
                   "cliente_aldia", "cliente_sin_deuda"):
         assert d[clave] in ids, f"el orden escondio a {clave}"
+
+
+# ── Lo recien dado de alta, arriba ────────────────────────────────────────
+
+def _envejecer(Sesion, d, dias=30):
+    """Todo lo sembrado pasa a ser de hace un mes: sin esto, todo es nuevo."""
+    from app.database import Cliente, Prestamo, ahora_utc
+    viejo = ahora_utc() - datetime.timedelta(days=dias)
+    db = Sesion()
+    try:
+        db.query(Cliente).filter(Cliente.empresa_id == d["empresa_id"]).update(
+            {Cliente.creado: viejo}, synchronize_session=False)
+        db.query(Prestamo).filter(Prestamo.empresa_id == d["empresa_id"]).update(
+            {Prestamo.creado: viejo}, synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_el_cliente_y_el_prestamo_recien_creados_salen_primero(entorno):
+    """El prestamo que se acaba de hacer esta "al dia" (su primera cuota no
+    vence aun), y por urgencia quedaba al fondo. Sale arriba, marcado."""
+    cobra, _, d, Sesion = entorno
+    _envejecer(Sesion, d)
+    r = cobra.post("/ruta/prestar", data={
+        "zona_id": d["zona_a"], "capital": "100000", "tasa_interes": "20",
+        "num_cuotas": "20", "plazo_dias": "1",
+        "cedula": "NUEVO1", "nombre": "Zulema Recien", "telefono": "3005550001"})
+    assert r.status_code == 200 and r.json().get("ok"), r.text
+    filas = _zona(cobra, d)["clientes"]
+    assert filas[0]["nombre"] == "Zulema Recien", [f["nombre"] for f in filas[:3]]
+    assert filas[0]["nuevo"]
+    # Lo demas sigue por urgencia, y no se marca como nuevo.
+    resto = [f for f in filas if not f["nuevo"]]
+    orden = {"rojo": 0, "amarillo": 1, "verde": 2}
+    luces = [f["semaforo"] for f in resto]
+    assert luces == sorted(luces, key=orden.get)
+
+
+def test_un_prestamo_nuevo_a_un_cliente_de_siempre_tambien_sube(entorno):
+    cobra, _, d, Sesion = entorno
+    _envejecer(Sesion, d)
+    r = cobra.post("/ruta/prestar", data={
+        "zona_id": d["zona_a"], "capital": "50000", "tasa_interes": "20",
+        "num_cuotas": "10", "plazo_dias": "1",
+        "cliente_id": str(d["cliente_aldia"])})
+    assert r.status_code == 200 and r.json().get("ok"), r.text
+    filas = _zona(cobra, d)["clientes"]
+    assert filas[0]["cliente_id"] == d["cliente_aldia"] and filas[0]["nuevo"]
+    # Su prestamo viejo sigue en su sitio, sin la marca.
+    viejos = [f for f in filas if f["cliente_id"] == d["cliente_aldia"] and not f["nuevo"]]
+    assert viejos, "el prestamo de antes desaparecio"
+
+
+def test_lo_de_hace_mas_de_tres_dias_ya_no_es_nuevo(entorno):
+    cobra, _, d, Sesion = entorno
+    _envejecer(Sesion, d, dias=4)
+    assert not any(f["nuevo"] for f in _zona(cobra, d)["clientes"])
+
+
+def test_la_vista_marca_lo_nuevo():
+    html = Path("templates/app_cobrador.html").read_text(encoding="utf-8")
+    assert "f.nuevo" in html and "fila-nuevo" in html
