@@ -270,6 +270,12 @@ _CAMPOS = {
     "valor_cobrado": "Valor cobrado", "valor": "Valor", "tipo": "Tipo",
     "usuario_id": "Usuario", "username": "Usuario", "password": "Contraseña",
     "concepto": "Concepto", "texto": "Texto", "fecha": "Fecha",
+    "license_key": "Clave de activación", "empresa_nombre": "Nombre de la empresa",
+    "admin_nombre": "Nombre del administrador", "admin_password": "Contraseña",
+    "admin_username": "Usuario", "rol": "Rol", "motivo": "Motivo",
+    "metodo_pago": "Método de pago", "cliente_id": "Cliente",
+    "current_actual": "Contraseña actual", "nueva": "Contraseña nueva",
+    "confirmar": "Confirmación",
 }
 
 
