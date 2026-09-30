@@ -214,7 +214,7 @@ window.attr = window.esc;
           uno de los dos es el tapado y nadie sabe cual funciona. -#}
       {% if current_user %}
       <a href="/auth/logout" class="btn btn-salir" aria-label="Cerrar sesión"
-         onclick="return cerrarSesion()">
+         onclick="return cerrarSesion(event)">
         <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         <span class="salir-txt">Salir</span>
       </a>
@@ -236,6 +236,7 @@ window.attr = window.esc;
 </div>
 
 <script src="{{ estatico('js/app.js') }}"></script>
+<script src="{{ estatico('js/ojo_clave.js') }}" defer></script>
 <script src="/static/assets/vendor/dexie-3.2.4.min.js"></script>
 <script src="{{ estatico('js/pwa.js') }}"></script>
 <script nonce="{{ csp_nonce }}">

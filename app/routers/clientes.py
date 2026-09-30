@@ -38,7 +38,8 @@ from app.utils.permisos_rol import (
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
-    validar_cedula, validar_nombre, validar_telefono, validar_whatsapp, limpiar_texto,
+    validar_cedula_persona, validar_descripcion, validar_nombre_persona,
+    validar_telefono, validar_whatsapp, limpiar_texto,
     sanitizar_imagen_subida, sin_html, filtro_busqueda,
 )
 
@@ -256,8 +257,8 @@ async def crear_cliente(
 
     # Validar inputs
     try:
-        cedula = validar_cedula(cedula)
-        nombre = validar_nombre(nombre)
+        cedula = validar_cedula_persona(cedula)
+        nombre = validar_nombre_persona(nombre)
         telefono = validar_telefono(telefono, requerido=True)
         whatsapp = validar_whatsapp(whatsapp, requerido=False)
         direccion = sin_html(direccion, "Dirección", 300)
@@ -361,7 +362,10 @@ async def editar_cliente(
         return JSONResponse({"error": "No tienes permisos para este cliente"}, status_code=403)
 
     try:
-        nombre = validar_nombre(nombre)
+        if " ".join((nombre or "").split()) != (cliente.nombre or ""):
+            nombre = validar_nombre_persona(nombre)
+        else:
+            nombre = cliente.nombre
         # Un telefono heredado que ya estaba mal (ej. el "000" de la migracion
         # inicial) no bloquea editar la direccion de ese cliente: solo se exige
         # el formato nuevo cuando de verdad se esta cambiando el numero.
@@ -682,13 +686,14 @@ async def crear_nota(
     if not puede_escribir_notas(user):
         return JSONResponse({"error": "Sin permisos"}, status_code=403)
 
-    texto = (texto or "").strip()
-    if not texto:
-        return JSONResponse({"error": "La nota esta vacia"}, status_code=400)
-    if len(texto) > 600:
+    if len((texto or "").strip()) > 600:
         return JSONResponse(
             {"error": "La nota es demasiado larga (maximo 600 caracteres)."},
             status_code=400)
+    try:
+        texto = validar_descripcion(texto, "La nota", 600, requerido=True)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
 
     # Empresa y zona, igual que cualquier otra lectura del cliente: un
     # cobrador no deja notas sobre clientes que no le tocan.

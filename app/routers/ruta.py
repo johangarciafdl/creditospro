@@ -32,9 +32,10 @@ from app.utils.caja import cuadre
 from app.utils.money import cop, money
 from app.utils.permisos_rol import es_admin, puede_gestionar_prestamos
 from app.utils.ubicacion import leer_coordenadas, posiciones_de_clientes
-from app.utils.validators import (filtro_busqueda, sin_html, validar_cedula,
-                                  validar_entero_positivo, validar_nombre,
-                                  validar_numero_positivo, validar_telefono)
+from app.utils.validators import (filtro_busqueda, sin_html, validar_cedula_persona,
+                                  validar_descripcion, validar_entero_positivo,
+                                  validar_nombre_persona, validar_numero_positivo,
+                                  validar_telefono)
 from app.utils.zone_permissions import (get_allowed_zone_ids, require_zone_access,
                                         visible_zonas_query)
 
@@ -437,6 +438,7 @@ async def prestar(
                                          minimo=0, maximo=200)
         cuotas_v = validar_entero_positivo(num_cuotas, "cuotas", minimo=1, maximo=365)
         plazo_v = validar_entero_positivo(plazo_dias, "plazo", minimo=1, maximo=365)
+        observaciones_v = validar_descripcion(observaciones, "Observaciones", 500)
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
 
@@ -467,8 +469,8 @@ async def prestar(
         es_nuevo = False
     else:
         try:
-            cedula_v = validar_cedula(cedula)
-            nombre_v = validar_nombre(nombre)
+            cedula_v = validar_cedula_persona(cedula)
+            nombre_v = validar_nombre_persona(nombre)
             telefono_v = validar_telefono(telefono)
             direccion_v = sin_html(direccion, "Direccion", 300)
         except HTTPException as e:
@@ -513,7 +515,7 @@ async def prestar(
         estado="Activo", cobrador=user.nombre or user.username,
         # El dinero sale de SU caja, hoy.
         desembolsado_por_id=user.id, fecha_desembolso=dia,
-        observaciones=sin_html(observaciones, "Observaciones", 500) or None,
+        observaciones=observaciones_v or None,
     )
     db.add(prestamo)
     db.flush()

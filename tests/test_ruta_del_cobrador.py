@@ -599,13 +599,13 @@ def test_registrar_un_cliente_desde_la_vista_simple(entorno):
     cobra, _, d, Sesion = entorno
     from app.database import Cliente
     r = cobra.post("/clientes/nuevo", data={
-        "cedula": "SIMPLE1", "nombre": "Alta Sin Prestamo",
+        "cedula": "1000001", "nombre": "Alta Sin Prestamo",
         "telefono": "3007778899", "zona_id": d["zona_a"],
         "direccion": "Calle 1", "barrio": "Centro", "tipo_cliente": "Regular"})
     assert r.status_code == 200, r.text
     db = Sesion()
     try:
-        c = db.query(Cliente).filter(Cliente.cedula == "SIMPLE1").first()
+        c = db.query(Cliente).filter(Cliente.cedula == "1000001").first()
         assert c is not None and c.zona_id == d["zona_a"]
     finally:
         db.close()
@@ -717,7 +717,7 @@ def test_el_cliente_y_el_prestamo_recien_creados_salen_primero(entorno):
     r = cobra.post("/ruta/prestar", data={
         "zona_id": d["zona_a"], "capital": "100000", "tasa_interes": "20",
         "num_cuotas": "20", "plazo_dias": "1",
-        "cedula": "NUEVO1", "nombre": "Zulema Recien", "telefono": "3005550001"})
+        "cedula": "1000002", "nombre": "Zulema Recien", "telefono": "3005550001"})
     assert r.status_code == 200 and r.json().get("ok"), r.text
     filas = _zona(cobra, d)["clientes"]
     assert filas[0]["nombre"] == "Zulema Recien", [f["nombre"] for f in filas[:3]]

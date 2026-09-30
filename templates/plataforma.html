@@ -161,7 +161,8 @@ async function cambiarActiva(e, empresaId) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const activaNueva = fd.get('activa') === 'true';
-  if (!activaNueva && !confirm('¿Inhabilitar esta empresa? Sus usuarios no podrán activar ni iniciar sesión hasta que la vuelvas a habilitar.')) return;
+  if (!activaNueva && !(await confirmar('Sus usuarios no podrán activar ni iniciar sesión hasta que la vuelvas a habilitar.',
+                                        {titulo: '¿Inhabilitar esta empresa?', aceptar: 'Inhabilitar', peligro: true}))) return;
   const r = await window.fetch(`/plataforma/empresas/${empresaId}/activa`, { method: 'POST', body: fd });
   const d = await r.json();
   if (d.ok) { toast(d.mensaje); setTimeout(() => location.reload(), 700); }
@@ -187,7 +188,8 @@ function _abrirModalClave(nombre, clave, { unaVezSola }) {
 }
 
 async function generarClave(empresaId, tieneClave, nombre) {
-  if (tieneClave && !confirm(`${nombre} ya tiene una clave activa. ¿Rotarla? La clave anterior deja de funcionar de inmediato.`)) return;
+  if (tieneClave && !(await confirmar(`${nombre} ya tiene una clave activa. La clave anterior deja de funcionar de inmediato.`,
+                                      {titulo: '¿Rotar la clave?', aceptar: 'Rotar', peligro: true}))) return;
   const fd = new FormData();
   fd.append('rotar', tieneClave ? 'true' : 'false');
   const r = await window.fetch(`/plataforma/empresas/${empresaId}/clave`, { method: 'POST', body: fd });
@@ -208,14 +210,13 @@ async function verClave(empresaId, nombre) {
 }
 
 async function restaurarCopiaClave(empresaId, nombre, pista) {
-  const clave = prompt(
-    `La copia guardada de la clave de ${nombre} ya no se puede leer, pero la clave
-` +
+  const clave = await pedirTexto(
+    `La copia guardada de la clave de ${nombre} ya no se puede leer, pero la clave ` +
     `sigue siendo valida y no hay que reactivar nada.
 
 ` +
     `Si la tienes a mano${pista ? ' (termina en ' + pista.replace('...', '') + ')' : ''}, escribela aqui y se vuelve a guardar:`,
-    '');
+    {titulo: 'Restaurar copia de la clave', aceptar: 'Guardar', max: 120});
   if (clave === null || !clave.trim()) return;
   const fd = new FormData();
   fd.append('clave', clave.trim());

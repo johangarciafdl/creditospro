@@ -268,9 +268,9 @@ function _diaSeleccionado(){
 async function marcarNoPago(cuotaId, cliente){
   if(!cuotaId) return;
   const dia = _diaSeleccionado();
-  const motivo = prompt(`${cliente} no pagó el ${dia.split('-').reverse().join('/')}.
-
-Motivo (opcional):`, '');
+  const motivo = await pedirTexto(`${cliente} no pagó el ${dia.split('-').reverse().join('/')}.`,
+                                  {titulo: 'Registrar visita sin pago', aceptar: 'Registrar',
+                                   placeholder: 'Motivo (opcional)'});
   if(motivo === null) return;              // cancelo
   const fd = new FormData();
   fd.append('cuota_id', cuotaId);

@@ -237,14 +237,125 @@ document.getElementById('pwa-install-btn').addEventListener('click',async()=>{
 // Al cerrar sesion se borra el cache del service worker: las pantallas
 // guardadas para trabajar sin señal son de ESTE usuario, y el celular puede
 // pasar a otro cobrador.
-function cerrarSesion(){
-  if(!confirm('Cerrar sesion?')) return false;
-  try{
-    if(navigator.serviceWorker && navigator.serviceWorker.controller){
-      navigator.serviceWorker.controller.postMessage({type:'LIMPIAR_CACHE'});
+function cerrarSesion(ev){
+  // La confirmacion es la ventana de la app, que no bloquea el hilo como
+  // confirm(): se detiene la navegacion y se retoma al aceptar.
+  const destino = (ev && ev.currentTarget && ev.currentTarget.href) || '/auth/logout';
+  if(ev) ev.preventDefault();
+  confirmar('¿Cerrar sesión?', {aceptar: 'Cerrar sesión'}).then(ok => {
+    if(!ok) return;
+    try{
+      if(navigator.serviceWorker && navigator.serviceWorker.controller){
+        navigator.serviceWorker.controller.postMessage({type:'LIMPIAR_CACHE'});
+      }
+    }catch(e){}
+    location.href = destino;
+  });
+  return false;
+}
+
+// ── VENTANAS DE CONFIRMACION Y DE TEXTO ──
+// En lugar de confirm() y prompt() del navegador: esas bloquean la pagina,
+// no se pueden estilizar y encabezan el aviso con la direccion del servidor
+// ("creditospro-production.up.railway.app dice..."). Estas usan el mismo
+// modal que el resto de la app y devuelven una promesa:
+//   if (!(await confirmar('¿Retirar este gasto?'))) return;
+//   const motivo = await pedirTexto('Motivo', {placeholder: 'opcional'});  // null = cancelo
+function _dialogo({titulo, mensaje, aceptar, cancelar, peligro, campo}){
+  return new Promise(resolve => {
+    // Un aviso que sigue en pantalla quedaria encima de los botones (en el
+    // celular la ventana sale abajo, justo donde vive el aviso).
+    const aviso = document.getElementById('toast');
+    if(aviso){ clearTimeout(aviso._t); aviso.style.display = 'none'; }
+    const fondo = document.createElement('div');
+    fondo.className = 'modal-overlay open dialogo-app';
+    fondo.setAttribute('role', 'dialog');
+    fondo.setAttribute('aria-modal', 'true');
+    const caja = document.createElement('div');
+    caja.className = 'modal';
+    caja.style.maxWidth = '420px';
+
+    const cab = document.createElement('div');
+    cab.className = 'modal-header';
+    const t = document.createElement('div');
+    t.className = 'modal-title';
+    t.textContent = titulo || 'Confirmar';           // textContent: nunca HTML
+    cab.appendChild(t);
+
+    const cuerpo = document.createElement('div');
+    cuerpo.className = 'modal-body';
+    if(mensaje){
+      const m = document.createElement('div');
+      m.className = 'fs-13';
+      m.style.whiteSpace = 'pre-line';
+      m.textContent = mensaje;
+      cuerpo.appendChild(m);
     }
-  }catch(e){}
-  return true;
+    let entrada = null;
+    if(campo){
+      entrada = document.createElement('input');
+      entrada.type = campo.tipo || 'text';
+      entrada.value = campo.valor || '';
+      entrada.placeholder = campo.placeholder || '';
+      entrada.maxLength = campo.max || 300;
+      entrada.autocomplete = 'off';
+      entrada.style.marginTop = mensaje ? '12px' : '0';
+      entrada.style.width = '100%';
+      cuerpo.appendChild(entrada);
+    }
+
+    const pie = document.createElement('div');
+    pie.className = 'modal-footer';
+    const no = document.createElement('button');
+    no.type = 'button'; no.className = 'btn';
+    no.textContent = cancelar || 'Cancelar';
+    const si = document.createElement('button');
+    si.type = 'button'; si.className = 'btn ' + (peligro ? 'btn-danger' : 'btn-gold');
+    si.textContent = aceptar || 'Aceptar';
+    pie.appendChild(no); pie.appendChild(si);
+
+    caja.appendChild(cab); caja.appendChild(cuerpo); caja.appendChild(pie);
+    fondo.appendChild(caja);
+    document.body.appendChild(fondo);
+
+    let hecho = false;
+    const cerrar = valor => {
+      if(hecho) return;
+      hecho = true;
+      vigia.disconnect();
+      fondo.remove();
+      resolve(valor);
+    };
+    const respuestaSi = () => cerrar(campo ? entrada.value : true);
+    const respuestaNo = () => cerrar(campo ? null : false);
+    si.addEventListener('click', respuestaSi);
+    no.addEventListener('click', respuestaNo);
+    fondo.addEventListener('click', e => { if(e.target === fondo) respuestaNo(); });
+    caja.addEventListener('keydown', e => {
+      if(e.key === 'Enter' && (entrada ? e.target === entrada : true)){ e.preventDefault(); respuestaSi(); }
+    });
+    // Escape (y cualquier codigo que cierre los modales abiertos) le quita
+    // la clase "open": eso cuenta como cancelar.
+    const vigia = new MutationObserver(() => {
+      if(!fondo.classList.contains('open')) respuestaNo();
+    });
+    vigia.observe(fondo, {attributes: true, attributeFilter: ['class']});
+    setTimeout(() => (entrada || si).focus(), 30);
+  });
+}
+
+function confirmar(mensaje, opciones){
+  const o = opciones || {};
+  return _dialogo({titulo: o.titulo || 'Confirmar', mensaje,
+                   aceptar: o.aceptar || 'Sí, continuar', cancelar: o.cancelar,
+                   peligro: !!o.peligro});
+}
+
+function pedirTexto(mensaje, opciones){
+  const o = opciones || {};
+  return _dialogo({titulo: o.titulo || 'Escribe', mensaje,
+                   aceptar: o.aceptar || 'Guardar', cancelar: o.cancelar,
+                   campo: {valor: o.valor, placeholder: o.placeholder, tipo: o.tipo, max: o.max}});
 }
 
 // Lee la respuesta del servidor sin romperse si no es JSON. Antes, cualquier
@@ -256,7 +367,16 @@ async function leerRespuesta(r){
   let datos = null, texto = '';
   try { datos = await r.clone().json(); }
   catch(e){ try { texto = (await r.text()).slice(0,200); } catch(e2){} }
-  if (datos) return datos;
+  if (datos) {
+    // Por si algun endpoint aun contesta {"detail": [...]}: una lista de
+    // objetos en un aviso se lee "[object Object],[object Object]".
+    if (!datos.error && datos.detail && !datos.ok) {
+      datos.error = typeof datos.detail === 'string'
+        ? datos.detail : 'Revisa los datos del formulario';
+    }
+    if (Array.isArray(datos.detail)) delete datos.detail;
+    return datos;
+  }
   if (r.status === 502 || r.status === 503 || r.status === 504) {
     return { error: 'El servidor no está respondiendo en este momento (puede estar actualizándose). Espera unos segundos e intenta de nuevo.' };
   }

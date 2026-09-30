@@ -268,7 +268,8 @@ async function guardarEdicion(e){
 }
 
 async function eliminarUsuario(id, nombre){
-  if(!confirm(`¿Desactivar usuario ${nombre}?`)) return;
+  if(!(await confirmar(`${nombre} ya no podrá iniciar sesión.`,
+                       {titulo: '¿Desactivar usuario?', aceptar: 'Desactivar', peligro: true}))) return;
   const r = await fetch(`/auth/usuarios/${id}`, {method:'DELETE'});
   const d = await r.json();
   if(d.ok) location.reload();

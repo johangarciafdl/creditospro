@@ -333,12 +333,12 @@ def test_el_cliente_creado_en_la_calle_guarda_donde_se_creo(entorno):
     cli, d, Sesion = entorno
     from app.database import Cliente
     r = cli.post("/clientes/nuevo", data={
-        "cedula": "U900", "nombre": "Nuevo EnLaCalle", "telefono": "3005556677",
+        "cedula": "1000900", "nombre": "Nuevo EnLaCalle", "telefono": "3005556677",
         "zona_id": str(d["zona"]), "lat": "6.2501", "lng": "-75.5701"})
     assert r.status_code == 200 and r.json().get("ok"), r.text
     db = Sesion()
     try:
-        c = db.query(Cliente).filter(Cliente.cedula == "U900").one()
+        c = db.query(Cliente).filter(Cliente.cedula == "1000900").one()
         assert (c.lat, c.lng) == (6.2501, -75.5701)
     finally:
         db.close()
@@ -350,12 +350,12 @@ def test_prestar_a_un_cliente_nuevo_guarda_la_posicion(entorno):
     r = cli.post("/ruta/prestar", data={
         "zona_id": d["zona"], "capital": "100000", "tasa_interes": "20",
         "num_cuotas": "20", "plazo_dias": "1",
-        "cedula": "U901", "nombre": "Prestado EnLaCalle", "telefono": "3005556678",
+        "cedula": "1000901", "nombre": "Prestado EnLaCalle", "telefono": "3005556678",
         "lat": "6.2601", "lng": "-75.5601"})
     assert r.status_code == 200 and r.json().get("ok"), r.text
     db = Sesion()
     try:
-        c = db.query(Cliente).filter(Cliente.cedula == "U901").one()
+        c = db.query(Cliente).filter(Cliente.cedula == "1000901").one()
         assert (c.lat, c.lng) == (6.2601, -75.5601)
     finally:
         db.close()

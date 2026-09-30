@@ -25,7 +25,7 @@ from app.utils.money import money
 from app.utils.permisos_rol import (es_admin, puede_anotar_gastos,
                                     puede_registrar_movimientos_caja,
                                     puede_ver_cuadre_de)
-from app.utils.validators import sin_html
+from app.utils.validators import validar_descripcion
 
 router = APIRouter()
 
@@ -191,7 +191,11 @@ async def registrar_movimiento(
         return JSONResponse({"error": "Usuario no encontrado"}, status_code=404)
 
     try:
-        concepto = sin_html(concepto, "Concepto", 300)
+        # El gasto sin "en que" no se puede revisar: es obligatorio. En el
+        # resto (base, entrega, ajustes) es opcional, pero con forma de texto.
+        concepto = validar_descripcion(
+            concepto, "En que" if tipo == "gasto" else "Concepto", 300,
+            requerido=(tipo == "gasto"))
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
 

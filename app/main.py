@@ -25,6 +25,7 @@ if _dotenv_path.exists():
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -258,6 +259,44 @@ async def error_http(request: Request, exc: StarletteHTTPException):
     """Misma forma {"error": ...} que usan los routers, en vez de {"detail": ...}."""
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code,
                         media_type=JSON_UTF8)
+
+
+# Nombres de los campos tal como los ve el usuario en los formularios.
+_CAMPOS = {
+    "cedula": "Cédula", "nombre": "Nombre", "telefono": "Teléfono",
+    "whatsapp": "WhatsApp", "zona_id": "Zona", "direccion": "Dirección",
+    "capital": "Valor prestado", "num_cuotas": "Número de cuotas",
+    "tasa_interes": "Interés", "plazo_dias": "Plazo", "cuota_id": "Cuota",
+    "valor_cobrado": "Valor cobrado", "valor": "Valor", "tipo": "Tipo",
+    "usuario_id": "Usuario", "username": "Usuario", "password": "Contraseña",
+    "concepto": "Concepto", "texto": "Texto", "fecha": "Fecha",
+}
+
+
+@app.exception_handler(RequestValidationError)
+async def error_de_formulario(request: Request, exc: RequestValidationError):
+    """Un formulario incompleto o con un tipo equivocado.
+
+    La respuesta por defecto de FastAPI es {"detail": [{...}, {...}]}: una
+    lista de objetos. Las pantallas la mostraban tal cual en el aviso, y se
+    leia "[object Object],[object Object],[object Object]". Aqui se convierte
+    en una frase: que campos faltan y cuales vinieron mal.
+    """
+    faltan, malos = [], []
+    for err in exc.errors():
+        loc = [str(x) for x in err.get("loc", ()) if x not in ("body", "query", "path", "form")]
+        campo = loc[-1] if loc else ""
+        nombre = _CAMPOS.get(campo, campo.replace("_", " ").capitalize() or "un dato")
+        lista = faltan if err.get("type") == "missing" else malos
+        if nombre not in lista:
+            lista.append(nombre)
+    partes = []
+    if faltan:
+        partes.append("Completa: " + ", ".join(faltan))
+    if malos:
+        partes.append("Revisa: " + ", ".join(malos))
+    return JSONResponse({"error": ". ".join(partes) or "Revisa los datos del formulario"},
+                        status_code=422, media_type=JSON_UTF8)
 
 
 @app.get("/favicon.ico", include_in_schema=False)

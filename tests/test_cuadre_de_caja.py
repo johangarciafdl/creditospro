@@ -600,7 +600,7 @@ def test_el_cobrador_anota_su_propio_gasto(entorno):
     assert c["gastos"] == 18000.0
     assert c["esperado"] == 482000.0
     gasto = [m for m in c["movimientos"] if m["tipo"] == "gasto"][0]
-    assert gasto["concepto"] == "almuerzo y bus"
+    assert gasto["concepto"] == "Almuerzo y bus"   # se guarda con mayuscula inicial
     assert gasto["efecto"] == -1, "un gasto resta"
 
 
@@ -610,7 +610,7 @@ def test_el_admin_ve_los_gastos_que_anoto_el_cobrador(entorno):
     _anotar(s["luis"], d, d["luis_id"], "gasto", 9000, concepto="transporte")
     c = _cuadre(s["admin"], d, d["luis_id"])["cuadre"]
     assert c["gastos"] == 9000.0
-    assert any(m["concepto"] == "transporte" for m in c["movimientos"])
+    assert any(m["concepto"] == "Transporte" for m in c["movimientos"])
 
 
 def test_el_cobrador_no_anota_gastos_en_la_caja_de_otro(entorno):

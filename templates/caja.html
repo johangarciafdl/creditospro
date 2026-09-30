@@ -336,7 +336,8 @@ async function anotarGasto(btn){
 
 // Un gasto mal tecleado lo puede retirar quien lo anoto.
 async function borrar(id){
-  if (!id || !confirm('Retirar este gasto?')) return;
+  if (!id || !(await confirmar('Se quitará de tu caja y el efectivo esperado se recalcula.',
+                               {titulo: '¿Retirar este gasto?', aceptar: 'Retirar', peligro: true}))) return;
   try {
     const r = await window.fetch('/caja/movimiento/' + id + '/borrar', {method:'POST'});
     const d = await leerRespuesta(r);
@@ -383,7 +384,8 @@ async function anotar(btn){
 }
 
 async function borrar(id){
-  if (!id || !confirm('Retirar este movimiento de la caja?')) return;
+  if (!id || !(await confirmar('El efectivo esperado de esa caja se recalcula.',
+                               {titulo: '¿Retirar este movimiento?', aceptar: 'Retirar', peligro: true}))) return;
   try {
     const r = await window.fetch('/caja/movimiento/' + id + '/borrar', {method:'POST'});
     const d = await leerRespuesta(r);

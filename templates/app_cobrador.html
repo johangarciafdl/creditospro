@@ -595,8 +595,9 @@ function _anexarPosAlta(fd){
 async function marcarNoPago(cuotaId, cliente){
   if (!cuotaId) return;
   const dia = _dia();
-  const motivo = prompt(cliente + ' no pago el ' + dia.split('-').reverse().join('/') +
-                        '.\n\nMotivo (opcional):', '');
+  const motivo = await pedirTexto(cliente + ' no pagó el ' + dia.split('-').reverse().join('/') + '.',
+                                  {titulo: 'Registrar visita sin pago', aceptar: 'Registrar',
+                                   placeholder: 'Motivo (opcional)'});
   if (motivo === null) return;
   const fd = new FormData();
   fd.append('cuota_id', cuotaId);
@@ -640,7 +641,30 @@ function abrirCliente(){
   document.getElementById('modal-cliente').classList.add('open');
 }
 
+// Lo minimo se revisa aqui, junto al campo, antes de mandar nada: un aviso
+// que dice "falta la cedula" debajo de la cedula se entiende; uno general,
+// no. El servidor vuelve a revisar todo (nombre y apellido, cedula con
+// numeros...) y su mensaje sale en el aviso.
+function _faltanDatosCliente(prefijo){
+  const modal = document.getElementById(prefijo === 'c' ? 'modal-cliente' : 'modal-prestar');
+  limpiarErroresCampos(modal);
+  const faltan = [
+    [prefijo + '-cedula', 'Escribe la cedula'],
+    [prefijo + '-nombre', 'Escribe nombre y apellido'],
+    [prefijo + '-telefono', 'Escribe el telefono'],
+  ].filter(([id]) => !document.getElementById(id).value.trim());
+  faltan.forEach(([id, msg]) => errorCampo(id, msg));
+  const nombre = document.getElementById(prefijo + '-nombre').value.trim();
+  if (nombre && nombre.split(/\s+/).length < 2) {
+    errorCampo(prefijo + '-nombre', 'Escribe nombre y apellido');
+    faltan.push([prefijo + '-nombre']);
+  }
+  if (faltan.length) document.getElementById(faltan[0][0]).focus();
+  return faltan.length > 0;
+}
+
 async function guardarClienteNuevo(btn){
+  if (_faltanDatosCliente('c')) return;
   const fd = new FormData();
   fd.append('zona_id', document.getElementById('c-zona').value);
   fd.append('cedula', document.getElementById('c-cedula').value.trim());
@@ -769,6 +793,7 @@ async function confirmarPrestamo(btn){
   if (_clienteElegido) {
     fd.append('cliente_id', _clienteElegido);
   } else {
+    if (_faltanDatosCliente('p')) return;
     fd.append('cedula', document.getElementById('p-cedula').value.trim());
     fd.append('nombre', document.getElementById('p-nombre').value.trim());
     fd.append('telefono', document.getElementById('p-telefono').value.trim());

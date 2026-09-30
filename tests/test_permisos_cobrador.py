@@ -130,13 +130,13 @@ def test_si_puede_dar_de_alta_un_cliente_nuevo(entorno):
     cli, d, Sesion = entorno
     from app.database import Cliente
     r = cli.post("/clientes/nuevo",
-                 data={"cedula": "999", "nombre": "Cliente Nuevo",
+                 data={"cedula": "1000999", "nombre": "Cliente Nuevo",
                        "telefono": "3001112222", "zona_id": d["zona_id"],
                        "direccion": "x", "barrio": "x", "tipo_cliente": "Regular"})
     assert r.status_code == 200, f"no pudo registrarlo: {r.text[:200]}"
     db = Sesion()
     try:
-        creado = db.query(Cliente).filter(Cliente.cedula == "999").first()
+        creado = db.query(Cliente).filter(Cliente.cedula == "1000999").first()
         assert creado is not None, "respondio bien pero no lo creo"
         assert creado.zona_id == d["zona_id"]
     finally:

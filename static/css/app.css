@@ -205,6 +205,8 @@ tbody tr:hover{background:var(--surface-2)}
    arrastre tactil en iOS; el top negativo conserva donde estaba leyendo. */
 body.modal-abierto{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .modal-overlay.open{display:flex}
+/* La confirmacion puede abrirse desde otro modal: va siempre encima. */
+.modal-overlay.dialogo-app{z-index:1100}
 /* El que hace scroll es el cuerpo, no el modal entero: asi el encabezado y
    los botones quedan siempre a la vista y el dedo no arrastra la pagina de
    atras (overscroll-behavior). 100dvh, no 90vh: en el celular la barra del

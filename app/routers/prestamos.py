@@ -27,6 +27,7 @@ from app.utils.money import cop, money
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
     validar_numero_positivo, validar_entero_positivo, limpiar_texto, sin_html,
+    validar_descripcion,
     filtro_busqueda,
 )
 
@@ -304,7 +305,7 @@ async def crear_prestamo(
         return JSONResponse({"error": "Zona inactiva no puede recibir préstamos"}, status_code=400)
 
     try:
-        observaciones = sin_html(observaciones, "Observaciones", 500)
+        observaciones = validar_descripcion(observaciones, "Observaciones", 500)
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
 

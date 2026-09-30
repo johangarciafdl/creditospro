@@ -68,13 +68,13 @@ def entorno():
         u.zonas_asignadas.append(suya)        # la otra NO es suya
         d["usuario_id"] = u.id
 
-        c = Cliente(empresa_id=e.id, cedula="7001", nombre="Cliente Viejo",
+        c = Cliente(empresa_id=e.id, cedula="107001", nombre="Cliente Viejo",
                     telefono="3001112233", direccion="Calle Vieja 1",
                     zona_id=suya.id, activo=True)
         db.add(c); db.flush()
         d["cliente_id"] = c.id
 
-        fuera = Cliente(empresa_id=e.id, cedula="7002", nombre="Cliente Ajeno",
+        fuera = Cliente(empresa_id=e.id, cedula="107002", nombre="Cliente Ajeno",
                         telefono="3004445566", zona_id=ajena.id, activo=True)
         db.add(fuera); db.flush()
         d["cliente_ajeno"] = fuera.id
@@ -114,7 +114,7 @@ def test_da_de_alta_al_cliente_y_le_presta_en_una(entorno):
     cli, d, Sesion = entorno
     from app.database import Cliente, Cuota, Prestamo
 
-    r = _prestar(cli, d, cedula="8001", nombre="Persona Nueva",
+    r = _prestar(cli, d, cedula="108001", nombre="Persona Nueva",
                  telefono="3009998877", direccion="Carrera 5")
     assert r.status_code == 200, r.text
     cuerpo = r.json()
@@ -122,7 +122,7 @@ def test_da_de_alta_al_cliente_y_le_presta_en_una(entorno):
 
     db = Sesion()
     try:
-        c = db.query(Cliente).filter(Cliente.cedula == "8001").first()
+        c = db.query(Cliente).filter(Cliente.cedula == "108001").first()
         assert c is not None and c.zona_id == d["zona"]
         p = db.query(Prestamo).filter(Prestamo.cliente_id == c.id).first()
         assert p is not None
@@ -139,12 +139,12 @@ def test_un_prestamo_que_falla_no_deja_al_cliente_creado(entorno):
     from app.database import Cliente
 
     # 0 cuotas: el prestamo no se puede calcular.
-    r = _prestar(cli, d, cedula="8002", nombre="No Debe Quedar",
+    r = _prestar(cli, d, cedula="108002", nombre="No Debe Quedar",
                  telefono="3001110000", num_cuotas="0")
     assert r.status_code == 400, r.text
     db = Sesion()
     try:
-        assert db.query(Cliente).filter(Cliente.cedula == "8002").first() is None, \
+        assert db.query(Cliente).filter(Cliente.cedula == "108002").first() is None, \
             "el prestamo fallo y el cliente se quedo creado"
     finally:
         db.close()
@@ -156,7 +156,7 @@ def test_una_cedula_repetida_no_crea_un_duplicado(entorno):
     cli, d, Sesion = entorno
     from app.database import Cliente
 
-    r = _prestar(cli, d, cedula="7001", nombre="Otro Nombre",
+    r = _prestar(cli, d, cedula="107001", nombre="Otro Nombre",
                  telefono="3001112233")
     assert r.status_code == 409, r.text
     cuerpo = r.json()
@@ -164,7 +164,7 @@ def test_una_cedula_repetida_no_crea_un_duplicado(entorno):
     assert cuerpo["cliente_id"] == d["cliente_id"]
     db = Sesion()
     try:
-        assert db.query(Cliente).filter(Cliente.cedula == "7001").count() == 1
+        assert db.query(Cliente).filter(Cliente.cedula == "107001").count() == 1
     finally:
         db.close()
 
@@ -174,10 +174,13 @@ def test_una_cedula_repetida_no_crea_un_duplicado(entorno):
 @pytest.mark.parametrize("campo,valor", [
     ("cedula", ""), ("nombre", ""), ("telefono", ""),
     ("cedula", "ab"), ("cedula", "12/34 56!"),
+    # Del reporte de errores: nombres inventados y cedulas sin numeros.
+    ("nombre", "resdads"), ("nombre", "Juan123 Perez"), ("nombre", "Mtdfgh Perez"),
+    ("cedula", "abcde"),
 ])
 def test_un_cliente_nuevo_sin_datos_validos_se_rechaza(entorno, campo, valor):
     cli, d, _ = entorno
-    datos = {"cedula": "8100", "nombre": "Alguien", "telefono": "3001112222"}
+    datos = {"cedula": "108100", "nombre": "Alguien Nuevo", "telefono": "3001112222"}
     datos[campo] = valor
     r = _prestar(cli, d, **datos)
     assert r.status_code == 400, f"{campo}={valor!r} devolvio {r.status_code}"
@@ -214,12 +217,12 @@ def test_a_un_cliente_que_ya_existe_le_presta_sin_tocarle_los_datos(entorno):
 def test_no_puede_prestar_en_una_zona_que_no_es_suya(entorno):
     cli, d, Sesion = entorno
     from app.database import Cliente
-    r = _prestar(cli, d, zona_id=d["zona_ajena"], cedula="8300",
+    r = _prestar(cli, d, zona_id=d["zona_ajena"], cedula="108300",
                  nombre="En Zona Ajena", telefono="3001112222")
     assert r.status_code == 403, f"devolvio {r.status_code}"
     db = Sesion()
     try:
-        assert db.query(Cliente).filter(Cliente.cedula == "8300").first() is None
+        assert db.query(Cliente).filter(Cliente.cedula == "108300").first() is None
     finally:
         db.close()
 
@@ -266,7 +269,7 @@ def test_prestar_descuenta_de_su_caja_y_avisa_del_sobregiro(entorno):
     cli, d, Sesion = entorno
     from app.utils.caja import cuadre
 
-    r = _prestar(cli, d, cedula="8400", nombre="Del Sobregiro",
+    r = _prestar(cli, d, cedula="108400", nombre="Del Sobregiro",
                  telefono="3001112222", capital="250000")
     assert r.status_code == 200, r.text
     cuerpo = r.json()

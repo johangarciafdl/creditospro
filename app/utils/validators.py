@@ -46,6 +46,94 @@ def validar_nombre(nombre: str) -> str:
     return n
 
 
+# ── Texto que escribe una persona ─────────────────────────────────────────────
+# Un programa no puede saber si "resdads" es un apellido o si "almuerzo" era
+# de verdad un almuerzo. Lo que si puede es rechazar lo que NINGUN nombre ni
+# ninguna descripcion tiene: sopas de signos (".,.,.,+´+"), palabras sin una
+# sola vocal o con cinco consonantes seguidas ("mtdfgdg"), un caracter
+# repetido ("aaaaa"), numeros pegados al final de una palabra ("almuerzo23").
+# Es un filtro de basura evidente, no un corrector: lo que pasa es texto con
+# forma de texto, que es lo que un reporte necesita para poder leerse.
+_LETRA = "A-Za-zÁÉÍÓÚÜÑáéíóúüñ"
+_VOCALES = set("aeiouyáéíóúüAEIOUYÁÉÍÓÚÜ")
+_CONSONANTES_SEGUIDAS = re.compile(r"[bcdfghjklmnñpqrstvwxz]{5,}", re.IGNORECASE)
+DESCRIPCION_RE = re.compile(rf"^[{_LETRA}0-9 .,;:\-/#()$%¿?¡!'\"]+$")
+NOMBRE_PERSONA_RE = re.compile(rf"^[{_LETRA}]+\.?(?:[ '\-][{_LETRA}]+\.?)*$")
+
+
+def _palabra_sin_forma(palabra: str) -> bool:
+    letras = re.sub(rf"[^{_LETRA}]", "", palabra)
+    if len(letras) >= 4 and not any(c in _VOCALES for c in letras):
+        return True
+    return bool(_CONSONANTES_SEGUIDAS.search(letras))
+
+
+def _espacios(texto: str) -> str:
+    return re.sub(r"\s+", " ", texto or "").strip()
+
+
+def validar_descripcion(texto: str, campo: str, max_len: int = 300,
+                        requerido: bool = False) -> str:
+    """Texto corto que describe algo: el concepto de un gasto, el motivo de
+    una visita sin pago, una observacion. Devuelve "" si viene vacio y no es
+    obligatorio."""
+    t = _espacios(texto)[:max_len]
+    if not t:
+        if requerido:
+            raise HTTPException(400, f"Escribe {campo.lower()}")
+        return ""
+    if not DESCRIPCION_RE.match(t):
+        raise HTTPException(
+            400, f"{campo}: usa solo letras, numeros y los signos . , - / # ( )")
+    letras = len(re.findall(rf"[{_LETRA}]", t))
+    signos = len(re.findall(rf"[^{_LETRA}0-9 ]", t))
+    if letras < 3:
+        raise HTTPException(400, f"{campo}: escribelo con palabras (ej. almuerzo, gasolina)")
+    if signos > max(3, letras // 2):
+        raise HTTPException(400, f"{campo}: tiene demasiados signos")
+    if re.search(r"([^\d])\1{3,}", t):
+        raise HTTPException(400, f"{campo}: no repitas el mismo caracter")
+    pegado = re.search(rf"[{_LETRA}]{{4,}}\d+", t)
+    if pegado:
+        raise HTTPException(
+            400, f"{campo}: separa el numero de la palabra en '{pegado.group(0)}'")
+    for palabra in t.split():
+        if _palabra_sin_forma(palabra):
+            raise HTTPException(400, f"{campo}: '{palabra}' no parece una palabra")
+    return t[0].upper() + t[1:]
+
+
+def validar_nombre_persona(nombre: str) -> str:
+    """Nombre de un cliente: nombre y apellido, solo letras.
+
+    Mas estricto que validar_nombre (que sirve tambien para zonas y usuarios)
+    porque un cliente es alguien a quien hay que encontrar y cobrar: con un
+    nombre solo, o con uno inventado, no se le encuentra.
+    """
+    n = _espacios(nombre)[:120]
+    if not n:
+        raise HTTPException(400, "Escribe el nombre del cliente")
+    if not NOMBRE_PERSONA_RE.match(n):
+        raise HTTPException(400, "El nombre solo puede tener letras y espacios")
+    palabras = [p for p in re.split(r"[ \-]", n) if len(p.strip(".'")) >= 2]
+    if len(palabras) < 2:
+        raise HTTPException(400, "Escribe nombre y apellido (ej. Juan Perez)")
+    for p in palabras:
+        if _palabra_sin_forma(p):
+            raise HTTPException(400, f"'{p}' no parece un nombre. Revisalo.")
+    return n
+
+
+def validar_cedula_persona(cedula: str) -> str:
+    """Documento de un cliente: el formato de validar_cedula y ademas al
+    menos 5 numeros. Una cedula, un PPT o un pasaporte los tienen; una
+    palabra escrita en ese campo, no."""
+    c = validar_cedula(re.sub(r"[\s.]", "", cedula or ""))
+    if len(re.findall(r"\d", c)) < 5:
+        raise HTTPException(400, "La cedula debe tener al menos 5 numeros")
+    return c
+
+
 def validar_username(username: str) -> str:
     """Username: minusculas, digitos, punto/guion/guion bajo. Sin espacios ni
     simbolos raros -- es un identificador de login, no texto libre."""
