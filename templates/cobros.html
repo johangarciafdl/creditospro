@@ -294,14 +294,22 @@ async function guardarOrdenPend(cont){
   const fd=new FormData();
   fd.append('zona_id', cont.dataset.zona);
   fd.append('cliente_ids', ids.join(','));
+  // Sin señal se guarda en el celular y se envia solo al volver.
+  const sinSenal=()=>{
+    encolarSinSenal('/ruta/orden', Object.fromEntries(fd.entries()), 'orden:'+cont.dataset.zona+':');
+    toast('Sin señal: el orden quedó guardado y se enviará solo.','warn');
+  };
+  if(!navigator.onLine){ sinSenal(); return; }
   try{
     const r=await window.fetch('/ruta/orden',{method:'POST',body:fd});
     const d=await leerRespuesta(r);
-    if(!d.ok){ toast(d.error||'No se pudo guardar el orden','error'); buscar(); }
+    if(!d.ok){
+      if(r.status>=500){ sinSenal(); return; }
+      toast(d.error||'No se pudo guardar el orden','error'); buscar();
+    }
   }catch(e){
-    console.error('[Cobros] No se pudo guardar el orden:',e);
-    toast('Sin conexion: el orden no se guardo.','error');
-    buscar();
+    console.error('[Cobros] Sin conexion guardando el orden:',e);
+    sinSenal();
   }
 }
 

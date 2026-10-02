@@ -242,8 +242,15 @@ function cerrarSesion(ev){
   // confirm(): se detiene la navegacion y se retoma al aceptar.
   const destino = (ev && ev.currentTarget && ev.currentTarget.href) || '/auth/logout';
   if(ev) ev.preventDefault();
-  confirmar('¿Cerrar sesión?', {aceptar: 'Cerrar sesión'}).then(ok => {
+  const pendientes = pendientesSinSenal();
+  const aviso = pendientes
+    ? `Hay ${pendientes} registro(s) guardados sin señal que aún no se han enviado. Si cierras sesión sin señal se perderán.`
+    : '¿Cerrar sesión?';
+  confirmar(aviso, {aceptar: 'Cerrar sesión', titulo: '¿Cerrar sesión?'}).then(async ok => {
     if(!ok) return;
+    await vaciarColaSinSenal();
+    _borrarDatosSinSenal();
+    try { localStorage.removeItem(_COLA); } catch(e) {}
     try{
       if(navigator.serviceWorker && navigator.serviceWorker.controller){
         navigator.serviceWorker.controller.postMessage({type:'LIMPIAR_CACHE'});
@@ -476,3 +483,59 @@ window.fetch = function(url, opts={}) {
   }
   return _origFetch(url, opts);
 };
+
+// ── COLA SIN SEÑAL ──
+// Para lo que se registra en la calle y no es un cobro: el "no pagó" y el
+// orden de la ruta. (Los cobros tienen su propia cola en pwa.js, con foto y
+// clave contra duplicados.) Se guarda en el celular y se envia sola cuando
+// vuelve la señal. `clave` reemplaza lo anterior con la misma clave: del
+// orden de una zona solo importa el ultimo.
+const _COLA = 'cp-cola-sin-senal';
+function _leerCola(){ try { return JSON.parse(localStorage.getItem(_COLA) || '[]'); } catch(e){ return []; } }
+function _guardarCola(c){ try { localStorage.setItem(_COLA, JSON.stringify(c)); } catch(e){} }
+function encolarSinSenal(url, campos, clave){
+  const cola = _leerCola().filter(x => !clave || x.clave !== clave);
+  cola.push({url, campos, clave: clave || null, t: Date.now()});
+  _guardarCola(cola);
+}
+function pendientesSinSenal(){ return _leerCola().length; }
+let _vaciando = false;
+async function vaciarColaSinSenal(){
+  if (_vaciando || !navigator.onLine) return 0;
+  const cola = _leerCola();
+  if (!cola.length) return 0;
+  _vaciando = true;
+  const quedan = [];
+  let enviados = 0;
+  try {
+    for (const x of cola) {
+      try {
+        const fd = new FormData();
+        Object.entries(x.campos || {}).forEach(([k, v]) => fd.append(k, v == null ? '' : v));
+        const r = await window.fetch(x.url, {method: 'POST', body: fd});
+        // 4xx definitivo (ya no aplica, datos invalidos): se descarta para no
+        // reintentar para siempre. 5xx o sin respuesta: se reintenta luego.
+        if (r.ok || (r.status >= 400 && r.status < 500 && r.status !== 408 && r.status !== 429)) enviados++;
+        else quedan.push(x);
+      } catch(e) { quedan.push(x); }
+    }
+  } finally {
+    // Lo que se encolo mientras se vaciaba no se pierde.
+    const nuevos = _leerCola().filter(x => !cola.some(y => y.t === x.t && y.url === x.url));
+    _guardarCola(quedan.concat(nuevos));
+    _vaciando = false;
+  }
+  if (enviados && typeof window.alVaciarColaSinSenal === 'function') window.alVaciarColaSinSenal(enviados);
+  return enviados;
+}
+window.addEventListener('online', () => setTimeout(vaciarColaSinSenal, 1500));
+setTimeout(vaciarColaSinSenal, 2500);
+
+// Lo guardado en el celular para trabajar sin señal es de quien inicio
+// sesion: al salir se borra (antes se intenta enviar lo pendiente).
+function _borrarDatosSinSenal(){
+  try {
+    Object.keys(localStorage).filter(k => k.startsWith('cp-ruta:'))
+      .forEach(k => localStorage.removeItem(k));
+  } catch(e) {}
+}

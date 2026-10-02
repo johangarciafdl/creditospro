@@ -1,7 +1,7 @@
 /* CreditosPro Service Worker v3 */
-const CACHE = 'creditospro-v10';
+const CACHE = 'creditospro-v11';
 const STATIC = [
-  '/', '/dashboard', '/clientes', '/prestamos', '/cobros', '/zonas',
+  '/', '/dashboard', '/clientes', '/prestamos', '/cobros', '/zonas', '/ruta', '/caja',
   '/static/manifest.json',
 ];
 
@@ -41,6 +41,10 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   // API calls: network only
   if (url.pathname.startsWith('/auth') || url.pathname.includes('ajax') || url.pathname.includes('nuevo')) return;
+  // Los datos de la ruta los guarda la propia pantalla con su hora, para
+  // poder decir "datos de las 7:40". Si el worker los sirviera del cache, la
+  // pantalla creeria que son frescos.
+  if (url.pathname.startsWith('/ruta/') || url.pathname.startsWith('/caja/')) return;
   // OJO con ignoreVary: el servidor responde "Vary: Cookie" en todas las
   // paginas, y caches.match() respeta ese encabezado. Como la cookie CSRF
   // cambia al iniciar sesion, la pagina guardada NUNCA coincidia con la

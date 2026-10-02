@@ -80,6 +80,7 @@
 
 {#- El orden lo pone el cobrador: arrastra cada tarjeta desde su manija.
     Cobrar, o que alguien cambie de color, ya no mueve a nadie de sitio. -#}
+<div id="sin-senal" class="sin-senal" style="display:none;"></div>
 <div id="pista-orden" class="fs-11 text-3" style="display:none;margin:0 2px 8px;">
   Mantén presionado <b>☰</b> y arrastra para cambiar el orden.
 </div>
@@ -318,22 +319,104 @@ async function cargar(quieto){
   const cob = _cobradorElegido();
   if (cob) p.set('cobrador_id', cob);
 
+  if (!navigator.onLine) { _usarCopia(q, quieto, y); return; }
   try {
     const r = await window.fetch('/ruta/zona?' + p);
     const d = await leerRespuesta(r);
-    if (d.error) { _estado(d.error, '⚠️'); return; }
-    _filas = d.clientes || [];
-    _ordenable = !!d.ordenable;
-    pintarResumen(d.resumen || {});
-    document.getElementById('recortada').style.display =
-      (d.resumen && d.resumen.recortada) ? 'block' : 'none';
-    pintar(_filas);
-    if (quieto === true && Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+    if (d.error) {
+      // Un 5xx o un proxy caido no es "sin señal", pero el efecto en la
+      // calle es el mismo: si hay copia, se trabaja con ella.
+      if (r.status >= 500 && _leerCopia()) { _usarCopia(q, quieto, y); return; }
+      _estado(d.error, '⚠️'); return;
+    }
+    // La copia es de la zona entera: con el buscador puesto no se guarda.
+    if (!q) _guardarCopia(d);
+    _mostrar(d, false, quieto, y);
   } catch(e) {
-    console.error('[Ruta] No se pudo cargar la zona:', e);
-    if (quieto !== true) _estado('No hay conexion. Intenta de nuevo.', '📡');
+    console.error('[Ruta] Sin conexion, se usa la copia del celular:', e);
+    _usarCopia(q, quieto, y);
   }
 }
+
+function _mostrar(d, deCopia, quieto, y){
+  _filas = d.clientes || [];
+  _ordenable = !!d.ordenable;
+  pintarResumen(d.resumen || {});
+  document.getElementById('recortada').style.display =
+    (d.resumen && d.resumen.recortada) ? 'block' : 'none';
+  const aviso = document.getElementById('sin-senal');
+  if (deCopia) {
+    const h = new Date(d._guardado).toLocaleTimeString('es-CO', {hour:'2-digit', minute:'2-digit'});
+    const dia = new Date(d._guardado).toDateString() === new Date().toDateString() ? '' : ' (de otro día)';
+    aviso.textContent = `📡 Sin señal · datos de las ${h}${dia} · Lo que registres se envía solo al volver la señal.`;
+    aviso.style.display = 'block';
+  } else {
+    aviso.style.display = 'none';
+  }
+  pintar(_filas);
+  if (quieto === true && Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+}
+
+// ── COPIA EN EL CELULAR, PARA TRABAJAR SIN SEÑAL ─────────────────────────
+// Cada vez que la zona carga con señal se guarda tal cual llego, con la
+// hora. Sin señal se pinta esa copia y se dice de que hora es. Lo que se
+// registra sin señal (cobros, "no pagó", el orden) se aplica tambien sobre
+// la copia, para que la pantalla no vuelva a ofrecer lo que ya se hizo.
+const _USUARIO = {{ current_user.id|int }};
+function _claveCopia(){ return 'cp-ruta:' + _USUARIO + ':' + (_zona || 'todas') + ':' + (_cobradorElegido() || ''); }
+function _leerCopia(){ try { return JSON.parse(localStorage.getItem(_claveCopia()) || 'null'); } catch(e){ return null; } }
+function _guardarCopia(d){
+  try { localStorage.setItem(_claveCopia(), JSON.stringify(Object.assign({}, d, {_guardado: d._guardado || Date.now()}))); }
+  catch(e) { /* celular sin espacio o modo privado: se trabaja sin copia */ }
+}
+function _usarCopia(q, quieto, y){
+  const copia = _leerCopia();
+  if (!copia) {
+    _estado('Sin señal, y esta zona aún no está guardada en el celular. Ábrela una vez con señal y quedará disponible.', '📡');
+    return;
+  }
+  if (q) {
+    const t = q.toLowerCase();
+    copia.clientes = (copia.clientes || []).filter(c => (c.nombre || '').toLowerCase().includes(t));
+  }
+  _mostrar(copia, true, quieto, y);
+}
+// Aplica un cambio a la copia guardada y vuelve a pintar.
+function _tocarCopia(cambio){
+  const copia = _leerCopia();
+  if (!copia) return;
+  cambio(copia);
+  _guardarCopia(copia);
+  if (!navigator.onLine) _mostrar(copia, true, true, window.scrollY);
+}
+function _prestamoDeCuota(copia, cuotaId){
+  for (const c of (copia.clientes || []))
+    for (const pr of (c.prestamos || []))
+      if (pr.pendiente && Number(pr.pendiente.cuota_id) === Number(cuotaId)) return [c, pr];
+  return [null, null];
+}
+window.alGuardarCobroSinSenal = ({cuota_id, valor}) => _tocarCopia(copia => {
+  const [c, pr] = _prestamoDeCuota(copia, cuota_id);
+  if (!pr) return;
+  pr.cobrado_hoy = (pr.cobrado_hoy || 0) + valor;
+  c.cobrado_hoy = (c.cobrado_hoy || 0) + valor;
+  pr.restante = Math.max(0, (pr.restante || 0) - valor);
+  pr.pendiente.falta = Math.max(0, (pr.pendiente.falta || 0) - valor);
+  pr.sin_enviar = true;
+});
+window.alNoPagoSinSenal = (cuotaId) => _tocarCopia(copia => {
+  const [c, pr] = _prestamoDeCuota(copia, cuotaId);
+  if (!pr) return;
+  pr.no_pago_hoy = true; c.no_pago_hoy = true; pr.sin_enviar = true;
+});
+window.alVaciarColaSinSenal = (n) => {
+  toast(`Se enviaron ${n} registro(s) guardados sin señal.`, 'success');
+  recargarQuieto();
+};
+// Al volver la señal: los cobros se suben solos (pwa.js); se refresca la
+// lista un poco despues para que salga lo que ya quedo en el servidor.
+window.addEventListener('online', () => setTimeout(recargarQuieto, 4000));
+window.addEventListener('offline', () => { if (_elegida) recargarQuieto(); });
 const recargarQuieto = () => cargar(true);
 
 function pintarResumen(r){
@@ -391,6 +474,7 @@ function _bloquePrestamo(c, pr, varios){
   if (pr.cobrar_hoy && varios) etiquetas.push('<span class="cobrar-hoy">Cobrar hoy</span>');
   if (pr.cobrado_hoy > 0) etiquetas.push(`cobrado ${cop(pr.cobrado_hoy)}`);
   if (pr.no_pago_hoy) etiquetas.push('sin pago');
+  if (pr.sin_enviar) etiquetas.push('<span class="sin-enviar">Sin enviar</span>');
   return `
     <div class="prestamo-bloque" onclick="${cobrar}">
       ${etiquetas.length ? `<div class="prestamo-tags">${etiquetas.join(' · ')}</div>` : ''}
@@ -501,14 +585,41 @@ async function guardarOrden(cont){
   fd.append('cliente_ids', ids.join(','));
   const cob = _cobradorElegido();
   if (cob) fd.append('cobrador_id', cob);
+  const sinSenal = () => {
+    encolarSinSenal('/ruta/orden', Object.fromEntries(fd.entries()),
+                    'orden:' + cont.dataset.zona + ':' + (cob || ''));
+    _tocarCopia(copia => {
+      const pos = new Map(ids.map((id, i) => [String(id), i]));
+      const zona = Number(cont.dataset.zona);
+      const deZona = (copia.clientes || []).filter(c => Number(c.zona_id) === zona);
+      deZona.sort((a, b) => (pos.get(String(a.cliente_id)) ?? 1e9) - (pos.get(String(b.cliente_id)) ?? 1e9));
+      let i = 0;
+      copia.clientes = copia.clientes.map(c => Number(c.zona_id) === zona ? deZona[i++] : c);
+    });
+    toast('Sin señal: el orden quedó guardado y se enviará solo.', 'warn');
+  };
+  if (!navigator.onLine) { sinSenal(); return; }
   try {
     const r = await window.fetch('/ruta/orden', {method:'POST', body:fd});
     const d = await leerRespuesta(r);
-    if (!d.ok) { toast(d.error || 'No se pudo guardar el orden', 'error'); recargarQuieto(); }
+    if (d.ok) {
+      // La copia del celular tambien queda en el orden nuevo.
+      _tocarCopia(copia => {
+        const pos = new Map(ids.map((id, i) => [String(id), i]));
+        const zona = Number(cont.dataset.zona);
+        const deZona = (copia.clientes || []).filter(c => Number(c.zona_id) === zona);
+        deZona.sort((a, b) => (pos.get(String(a.cliente_id)) ?? 1e9) - (pos.get(String(b.cliente_id)) ?? 1e9));
+        let i = 0;
+        copia.clientes = copia.clientes.map(c => Number(c.zona_id) === zona ? deZona[i++] : c);
+      });
+    } else if (r.status >= 500) {
+      sinSenal();
+    } else {
+      toast(d.error || 'No se pudo guardar el orden', 'error'); recargarQuieto();
+    }
   } catch(e) {
-    console.error('[Ruta] No se pudo guardar el orden:', e);
-    toast('Sin conexion: el orden no se guardo.', 'error');
-    recargarQuieto();
+    console.error('[Ruta] Sin conexion guardando el orden:', e);
+    sinSenal();
   }
 }
 
@@ -889,6 +1000,8 @@ _zona = {{ zona_unica }}; _elegida = true; cargar();
    no muestra un cuadro gris vacio, y si la foto no se puede leer se retira y
    la inicial ya estaba puesta. */
 .fila-nuevo{background:var(--gold);color:#fff;border-radius:4px;padding:1px 5px;margin-right:2px}
+.sin-enviar{background:var(--amber);color:#fff;border-radius:4px;padding:1px 5px}
+.sin-senal{background:rgba(217,119,6,.1);border:1px solid rgba(217,119,6,.35);color:var(--t1);border-radius:var(--r-sm);padding:8px 10px;font-size:12px;margin:0 0 8px}
 .luz-gris{border-left-color:var(--t3)}
 .luz-gris .fila-luz{color:var(--t3)}
 .txt-rojo{color:var(--red)}

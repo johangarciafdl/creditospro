@@ -48,6 +48,17 @@ async function noPagoDesdeModal(btn){
   fd.append('motivo', document.getElementById('mc-obs').value.trim());
   fd.append('lat', document.getElementById('mc-lat').value || '');
   fd.append('lng', document.getElementById('mc-lng').value || '');
+  // Sin señal se guarda en el celular y se envia solo despues. El servidor
+  // ignora un segundo "no pago" del mismo dia, asi que reintentar es seguro.
+  const guardarSinSenal = () => {
+    const campos = Object.fromEntries(fd.entries());
+    campos.fecha = hoyLocal();
+    encolarSinSenal('/cobros/no-pago', campos, 'nopago:' + cuotaId + ':' + campos.fecha);
+    document.getElementById('modal-cobro').classList.remove('open');
+    toast('Sin señal: el "no pagó" quedó guardado y se enviará solo.', 'warn');
+    if (typeof window.alNoPagoSinSenal === 'function') window.alNoPagoSinSenal(Number(cuotaId));
+  };
+  if (!navigator.onLine) { guardarSinSenal(); return; }
   await conBoton(btn, 'Registrando...', async () => {
     try {
       const r = await window.fetch('/cobros/no-pago', {method:'POST', body:fd});
@@ -61,7 +72,7 @@ async function noPagoDesdeModal(btn){
       }
     } catch(e) {
       console.error('[Cobros] Error registrando no pago:', e);
-      toast('No hay conexion. Intenta de nuevo.', 'error');
+      guardarSinSenal();
     }
   });
 }
@@ -195,6 +206,10 @@ async function guardarCobroOffline({cuota_id,valor,metodo_pago,observaciones,lat
     });
     document.getElementById('modal-cobro').classList.remove('open');
     toast('Sin conexion: cobro guardado en el celular, se enviara solo al recuperar señal','warn');
+    // La pantalla que lo pida actualiza su copia (p. ej. la ruta marca la
+    // tarjeta como "sin enviar" y descuenta lo cobrado).
+    if (typeof window.alGuardarCobroSinSenal === 'function')
+      window.alGuardarCobroSinSenal({cuota_id: Number(cuota_id), valor: Number(valor)});
     setTimeout(refrescarTrasCobro,600);
   }catch(err){
     console.error('[Cobros] Error guardando cobro offline:',err);
