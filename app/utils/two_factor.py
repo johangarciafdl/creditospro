@@ -28,6 +28,20 @@ def provisioning_uri(secret: str, username: str, issuer: str = "CreditosPro") ->
     return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer)
 
 
+def qr_svg(uri: str) -> str:
+    """El QR del enlace otpauth como SVG, para escanearlo con la app.
+
+    Se dibuja aqui: mandar el secreto a un servicio externo de QR seria
+    entregarle a un tercero la llave del segundo factor.
+    """
+    import io as _io
+    import segno
+    buf = _io.BytesIO()
+    segno.make(uri, error="m").save(buf, kind="svg", scale=5, border=2,
+                                    xmldecl=False, svgns=True, dark="#111", light="#fff")
+    return buf.getvalue().decode("utf-8")
+
+
 def backup_hashes_json(codes: list[str]) -> str:
     return json.dumps([hash_backup_code(code) for code in codes], separators=(",", ":"))
 

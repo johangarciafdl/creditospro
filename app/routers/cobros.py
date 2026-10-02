@@ -482,7 +482,41 @@ async def registrar_cobro(
         "fecha": fecha_pago.isoformat(),
         "no_pagos_retirados": no_pagos_retirados,
         "reparto": [{"cuota": c.numero, "valor": float(v)} for c, v in reparto],
+        "comprobante": _comprobante(db, user, cliente, prestamo, valor_cobrado_dec,
+                                    fecha_pago, reparto),
     })
+
+
+def _comprobante(db: Session, user, cliente, prestamo, valor, fecha, reparto) -> dict:
+    """El mensaje que el cobrador puede mandarle al cliente por WhatsApp.
+
+    Se arma aqui y no en la pantalla porque las cifras (sobre todo lo que le
+    falta del prestamo) son las del servidor despues del cobro: la pantalla
+    podria tener una copia vieja. No se envia solo: el cobrador decide, y sale
+    desde su propio WhatsApp (sin costo, y sin riesgo de que bloqueen el
+    numero del bot por envios masivos).
+    """
+    from app.database import Empresa
+    from sqlalchemy import func as _f
+    empresa = db.get(Empresa, user.empresa_id)
+    total, pagado = db.query(_f.sum(Cuota.valor), _f.sum(_f.coalesce(Cuota.valor_pagado, 0)))         .filter(Cuota.prestamo_id == prestamo.id).one()
+    falta = max(money(0), money(total or 0) - money(pagado or 0))
+    cuotas = ", ".join(str(c.numero) for c, _ in reparto)
+    nombre = (cliente.nombre or "").split(" ")[0].title()
+    texto = (f"Hola {nombre}, {empresa.nombre if empresa else 'CreditosPro'} confirma tu pago de "
+             f"{cop(valor)} el {fecha.strftime('%d/%m/%Y')}"
+             f" (cuota{'s' if len(reparto) > 1 else ''} {cuotas} de {prestamo.num_cuotas}). "
+             + (f"Te faltan {cop(falta)} de tu prestamo." if falta > 0
+                else "Con este pago terminaste tu prestamo. ¡Gracias!")
+             + f" Recibio: {user.nombre or user.username}.")
+    numero = "".join(ch for ch in (cliente.whatsapp or cliente.telefono or "") if ch.isdigit())
+    # WhatsApp necesita el celular con indicativo. Si no es un celular
+    # colombiano valido, el enlace abre WhatsApp para elegir el contacto.
+    if len(numero) == 10 and numero.startswith("3"):
+        numero = "57" + numero
+    elif not (len(numero) == 12 and numero.startswith("573")):
+        numero = ""
+    return {"texto": texto, "whatsapp": numero}
 
 
 @router.get("/proxima-cuota/{cliente_id}")

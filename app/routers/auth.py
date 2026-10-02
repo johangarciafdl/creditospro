@@ -36,6 +36,7 @@ from app.utils.security import (
     decrypt_secret,
 )
 from app.utils.two_factor import (
+    qr_svg,
     backup_hashes_json,
     consume_backup_code,
     generate_backup_codes,
@@ -71,7 +72,38 @@ IS_PRODUCTION = os.getenv("ENVIRONMENT", "production") == "production"
 
 # ── CORE AUTH ─────────────────────────────────────────────────────────────────
 
-def get_current_user(request: Request, db: Session) -> Optional[Usuario]:
+class SegundoFactorPendiente(Exception):
+    """Un administrador sin verificacion en dos pasos intenta usar la app.
+    main.py lo convierte en una redireccion a /auth/2fa/configurar (o un 403
+    para las peticiones de datos)."""
+
+
+# Lo que un administrador sin segundo factor si puede abrir: lo necesario para
+# activarlo, y salir.
+RUTAS_SIN_2FA = ("/auth/2fa", "/auth/logout", "/static", "/health", "/sw.js",
+                 "/favicon.ico", "/license")
+
+
+def exige_segundo_factor(user, request: Request) -> bool:
+    """Los administradores tienen que tener la verificacion en dos pasos.
+
+    Una contraseña de administrador filtrada da acceso a toda la cartera, a la
+    caja y a los datos de cada cliente; con el segundo factor, la contraseña
+    sola no basta. Se puede apagar con EXIGIR_2FA_ADMIN=0 (las pruebas lo
+    apagan; produccion lo deja encendido).
+    """
+    if os.getenv("EXIGIR_2FA_ADMIN", "1") != "1":
+        return False
+    # Solo los administradores de empresa. La cuenta de plataforma
+    # (superadmin) entra por /plataforma/login, que aun no tiene paso de
+    # codigo: exigirsela solo la dejaria fuera sin protegerla de verdad.
+    if user.rol != "admin" or user.two_factor_enabled:
+        return False
+    return not request.url.path.startswith(RUTAS_SIN_2FA)
+
+
+def get_current_user(request: Request, db: Session,
+                     exigir_2fa: bool = True) -> Optional[Usuario]:
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
@@ -116,6 +148,8 @@ def get_current_user(request: Request, db: Session) -> Optional[Usuario]:
         from app.utils.token_blacklist import register_active_jti
         client_ip = request.client.host if request.client else "?"
         register_active_jti(str(user.id), jti, int(payload.get("exp", 0)), client_ip)
+    if user and exigir_2fa and exige_segundo_factor(user, request):
+        raise SegundoFactorPendiente()
     return user
 
 
@@ -347,12 +381,26 @@ async def two_factor_submit(
     return response
 
 
+@router.get("/2fa/configurar")
+async def configurar_2fa(request: Request, db: Session = Depends(get_db_system)):
+    """La pantalla para activar la verificacion en dos pasos."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse("/auth/login?next=/auth/2fa/configurar", status_code=302)
+    return templates.TemplateResponse(request, "auth/2fa_configurar.html", {
+        "current_user": user, "page": "2fa",
+        "obligatorio": user.rol == "admin" and not user.two_factor_enabled,
+    })
+
+
 @router.post("/2fa/setup")
 async def two_factor_setup(
     request: Request,
     password: str = Form(...),
     code: str = Form(""),
-    db: Session = Depends(get_db),
+    # Conexion de sistema: el superadmin no tiene empresa y con RLS la
+    # conexion normal no lo ve. Solo se toca la fila del propio usuario.
+    db: Session = Depends(get_db_system),
 ):
     """Genera un secreto 2FA nuevo. Exige la contrasena actual, y ademas un
     codigo TOTP/backup valido si el usuario ya tenia 2FA activo, para que una
@@ -377,14 +425,17 @@ async def two_factor_setup(
     user.two_factor_secret = encrypt_secret(secret)
     db.commit()
     log_action(db, user, "2fa_setup_requested", "auth", f"username={user.username}")
-    return JSONResponse({"secret": secret, "otpauth_uri": provisioning_uri(secret, user.username)})
+    uri = provisioning_uri(secret, user.username)
+    return JSONResponse({"secret": secret, "otpauth_uri": uri, "qr_svg": qr_svg(uri)})
 
 
 @router.post("/2fa/setup/confirm")
 async def two_factor_setup_confirm(
     request: Request,
     code: str = Form(...),
-    db: Session = Depends(get_db),
+    # Conexion de sistema: el superadmin no tiene empresa y con RLS la
+    # conexion normal no lo ve. Solo se toca la fila del propio usuario.
+    db: Session = Depends(get_db_system),
 ):
     user = get_current_user(request, db)
     if not user:

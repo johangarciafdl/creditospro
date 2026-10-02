@@ -255,6 +255,15 @@ async def error_no_previsto(request: Request, exc: Exception):
     )
 
 
+@app.exception_handler(auth.SegundoFactorPendiente)
+async def segundo_factor_pendiente(request: Request, exc):
+    """Administrador sin verificacion en dos pasos: a activarla."""
+    if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse("/auth/2fa/configurar", status_code=303)
+    return JSONResponse({"error": "Activa la verificación en dos pasos para continuar.",
+                         "configurar_2fa": True}, status_code=403, media_type=JSON_UTF8)
+
+
 @app.exception_handler(StarletteHTTPException)
 async def error_http(request: Request, exc: StarletteHTTPException):
     """Misma forma {"error": ...} que usan los routers, en vez de {"detail": ...}."""
@@ -352,7 +361,7 @@ async def root(request: Request):
 
     db = SessionLocal()
     try:
-        user = get_current_user(request, db)
+        user = get_current_user(request, db, exigir_2fa=False)
     finally:
         db.close()
 

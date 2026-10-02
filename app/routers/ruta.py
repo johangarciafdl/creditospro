@@ -485,10 +485,39 @@ async def buscar_cliente(request: Request, q: str = "",
     if permitidas is not None:
         consulta = consulta.filter(Cliente.zona_id.in_(permitidas or [-1]))
 
+    clientes = consulta.order_by(Cliente.nombre).limit(15).all()
+    # Lo que debe cada uno de su prestamo activo mas reciente: si debe, el
+    # formulario ofrece renovar en vez de prestar aparte.
+    deuda = _deudas(db, user.empresa_id, [c.id for c in clientes])
     return JSONResponse({"clientes": [{
         "id": c.id, "nombre": c.nombre, "cedula": c.cedula,
         "telefono": c.telefono or "", "zona_id": c.zona_id,
-    } for c in consulta.order_by(Cliente.nombre).limit(15).all()]})
+        "debe": float(deuda[c.id][1]) if c.id in deuda else 0.0,
+        "prestamo_activo_id": deuda[c.id][0] if c.id in deuda else None,
+    } for c in clientes]})
+
+
+def _deudas(db: Session, empresa_id: int, cliente_ids: list[int]) -> dict:
+    """{cliente_id: (prestamo_id, saldo)} del prestamo activo con saldo mas
+    reciente de cada cliente."""
+    if not cliente_ids:
+        return {}
+    filas = (
+        db.query(Prestamo.cliente_id, Prestamo.id,
+                 func.sum(Cuota.valor - func.coalesce(Cuota.valor_pagado, 0)))
+        .join(Cuota, Cuota.prestamo_id == Prestamo.id)
+        .filter(Prestamo.empresa_id == empresa_id, Prestamo.cliente_id.in_(cliente_ids),
+                Cuota.estado.in_(ESTADOS_PENDIENTES))
+        .group_by(Prestamo.cliente_id, Prestamo.id)
+        .order_by(Prestamo.id)
+        .all()
+    )
+    salida = {}
+    for cid, pid, saldo in filas:
+        saldo = money(saldo or 0)
+        if saldo > 0:
+            salida[cid] = (pid, saldo)      # el ultimo (mas reciente) gana
+    return salida
 
 
 @router.post("/ruta/prestar")
@@ -642,3 +671,123 @@ async def prestar(
             f"{cop(estado_caja['cobrado'])} hoy: "
             f"{cop(estado_caja['sobregiro_valor'])} de sobregiro.")
     return JSONResponse(respuesta)
+
+
+
+# ── RENOVAR ───────────────────────────────────────────────────────────────
+@router.post("/ruta/renovar")
+async def renovar(
+    request: Request,
+    prestamo_id: int = Form(...),
+    capital: str = Form(...),
+    tasa_interes: str = Form("20"),
+    num_cuotas: str = Form(...),
+    plazo_dias: str = Form("1"),
+    db: Session = Depends(get_db),
+):
+    """Le presta de nuevo a quien aun debe: se descuenta lo que debe y se le
+    entrega la diferencia.
+
+    En la base queda asi, para que todas las cuentas cuadren solas:
+    - las cuotas pendientes del prestamo viejo se saldan con un cobro de
+      metodo "Renovacion" (dinero que no se movio, pero que si se le abona);
+    - el prestamo nuevo sale por el capital completo, desembolsado por quien
+      renueva.
+    En la caja del cobrador: cobrado + saldo, prestado + capital, o sea, sale
+    de verdad solo la diferencia que entrega en mano.
+    """
+    from app.routers.cobros import aplicar_cobro_atomico
+
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not puede_gestionar_prestamos(user):
+        return JSONResponse({"error": "No tienes permiso para prestar"}, status_code=403)
+
+    viejo = db.query(Prestamo).filter(Prestamo.id == prestamo_id,
+                                      Prestamo.empresa_id == user.empresa_id).first()
+    if not viejo:
+        return JSONResponse({"error": "Prestamo no encontrado"}, status_code=404)
+    if not require_zone_access(db, user, viejo.zona_id):
+        return JSONResponse({"error": "Hoy no cobras en esa zona"}, status_code=403)
+    try:
+        capital_v = validar_numero_positivo(capital, "capital", maximo=100_000_000)
+        tasa_v = validar_numero_positivo(tasa_interes, "tasa de interes", minimo=0, maximo=200)
+        cuotas_v = validar_entero_positivo(num_cuotas, "cuotas", minimo=1, maximo=365)
+        plazo_v = validar_entero_positivo(plazo_dias, "plazo", minimo=1, maximo=365)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+
+    hoy = hoy_local()
+    if caja_cerrada(db, user.id, hoy):
+        return JSONResponse({"error": "Tu caja de hoy ya está cerrada: no se puede prestar."},
+                            status_code=409)
+    pendientes = (db.query(Cuota)
+                  .filter(Cuota.prestamo_id == viejo.id, Cuota.empresa_id == user.empresa_id,
+                          Cuota.estado.in_(ESTADOS_PENDIENTES))
+                  .order_by(Cuota.numero).all())
+    saldo = sum((max(Decimal("0"), money(c.valor) - money(c.valor_pagado or 0))
+                 for c in pendientes), Decimal("0"))
+    if saldo <= 0:
+        return JSONResponse({"error": "Ese prestamo ya no debe nada: preste normal."},
+                            status_code=400)
+    capital_d = money(capital_v)
+    if capital_d <= saldo:
+        return JSONResponse(
+            {"error": f"El nuevo prestamo tiene que ser mayor que lo que debe ({cop(saldo)})."},
+            status_code=400)
+    try:
+        calc = calcular_cuotas(capital_v, tasa_v, cuotas_v, hoy, plazo_v)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    cliente = db.get(Cliente, viejo.cliente_id)
+    quien = user.nombre or user.username
+    try:
+        nuevo = Prestamo(
+            empresa_id=user.empresa_id, cliente_id=viejo.cliente_id, zona_id=viejo.zona_id,
+            capital=capital_d, tasa_interes=money(tasa_v),
+            interes_total=money(calc.get("interes_total")),
+            total_pagar=money(calc.get("total_pagar")),
+            num_cuotas=cuotas_v, valor_cuota=money(calc.get("valor_cuota")),
+            plazo_dias=plazo_v, fecha_inicio=hoy, fecha_fin=calc.get("fecha_fin"),
+            estado="Activo", cobrador=quien,
+            desembolsado_por_id=user.id, fecha_desembolso=hoy,
+            observaciones=f"Renovacion del prestamo #{viejo.id}: se descontaron {cop(saldo)}",
+        )
+        db.add(nuevo)
+        db.flush()
+        for c in calc.get("cuotas", []):
+            db.add(Cuota(empresa_id=user.empresa_id, prestamo_id=nuevo.id,
+                         numero=int(c["numero"]), valor=money(c.get("valor")),
+                         fecha_vencimiento=c["fecha_vencimiento"], estado="Pendiente"))
+        for cu in pendientes:
+            falta = money(cu.valor) - money(cu.valor_pagado or 0)
+            if falta <= 0:
+                continue
+            # Mismo cuidado que un cobro: si otro cobro toco la cuota a la
+            # vez, se aborta todo en vez de saldarla dos veces.
+            if not aplicar_cobro_atomico(db, cu, falta, hoy):
+                db.rollback()
+                return JSONResponse(
+                    {"error": "Se registro otro cobro de ese cliente al mismo tiempo. Intenta de nuevo."},
+                    status_code=409)
+            db.add(Cobro(empresa_id=user.empresa_id, cuota_id=cu.id, prestamo_id=viejo.id,
+                         cliente_id=viejo.cliente_id, zona_id=viejo.zona_id,
+                         valor_cobrado=falta, fecha=hoy, cobrador=quien,
+                         metodo_pago="Renovacion", usuario_id=user.id,
+                         observaciones=f"Saldado con la renovacion (prestamo #{nuevo.id})"))
+        viejo.estado = "Pagado"
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    entregado = capital_d - saldo
+    log_action(db, user, "prestamo_renovado", "prestamos",
+               f"viejo={viejo.id} nuevo={nuevo.id} saldo={saldo} capital={capital_d}")
+    return JSONResponse({
+        "ok": True, "prestamo_id": nuevo.id, "saldo_descontado": float(saldo),
+        "entregado": float(entregado),
+        "mensaje": (f"Renovado: préstamo de {cop(capital_d)} a {cliente.nombre if cliente else ''}. "
+                    f"Se descontaron {cop(saldo)}; le entregas {cop(entregado)}."),
+    })

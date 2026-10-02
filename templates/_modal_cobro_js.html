@@ -77,6 +77,17 @@ async function noPagoDesdeModal(btn){
   });
 }
 
+// COMPROBANTE POR WHATSAPP
+// Tras cobrar se ofrece mandarle al cliente el comprobante desde el WhatsApp
+// del propio cobrador, con el mensaje ya escrito. Nunca se envia solo.
+async function ofrecerComprobante(c){
+  const ok = await confirmar(c.texto, {titulo: 'Cobro registrado · ¿enviar comprobante?',
+                                       aceptar: 'Enviar por WhatsApp', cancelar: 'Ahora no'});
+  if(!ok) return;
+  const url = 'https://wa.me/' + (c.whatsapp || '') + '?text=' + encodeURIComponent(c.texto);
+  window.open(url, '_blank', 'noopener');
+}
+
 // GPS
 function captureGPS(){
   const status=document.getElementById('gps-status');
@@ -178,6 +189,7 @@ async function confirmarCobro(){
       document.getElementById('modal-cobro').classList.remove('open');
       toast(d.mensaje,'success');
       setTimeout(refrescarTrasCobro,600);
+      if(d.comprobante) ofrecerComprobante(d.comprobante);
     }else if(d.maximo!==undefined){
       // El importe supera lo que el cliente debe. En vez de dejar al
       // cobrador restando con el cliente delante, se le deja puesto el

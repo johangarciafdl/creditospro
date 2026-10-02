@@ -25,6 +25,10 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest")
 os.environ.setdefault("SESSION_SECRET_KEY", "test-session-secret-key-for-pytest")
 os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("AUTO_CREATE_TABLES", "0")
+# La verificacion en dos pasos obligatoria para admins se prueba aparte
+# (tests/test_2fa_obligatoria.py la enciende); el resto de pruebas entra
+# como admin sin configurarla.
+os.environ["EXIGIR_2FA_ADMIN"] = "0"
 
 
 def sustituir_sesion(app, fabrica):

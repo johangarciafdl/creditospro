@@ -335,3 +335,38 @@ async def cerrar_ciclo(request: Request, numero: int,
                f"ciclo={numero} resultado={resultado} retiro={v_retiro} reserva={v_reserva} "
                f"pagos={total_pagos} base={v_base}")
     return JSONResponse({"ok": True, "mensaje": f"Ciclo {numero} cerrado y repartido"})
+
+
+# ── PANEL DE MORA ─────────────────────────────────────────────────────────
+@router.get("/mora")
+async def pagina_mora(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse("/auth/login?next=/mora", status_code=302)
+    if not es_admin(user):
+        return RedirectResponse("/dashboard", status_code=302)
+    return templates.TemplateResponse(request, "mora.html", {"page": "mora", "current_user": user})
+
+
+@router.get("/mora/datos")
+async def datos_mora(request: Request, db: Session = Depends(get_db)):
+    user, error = _admin(request, db)
+    if error:
+        return error
+    from app.utils.mora import control_de_visitas, panel
+    p = panel(db, user.empresa_id, hoy_local())
+
+    def limpio(d: dict) -> dict:
+        return {k: (_f(v) if isinstance(v, Decimal) else
+                    v.isoformat() if isinstance(v, datetime.date) else v)
+                for k, v in d.items()}
+    return JSONResponse({
+        "totales": limpio(p["totales"]),
+        "zonas": [limpio(z) for z in p["zonas"]],
+        "cobradores": [limpio(c) for c in p["cobradores"]],
+        "pasaron_a_rojo": [limpio(c) for c in p["pasaron_a_rojo"]],
+        "salieron_de_rojo": [limpio(c) for c in p["salieron_de_rojo"]],
+        "tendencia": [limpio(t) for t in p["tendencia"]],
+        "visitas": control_de_visitas(db, user.empresa_id,
+                                      hoy_local() - datetime.timedelta(days=6), hoy_local()),
+    })

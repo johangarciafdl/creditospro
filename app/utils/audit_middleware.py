@@ -22,7 +22,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
             db = SessionLocal()
             try:
-                user = get_current_user(request, db)
+                user = get_current_user(request, db, exigir_2fa=False)
                 if user:
                     db.add(AuditLog(
                         empresa_id=user.empresa_id,

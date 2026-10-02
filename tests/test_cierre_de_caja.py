@@ -185,3 +185,20 @@ def test_la_pantalla_trae_el_cierre():
     for pieza in ("id=\"card-cierre\"", "declararCierre(", "confirmarCierre(",
                   "Llegaron cobros después del cierre"):
         assert pieza in html, pieza
+
+
+def test_el_cobro_devuelve_el_comprobante_para_whatsapp(entorno):
+    """El texto lo arma el servidor con las cifras despues del cobro; el
+    cobrador decide si lo manda, desde su WhatsApp."""
+    _, cobra, d, _ = entorno
+    r = cobra.post("/cobros/registrar", data={"cuota_id": d["cuotas"][2],
+                                              "valor_cobrado": "30000", "metodo_pago": "Efectivo"})
+    assert r.status_code == 200, r.text
+    c = r.json()["comprobante"]
+    assert c["whatsapp"] == "573001112233"
+    assert "$30.000" in c["texto"] and "cuota 3 de 4" in c["texto"]
+    # 120.000 - 30.000 x 3 cobradas = 30.000
+    assert "Te faltan $30.000" in c["texto"]
+    assert "CierreSA" in c["texto"]
+    js = Path("templates/_modal_cobro_js.html").read_text(encoding="utf-8")
+    assert "ofrecerComprobante(d.comprobante)" in js and "https://wa.me/" in js

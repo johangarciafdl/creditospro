@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Mora{% endblock %}
+{% block topbar_title %}Mora{% endblock %}
+{% block topbar_sub %}Plata en riesgo y hacia dónde va{% endblock %}
+
+{% block content %}
+{#- El mismo semaforo que ve el cobrador: amarillo de 1 a 3 cuotas atrasadas,
+    rojo desde 4. Arriba lo que esta en riesgo; abajo, donde y con quien, y
+    quien empeoro esta semana para ir a buscarlo antes de que se pierda. -#}
+<div style="max-width:960px;margin:0 auto;">
+<div id="estado" style="text-align:center;padding:36px 0;color:var(--t3);">Cargando...</div>
+<div id="contenido" style="display:none;">
+
+  <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
+    <div class="stat-card"><div class="stat-label">Cartera por cobrar</div><div class="stat-val" id="m-cartera">—</div>
+      <div class="stat-sub" id="m-clientes"></div></div>
+    <div class="stat-card red"><div class="stat-label">En riesgo</div><div class="stat-val red" id="m-riesgo">—</div>
+      <div class="stat-sub" id="m-riesgo-pct"></div></div>
+    <div class="stat-card"><div class="stat-label">Clientes</div>
+      <div class="fs-13" style="margin-top:4px;line-height:1.7;">
+        <span class="sem sem-verde"></span><b id="m-verde">0</b> al día<br>
+        <span class="sem sem-amarillo"></span><b id="m-amarillo">0</b> deben 1 a 3 cuotas<br>
+        <span class="sem sem-rojo"></span><b id="m-rojo">0</b> deben 4 o más</div></div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Pasaron a rojo esta semana</div>
+      <span class="badge badge-red" id="m-pasaron-n">0</span></div>
+    <div class="card-body" id="m-pasaron"></div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Por zona</div></div>
+    <div class="tabla-scroll"><table class="tabla-fin">
+      <thead><tr><th>Zona</th><th>Clientes</th><th>Amarillos</th><th>Rojos</th><th>Por cobrar</th><th>En riesgo</th><th>%</th></tr></thead>
+      <tbody id="m-zonas"></tbody></table></div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Por cobrador</div></div>
+    <div class="tabla-scroll"><table class="tabla-fin">
+      <thead><tr><th>Cobrador</th><th class="izq">Zonas</th><th>Amarillos</th><th>Rojos</th><th>En riesgo</th><th>%</th></tr></thead>
+      <tbody id="m-cobradores"></tbody></table></div>
+    <div class="fs-11 text-3" style="padding:8px 14px;">Si dos cobradores comparten una zona, la zona cuenta para los dos.</div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Semana a semana: cobrado contra lo que vencía</div></div>
+    <div class="card-body" id="m-tendencia"></div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Dónde se registran los cobros (últimos 7 días)</div></div>
+    <div class="tabla-scroll"><table class="tabla-fin">
+      <thead><tr><th>Cobrador</th><th>Cobros</th><th>En la puerta</th><th>Desde un mismo sitio</th><th>Sin GPS</th></tr></thead>
+      <tbody id="m-visitas"></tbody></table></div>
+    <div class="fs-11 text-3" style="padding:8px 14px;">"Desde un mismo sitio": cobros de 4 o más clientes distintos
+      registrados en el mismo punto (unos 30 m). Puede ser normal si esos clientes pagan en un local; si no, el cobro
+      se anotó lejos de la casa del cliente.</div>
+  </div>
+
+  <div class="card mb-3" id="card-salieron" style="display:none;">
+    <div class="card-header"><div class="card-title">Salieron de rojo esta semana</div></div>
+    <div class="card-body" id="m-salieron"></div>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+const pesos = v => cop(Math.round(Number(v) || 0));
+const pct = (a, b) => b > 0 ? Math.round(a * 100 / b) + '%' : '—';
+
+async function cargar(){
+  let d;
+  try {
+    d = await leerRespuesta(await window.fetch('/mora/datos'));
+    if (d.error) { document.getElementById('estado').textContent = d.error; return; }
+  } catch(e) { document.getElementById('estado').textContent = 'No hay conexión. Intenta de nuevo.'; return; }
+  document.getElementById('estado').style.display = 'none';
+  document.getElementById('contenido').style.display = '';
+  const t = d.totales;
+  document.getElementById('m-cartera').textContent = pesos(t.cartera);
+  document.getElementById('m-clientes').textContent = t.clientes + ' clientes con saldo';
+  document.getElementById('m-riesgo').textContent = pesos(t.en_riesgo);
+  document.getElementById('m-riesgo-pct').textContent = pct(t.en_riesgo, t.cartera) + ' de la cartera';
+  ['verde', 'amarillo', 'rojo'].forEach(k => document.getElementById('m-' + k).textContent = t[k]);
+
+  document.getElementById('m-pasaron-n').textContent = d.pasaron_a_rojo.length;
+  document.getElementById('m-pasaron').innerHTML = d.pasaron_a_rojo.length
+    ? d.pasaron_a_rojo.map(c => `<div class="flex-between fs-13" style="padding:5px 0;border-bottom:1px solid var(--border);">
+        <span><b>${esc(c.nombre)}</b> <span class="text-3 fs-11">${esc(c.zona)} · debe ${Number(c.atrasadas)} cuotas</span></span>
+        <b class="num">${pesos(c.saldo)}</b></div>`).join('')
+    : '<div class="fs-13 text-3">Nadie pasó a rojo en los últimos 7 días.</div>';
+
+  document.getElementById('m-zonas').innerHTML = d.zonas.map(z => `<tr>
+      <td>${esc(z.zona)}</td><td>${z.clientes}</td><td>${z.amarillo}</td><td class="neg">${z.rojo}</td>
+      <td>${pesos(z.cartera)}</td><td class="neg">${pesos(z.en_riesgo)}</td><td>${pct(z.en_riesgo, z.cartera)}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="text-3">Sin cartera</td></tr>';
+
+  document.getElementById('m-cobradores').innerHTML = d.cobradores.map(c => `<tr>
+      <td>${esc(c.nombre)}</td><td class="izq fs-12 text-3">${esc(c.zonas || '—')}</td><td>${c.amarillo}</td>
+      <td class="neg">${c.rojo}</td><td class="neg">${pesos(c.en_riesgo)}</td><td>${pct(c.en_riesgo, c.cartera)}</td></tr>`).join('')
+    || '<tr><td colspan="6" class="text-3">Sin cobradores</td></tr>';
+
+  // Barras: cuanto de lo que vencia en la semana se cobro.
+  const fecha = f => f.split('-').reverse().slice(0, 2).join('/');
+  document.getElementById('m-tendencia').innerHTML = d.tendencia.map(s => {
+    const p = s.cumplimiento === null ? null : Math.round(s.cumplimiento * 100);
+    const ancho = p === null ? 0 : Math.min(100, p);
+    const color = p === null ? 'var(--border)' : p >= 80 ? 'var(--green)' : p >= 50 ? 'var(--amber)' : 'var(--red)';
+    return `<div class="semana">
+      <div class="fs-12" style="width:62px;">${fecha(s.semana)}</div>
+      <div class="barra"><div style="width:${ancho}%;background:${color};"></div></div>
+      <div class="fs-12 num" style="width:46px;text-align:right;">${p === null ? '—' : p + '%'}</div>
+      <div class="fs-11 text-3 semana-detalle">${pesos(s.cobrado)} de ${pesos(s.vencia)}</div></div>`;
+  }).join('') + '<div class="fs-11 text-3" style="margin-top:6px;">Semana que empieza ese lunes. 100% = se cobró todo lo que vencía en la semana.</div>';
+
+  const pc = (n, t) => t ? `${n} <span class="text-3 fs-11">(${Math.round(n * 100 / t)}%)</span>` : '0';
+  document.getElementById('m-visitas').innerHTML = (d.visitas || []).map(v => `<tr>
+      <td>${esc(v.nombre)}</td><td>${v.total}</td><td>${pc(v.en_puerta, v.total)}</td>
+      <td class="${v.mismo_sitio ? 'neg' : ''}">${pc(v.mismo_sitio, v.total)}</td><td>${pc(v.sin_gps, v.total)}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="text-3">Sin cobros en los últimos 7 días</td></tr>';
+
+  document.getElementById('card-salieron').style.display = d.salieron_de_rojo.length ? '' : 'none';
+  document.getElementById('m-salieron').innerHTML = d.salieron_de_rojo.map(c =>
+    `<div class="fs-13" style="padding:4px 0;"><b>${esc(c.nombre)}</b> <span class="text-3 fs-11">${esc(c.zona)} · ahora ${esc(c.ahora)}</span></div>`).join('');
+}
+cargar();
+</script>
+<style>
+.tabla-scroll{overflow-x:auto}
+.tabla-fin{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.tabla-fin th,.tabla-fin td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap}
+.tabla-fin th:first-child,.tabla-fin td:first-child,.tabla-fin .izq{text-align:left}
+.tabla-fin thead th{font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.tabla-fin .neg{color:var(--red)}
+.sem{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.sem-verde{background:var(--green)}.sem-amarillo{background:var(--amber)}.sem-rojo{background:var(--red)}
+.semana{display:flex;align-items:center;gap:8px;padding:4px 0;flex-wrap:wrap}
+.barra{flex:1;min-width:120px;height:10px;background:var(--bg-2);border-radius:6px;overflow:hidden}
+.barra>div{height:100%;border-radius:6px}
+.semana-detalle{flex-basis:100%;padding-left:70px}
+</style>
+{% endblock %}

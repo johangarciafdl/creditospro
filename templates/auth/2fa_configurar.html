@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Verificación en dos pasos{% endblock %}
+{% block topbar_title %}Verificación en dos pasos{% endblock %}
+
+{% block content %}
+{#- Tres pasos, uno visible a la vez: confirmar la contraseña, escanear el QR
+    con la app y escribir el codigo, y guardar los codigos de respaldo. Los
+    administradores no pueden seguir hasta terminarlo. -#}
+<div style="max-width:460px;margin:0 auto;">
+  <div class="card mb-3">
+    <div class="card-body">
+      {% if obligatorio %}
+      <div class="fs-13 mb-3" style="padding:10px;border-radius:var(--r-sm);background:var(--abg);color:#92400E;">
+        Para entrar como administrador hay que activar la verificación en dos pasos:
+        además de la contraseña, un código de 6 números que cambia cada 30 segundos en tu celular.
+        Así, si alguien consigue tu contraseña, no puede entrar.
+      </div>
+      {% endif %}
+
+      <!-- PASO 1 -->
+      <div id="paso1">
+        <div class="fw-600 mb-1">1. Instala una app de códigos</div>
+        <div class="fs-12 text-3 mb-3">Google Authenticator o Microsoft Authenticator (gratis, en la tienda de tu celular).</div>
+        <div class="fw-600 mb-1">2. Confirma tu contraseña</div>
+        <div class="form-group"><input type="password" id="f-pass" autocomplete="current-password" placeholder="Tu contraseña"></div>
+        {% if current_user.two_factor_enabled %}
+        <div class="form-group"><label for="f-actual">Código actual (ya la tienes activa)</label>
+          <input type="text" id="f-actual" inputmode="numeric" autocomplete="one-time-code"></div>
+        {% endif %}
+        <button class="btn btn-gold" style="width:100%;justify-content:center;" onclick="paso1(this)">Continuar</button>
+      </div>
+
+      <!-- PASO 2 -->
+      <div id="paso2" style="display:none;">
+        <div class="fw-600 mb-1">3. Escanea este código con la app</div>
+        <div id="qr" style="display:flex;justify-content:center;margin:10px 0;"></div>
+        <div class="fs-11 text-3 mb-3" style="text-align:center;">¿No puedes escanear? Escribe esta clave en la app:
+          <div class="num fw-600" id="clave" style="word-break:break-all;margin-top:4px;"></div></div>
+        <div class="fw-600 mb-1">4. Escribe el código de 6 números que muestra la app</div>
+        <div class="form-group"><input type="text" id="f-codigo" inputmode="numeric" maxlength="6"
+             autocomplete="one-time-code" placeholder="123456" style="font-size:22px;text-align:center;letter-spacing:6px;"></div>
+        <button class="btn btn-gold" style="width:100%;justify-content:center;" onclick="paso2(this)">Activar</button>
+      </div>
+
+      <!-- PASO 3 -->
+      <div id="paso3" style="display:none;">
+        <div class="fw-600 mb-1" style="color:var(--green);">✓ Verificación en dos pasos activada</div>
+        <div class="fs-13 mb-2">Guarda estos códigos de respaldo en un lugar seguro (papel, no en el mismo celular).
+          Cada uno sirve <b>una sola vez</b> para entrar si pierdes el celular. No se volverán a mostrar.</div>
+        <div id="respaldo" class="respaldo num"></div>
+        <button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:12px;"
+                onclick="location.href='/dashboard'">Ya los guardé, continuar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+async function paso1(btn){
+  const fd = new FormData();
+  fd.append('password', document.getElementById('f-pass').value);
+  const actual = document.getElementById('f-actual');
+  if (actual) fd.append('code', actual.value.trim());
+  await conBoton(btn, 'Verificando...', async () => {
+    const d = await leerRespuesta(await window.fetch('/auth/2fa/setup', {method:'POST', body:fd}));
+    if (d.error) { toast(d.error, 'error'); return; }
+    // El SVG lo genera el servidor (segno) a partir del enlace otpauth: no
+    // lleva datos escritos por nadie, solo los modulos del QR.
+    document.getElementById('qr').innerHTML = d.qr_svg;
+    document.getElementById('clave').textContent = d.secret;
+    document.getElementById('paso1').style.display = 'none';
+    document.getElementById('paso2').style.display = '';
+    setTimeout(() => document.getElementById('f-codigo').focus(), 100);
+  });
+}
+
+async function paso2(btn){
+  const fd = new FormData();
+  fd.append('code', document.getElementById('f-codigo').value.replace(/\D/g, ''));
+  await conBoton(btn, 'Activando...', async () => {
+    const d = await leerRespuesta(await window.fetch('/auth/2fa/setup/confirm', {method:'POST', body:fd}));
+    if (!d.ok) { toast(d.error || 'Código incorrecto. Revisa la hora del celular e intenta de nuevo.', 'error'); return; }
+    document.getElementById('respaldo').innerHTML = d.backup_codes.map(c => `<span>${esc(c)}</span>`).join('');
+    document.getElementById('paso2').style.display = 'none';
+    document.getElementById('paso3').style.display = '';
+  });
+}
+</script>
+<style>
+.respaldo{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--bg-2);border-radius:var(--r-sm);padding:12px;font-size:15px;text-align:center}
+#qr svg{width:220px;height:220px}
+</style>
+{% endblock %}

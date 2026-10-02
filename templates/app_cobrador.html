@@ -187,6 +187,17 @@
       </div>
     </div>
 
+    {#- Si el cliente elegido aun debe, se ofrece renovar: se descuenta lo
+        que debe del prestamo nuevo y se le entrega la diferencia. -#}
+    <div id="p-renovar" class="p-renovar" style="display:none;">
+      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
+        <input type="checkbox" id="p-renovar-si" onchange="previoPrestamo()" style="width:auto;margin-top:3px;">
+        <span class="fs-13">Debe <b class="num" id="p-debe">$0</b> de su préstamo.
+          <b>Renovar:</b> se descuenta lo que debe y le entregas la diferencia.</span>
+      </label>
+      <div class="fs-13" id="p-entrega" style="margin-top:6px;display:none;"></div>
+    </div>
+
     <div id="p-nuevo" style="display:none;">
       <div class="fs-11 text-3" style="margin-bottom:8px;">
         No aparece: se da de alta con estos datos.
@@ -825,7 +836,7 @@ async function guardarClienteNuevo(btn){
 }
 
 // ── PRESTAR ──────────────────────────────────────────────────────────────
-let _clienteElegido = null, _debBuscar = null;
+let _clienteElegido = null, _debBuscar = null, _renovable = null;
 
 function abrirPrestar(){
   const sel = document.getElementById('p-zona');
@@ -843,6 +854,9 @@ function abrirPrestar(){
 
 function soltarCliente(){
   _clienteElegido = null;
+  _renovable = null;
+  document.getElementById('p-renovar').style.display = 'none';
+  document.getElementById('p-renovar-si').checked = false;
   document.getElementById('p-elegido').style.display = 'none';
   document.getElementById('p-nuevo').style.display = 'none';
   document.getElementById('p-resultados').style.display = 'none';
@@ -872,9 +886,9 @@ function buscarParaPrestar(){
       caja.style.display = 'block';
       caja.innerHTML = filas.map(c => `
         <div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);"
-             onclick="elegirCliente(${Number(c.id)||0},${attr(JSON.stringify(c.nombre||''))},${attr(JSON.stringify(c.cedula||''))},${Number(c.zona_id)||0})">
+             onclick="elegirCliente(${Number(c.id)||0},${attr(JSON.stringify(c.nombre||''))},${attr(JSON.stringify(c.cedula||''))},${Number(c.zona_id)||0},${Number(c.debe)||0},${Number(c.prestamo_activo_id)||0})">
           <div class="fs-13 fw-600">${esc(c.nombre)}</div>
-          <div class="fs-11 text-3">${esc(c.cedula)}${c.telefono ? ' · ' + esc(c.telefono) : ''}</div>
+          <div class="fs-11 text-3">${esc(c.cedula)}${c.telefono ? ' · ' + esc(c.telefono) : ''}${c.debe > 0 ? ' · debe ' + cop(c.debe) : ''}</div>
         </div>`).join('');
     } catch(e) {
       console.error('[Prestar] No se pudo buscar:', e);
@@ -882,8 +896,12 @@ function buscarParaPrestar(){
   }, 400);
 }
 
-function elegirCliente(id, nombre, cedula, zonaId){
+function elegirCliente(id, nombre, cedula, zonaId, debe, prestamoActivo){
   _clienteElegido = id;
+  _renovable = (debe > 0 && prestamoActivo) ? {debe: Number(debe), prestamo_id: Number(prestamoActivo)} : null;
+  document.getElementById('p-renovar').style.display = _renovable ? 'block' : 'none';
+  document.getElementById('p-renovar-si').checked = !!_renovable;
+  if (_renovable) document.getElementById('p-debe').textContent = cop(_renovable.debe);
   document.getElementById('p-elegido-nombre').textContent = nombre;
   document.getElementById('p-elegido-cedula').textContent = cedula;
   document.getElementById('p-elegido').style.display = 'block';
@@ -895,7 +913,20 @@ function elegirCliente(id, nombre, cedula, zonaId){
 
 // El calculo lo hace el servidor, que es el mismo que crea las cuotas: si lo
 // repitiera aqui, la pantalla y el prestamo podrian discrepar en los centavos.
+function _pintarEntrega(){
+  const caja = document.getElementById('p-entrega');
+  const renovando = _renovable && document.getElementById('p-renovar-si').checked;
+  const cap = Number(document.getElementById('p-capital').value) || 0;
+  caja.style.display = renovando ? 'block' : 'none';
+  if (!renovando) return;
+  const entrega = cap - _renovable.debe;
+  caja.innerHTML = cap <= 0 ? 'Escribe el valor del préstamo nuevo.'
+    : entrega > 0 ? `Le entregas en mano: <b class="num">${cop(entrega)}</b>`
+    : `<span style="color:var(--red);">El préstamo nuevo tiene que ser mayor que lo que debe (${cop(_renovable.debe)}).</span>`;
+}
+
 async function previoPrestamo(){
+  _pintarEntrega();
   const cap = document.getElementById('p-capital').value;
   const tasa = document.getElementById('p-tasa').value;
   const cuotas = document.getElementById('p-cuotas').value;
@@ -931,9 +962,17 @@ async function confirmarPrestamo(btn){
     _anexarPosAlta(fd);
   }
 
-  await conBoton(btn, 'Prestando...', async () => {
+  const renovando = _renovable && _clienteElegido && document.getElementById('p-renovar-si').checked;
+  if (renovando) {
+    fd.append('prestamo_id', _renovable.prestamo_id);
+    const cap = Number(document.getElementById('p-capital').value) || 0;
+    if (cap <= _renovable.debe) { toast('El préstamo nuevo tiene que ser mayor que lo que debe.', 'error'); return; }
+    if (!(await confirmar(`Se descuentan ${cop(_renovable.debe)} que debe y le entregas ${cop(cap - _renovable.debe)}. El préstamo anterior queda pagado.`,
+                          {titulo: '¿Renovar el préstamo?', aceptar: 'Renovar'}))) return;
+  }
+  await conBoton(btn, renovando ? 'Renovando...' : 'Prestando...', async () => {
     try {
-      const r = await window.fetch('/ruta/prestar', {method:'POST', body:fd});
+      const r = await window.fetch(renovando ? '/ruta/renovar' : '/ruta/prestar', {method:'POST', body:fd});
       const d = await leerRespuesta(r);
       if (d.ok) {
         document.getElementById('modal-prestar').classList.remove('open');
@@ -1000,6 +1039,7 @@ _zona = {{ zona_unica }}; _elegida = true; cargar();
    no muestra un cuadro gris vacio, y si la foto no se puede leer se retira y
    la inicial ya estaba puesta. */
 .fila-nuevo{background:var(--gold);color:#fff;border-radius:4px;padding:1px 5px;margin-right:2px}
+.p-renovar{background:rgba(200,169,90,.08);border:1px solid rgba(200,169,90,.3);border-radius:var(--r-sm);padding:10px;margin-bottom:12px}
 .sin-enviar{background:var(--amber);color:#fff;border-radius:4px;padding:1px 5px}
 .sin-senal{background:rgba(217,119,6,.1);border:1px solid rgba(217,119,6,.35);color:var(--t1);border-radius:var(--r-sm);padding:8px 10px;font-size:12px;margin:0 0 8px}
 .luz-gris{border-left-color:var(--t3)}
