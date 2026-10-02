@@ -44,6 +44,7 @@ from app.routers import (
     clientes,
     cobros,
     dashboard,
+    finanzas,
     license_router,
     plataforma,
     pwa,
@@ -340,6 +341,7 @@ app.include_router(whatsapp.router, prefix="/whatsapp", tags=["WhatsApp Bot"])
 app.include_router(plataforma.router, prefix="/plataforma", tags=["Plataforma"])
 app.include_router(ruta.router, tags=["Ruta"])
 app.include_router(caja.router, tags=["Caja"])
+app.include_router(finanzas.router, tags=["Finanzas"])
 app.include_router(pwa.router, tags=["PWA"])
 
 

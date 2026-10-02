@@ -75,6 +75,14 @@
     </div>
   </div>
 
+  {#- Cierre del dia: el cobrador declara cuanto entrega, el administrador
+      cuenta y confirma. Confirmado, la caja de ese dia queda cerrada. -#}
+  <div class="card mb-3" id="card-cierre">
+    <div class="card-header"><div class="card-title">Cierre del día</div>
+      <span class="badge" id="cierre-badge"></span></div>
+    <div class="card-body" id="cierre-cuerpo"></div>
+  </div>
+
   <div class="card mb-3">
     <div class="card-header"><div class="card-title">Movimientos del dia</div></div>
     <div class="card-body-flush table-wrap">
@@ -90,7 +98,7 @@
       unico que sabe cuanto fue; esperar a que alguien en la oficina lo
       escriba le deja la caja descuadrada hasta el dia siguiente. Queda a la
       vista con su concepto, que es el control. -#}
-  <div class="card mb-3">
+  <div class="card mb-3" id="card-gasto">
     <div class="card-header"><div class="card-title">Anotar un gasto</div></div>
     <div class="card-body">
       <div class="form-grid">
@@ -269,6 +277,9 @@ function pintarUno(c){
     aviso.style.display = 'none';
   }
 
+  pintarCierre(c);
+
+  const cerrada = c.cierre && c.cierre.estado === 'confirmado';
   const filas = (c.movimientos || []);
   document.getElementById('d-movimientos').innerHTML = filas.length
     ? filas.map(m => `<tr>
@@ -276,10 +287,101 @@ function pintarUno(c){
         <td class="fs-12 text-2">${esc(m.registrado_por)}</td>
         <td style="text-align:right;font-family:var(--mono);color:${m.efecto > 0 ? 'var(--green)' : 'var(--red)'};">
           ${m.efecto > 0 ? '+' : '−'}${cop(m.valor)}</td>
-        ${(ES_ADMIN || m.tipo === 'gasto') ? `<td style="text-align:right;"><button class="btn btn-ghost btn-xs" onclick="borrar(${Number(m.id)||0})">✕</button></td>` : '<td></td>'}
+        ${(!cerrada && (ES_ADMIN || m.tipo === 'gasto')) ? `<td style="text-align:right;"><button class="btn btn-ghost btn-xs" onclick="borrar(${Number(m.id)||0})">✕</button></td>` : '<td></td>'}
       </tr>`).join('')
     : `<tr><td colspan="4" class="fs-12 text-3" style="padding:14px;text-align:center;">
         Sin movimientos anotados este dia</td></tr>`;
+}
+
+// ── CIERRE DEL DIA ─────────────────────────────────────────────────────────
+function pintarCierre(c){
+  const k = c.cierre;
+  const cuerpo = document.getElementById('cierre-cuerpo');
+  const badge = document.getElementById('cierre-badge');
+  const gasto = document.getElementById('card-gasto');
+  const cerrada = k && k.estado === 'confirmado';
+  if (gasto) gasto.style.display = cerrada ? 'none' : '';
+
+  if (cerrada) {
+    badge.className = 'badge badge-green'; badge.textContent = 'Cerrada';
+    const dif = Number(k.diferencia) || 0;
+    cuerpo.innerHTML = `
+      <div class="flex-between fs-13"><span>Esperado al cerrar</span><b class="num">${cop(k.esperado)}</b></div>
+      ${k.declarado !== null ? `<div class="flex-between fs-13"><span>Declaró el cobrador</span><b class="num">${cop(k.declarado)}</b></div>` : ''}
+      <div class="flex-between fs-13"><span>Recibido</span><b class="num">${cop(k.recibido)}</b></div>
+      <div class="flex-between fs-13"><span>Diferencia</span>
+        <b class="num" style="color:${dif < 0 ? 'var(--red)' : dif > 0 ? 'var(--amber)' : 'var(--green)'};">
+          ${dif === 0 ? 'Cuadra exacto' : (dif < 0 ? 'Faltan ' : 'Sobran ') + cop(Math.abs(dif))}</b></div>
+      ${k.despues > 0 ? `<div class="fs-12" style="margin-top:8px;padding:8px;border-radius:var(--r-sm);background:var(--abg);color:#92400E;">
+        Llegaron cobros después del cierre por <b>${cop(k.despues)}</b> (registrados sin señal). No estaban en lo contado.</div>` : ''}
+      ${k.nota ? `<div class="fs-12 text-3" style="margin-top:6px;">${esc(k.nota)}</div>` : ''}
+      <div class="fs-11 text-3" style="margin-top:6px;">Cerrada por ${esc(k.confirmado_por || '—')}. Ya no se le anotan ni retiran movimientos.</div>`;
+    return;
+  }
+
+  if (!ES_ADMIN) {
+    badge.className = k ? 'badge badge-amber' : 'badge badge-gray';
+    badge.textContent = k ? 'Declarada' : 'Abierta';
+    cuerpo.innerHTML = `
+      ${k ? `<div class="fs-13 mb-2">Declaraste <b class="num">${cop(k.declarado)}</b>. Falta que el administrador lo cuente y confirme. Puedes corregirlo mientras tanto.</div>` : ''}
+      <div class="form-grid">
+        <div class="form-group"><label for="ci-entrego">Cuánto entregas</label>
+          <input type="text" inputmode="numeric" id="ci-entrego" value="${Math.max(0, Math.round(k ? k.declarado : c.esperado))}"></div>
+        <div class="form-group"><label for="ci-nota">Nota (opcional)</label>
+          <input type="text" id="ci-nota" placeholder="ej: faltan 2.000 de un billete roto"></div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="declararCierre(this)">${k ? 'Corregir lo declarado' : 'Declarar entrega'}</button>`;
+    return;
+  }
+
+  // Administrador, mirando a un cobrador.
+  badge.className = k ? 'badge badge-amber' : 'badge badge-gray';
+  badge.textContent = k ? 'Por confirmar' : 'Sin declarar';
+  const sugerido = Math.max(0, Math.round(k ? k.declarado : c.esperado));
+  cuerpo.innerHTML = `
+    ${k ? `<div class="fs-13 mb-2">El cobrador declaró <b class="num">${cop(k.declarado)}</b>${k.nota ? ` · <span class="text-3">${esc(k.nota)}</span>` : ''}.</div>`
+        : '<div class="fs-12 text-3 mb-2">El cobrador aún no ha declarado su entrega. Puedes cerrar igual con lo que recibas.</div>'}
+    <div class="form-grid">
+      <div class="form-group"><label for="ci-recibido">Recibido</label>
+        <input type="text" inputmode="numeric" id="ci-recibido" value="${sugerido}"></div>
+      <div class="form-group"><label for="ci-nota-admin">Nota (opcional)</label>
+        <input type="text" id="ci-nota-admin"></div>
+    </div>
+    <button class="btn btn-gold btn-sm" onclick="confirmarCierre(this)">Confirmar y cerrar el día</button>`;
+}
+
+const _soloDigitos = id => String(document.getElementById(id).value || '').replace(/\D/g, '');
+
+async function declararCierre(btn){
+  const fd = new FormData();
+  fd.append('entrego', _soloDigitos('ci-entrego'));
+  fd.append('nota', document.getElementById('ci-nota').value.trim());
+  await conBoton(btn, 'Enviando...', async () => {
+    const d = await leerRespuesta(await window.fetch('/caja/cierre/declarar', {method:'POST', body:fd}));
+    if (d.ok) { toast(d.mensaje); pintarUno(Object.assign({nombre: _cuadre && _cuadre.nombre}, d.cuadre)); }
+    else toast(d.error || 'No se pudo declarar', 'error');
+  });
+}
+
+async function confirmarCierre(btn){
+  const c = _cuadre;
+  const recibido = Number(_soloDigitos('ci-recibido')) || 0;
+  const dif = recibido - Math.round(c.esperado);
+  const texto = `Recibido ${cop(recibido)} de ${cop(c.esperado)} esperados` +
+    (dif === 0 ? ' (cuadra exacto).' : `: ${dif < 0 ? 'faltan' : 'sobran'} ${cop(Math.abs(dif))}.`) +
+    ' La caja de ese día quedará cerrada y no se podrá editar.';
+  if (!(await confirmar(texto, {titulo: '¿Cerrar la caja de ' + (c.nombre || 'este cobrador') + '?', aceptar: 'Cerrar caja'}))) return;
+  const fd = new FormData();
+  fd.append('usuario_id', c.usuario_id);
+  fd.append('fecha', _dia());
+  fd.append('recibido', String(recibido));
+  fd.append('nota', document.getElementById('ci-nota-admin').value.trim());
+  await conBoton(btn, 'Cerrando...', async () => {
+    const d = await leerRespuesta(await window.fetch('/caja/cierre/confirmar', {method:'POST', body:fd}));
+    if (d.ok) { toast(d.mensaje, d.mensaje.includes('exacto') ? 'success' : 'warn');
+                pintarUno(Object.assign({nombre: c.nombre}, d.cuadre)); }
+    else toast(d.error || 'No se pudo cerrar', 'error');
+  });
 }
 
 function pintarTodos(d){
@@ -293,7 +395,9 @@ function pintarTodos(d){
     ? filas.map(c => `<tr>
         <td class="fw-600 fs-13">${esc(c.nombre)}
           ${c.sobregiro ? '<span class="badge badge-red" style="margin-left:6px;">Sobregiro</span>' : ''}
-          ${!c.hubo_movimiento ? '<span class="badge badge-gray" style="margin-left:6px;">Sin movimiento</span>' : ''}</td>
+          ${!c.hubo_movimiento ? '<span class="badge badge-gray" style="margin-left:6px;">Sin movimiento</span>' : ''}
+          ${c.cierre && c.cierre.estado === 'confirmado' ? '<span class="badge badge-green" style="margin-left:6px;">Cerrada</span>'
+            : c.cierre ? `<span class="badge badge-amber" style="margin-left:6px;">Declaró ${cop(c.cierre.declarado)}</span>` : ''}</td>
         <td style="text-align:right;font-family:var(--mono);">${cop(c.base)}</td>
         <td style="text-align:right;font-family:var(--mono);color:var(--green);">${cop(c.cobrado)}</td>
         <td style="text-align:right;font-family:var(--mono);">${cop(c.gastos)}</td>

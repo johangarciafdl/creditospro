@@ -29,7 +29,7 @@ from app.routers.auth import get_current_user
 from app.services.prestamo_service import calcular_cuotas
 from app.templates import templates
 from app.utils.audit import log_action
-from app.utils.caja import cuadre
+from app.utils.caja import caja_cerrada, cuadre
 from app.utils.money import cop, money
 from app.utils.permisos_rol import es_admin, puede_gestionar_prestamos
 from app.utils import orden_ruta
@@ -545,6 +545,9 @@ async def prestar(
     if dia > hoy_local():
         return JSONResponse({"error": "No se puede prestar con fecha futura"},
                             status_code=400)
+    if caja_cerrada(db, user.id, dia):
+        return JSONResponse({"error": "Tu caja de ese día ya está cerrada: no se puede prestar con esa fecha."},
+                            status_code=409)
 
     # ── El cliente: el que ya esta, o uno nuevo ───────────────────────────
     if cliente_id.strip():

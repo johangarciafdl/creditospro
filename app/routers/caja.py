@@ -15,12 +15,12 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.database import MovimientoCaja, Usuario, get_db, hoy_local
+from app.database import CierreCaja, MovimientoCaja, Usuario, ahora_utc, get_db, hoy_local
 from app.routers.auth import get_current_user
 from app.templates import templates
 from app.utils.audit import log_action
-from app.utils.caja import (NOMBRES, TIPOS, TIPOS_DEL_COBRADOR, cuadre,
-                            cuadre_de_todos)
+from app.utils.caja import (NOMBRES, TIPOS, TIPOS_DEL_COBRADOR, caja_cerrada,
+                            cierre_de, cuadre, cuadre_de_todos)
 from app.utils.money import money
 from app.utils.permisos_rol import (es_admin, puede_anotar_gastos,
                                     puede_registrar_movimientos_caja,
@@ -189,6 +189,10 @@ async def registrar_movimiento(
     )
     if not objetivo:
         return JSONResponse({"error": "Usuario no encontrado"}, status_code=404)
+    if caja_cerrada(db, objetivo.id, dia):
+        return JSONResponse(
+            {"error": "La caja de ese día ya está cerrada: no se le anotan más movimientos."},
+            status_code=409)
 
     try:
         # El gasto sin "en que" no se puede revisar: es obligatorio. En el
@@ -256,6 +260,10 @@ async def borrar_movimiento(request: Request, movimiento_id: int,
             status_code=403)
 
     usuario_id, dia = movimiento.usuario_id, movimiento.fecha
+    if caja_cerrada(db, usuario_id, dia):
+        return JSONResponse(
+            {"error": "La caja de ese día ya está cerrada: no se retiran movimientos."},
+            status_code=409)
     detalle = f"{movimiento.tipo}={movimiento.valor} usuario_id={usuario_id} fecha={dia}"
     db.delete(movimiento)
     db.commit()
@@ -266,3 +274,117 @@ async def borrar_movimiento(request: Request, movimiento_id: int,
         "mensaje": "Movimiento retirado",
         "cuadre": cuadre(db, user.empresa_id, usuario_id, dia),
     })
+
+
+# ── CIERRE DEL DIA ────────────────────────────────────────────────────────
+# El cobrador declara cuanto entrega; el administrador cuenta y confirma.
+# Al confirmar se anota la entrega (de ahi la toma tambien la caja general),
+# queda la diferencia contra lo esperado y el dia se cierra.
+
+def _pesos_form(texto: str):
+    limpio = "".join(ch for ch in str(texto or "") if ch.isdigit())
+    if not limpio:
+        return None
+    v = money(limpio)
+    if v > MAXIMO_MOVIMIENTO:
+        raise ValueError("Ese valor parece un error de tecleo. Revisalo.")
+    return v
+
+
+@router.post("/caja/cierre/declarar")
+async def declarar_cierre(request: Request, entrego: str = Form(""), nota: str = Form(""),
+                          db: Session = Depends(get_db)):
+    """El cobrador dice cuanto entrega hoy. Puede corregirlo hasta que el
+    administrador confirme."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if es_admin(user):
+        return JSONResponse({"error": "El cierre lo declara el cobrador."}, status_code=400)
+    try:
+        valor = _pesos_form(entrego)
+        nota = validar_descripcion(nota, "Nota", 300)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+    if valor is None:
+        return JSONResponse({"error": "Escribe cuanto entregas"}, status_code=400)
+
+    hoy = hoy_local()
+    c = cierre_de(db, user.id, hoy)
+    if c and c.estado == "confirmado":
+        return JSONResponse({"error": "Tu caja de hoy ya fue cerrada por el administrador."},
+                            status_code=409)
+    esperado = money(cuadre(db, user.empresa_id, user.id, hoy)["esperado"])
+    if not c:
+        c = CierreCaja(empresa_id=user.empresa_id, usuario_id=user.id, fecha=hoy)
+        db.add(c)
+    c.esperado = esperado
+    c.declarado = valor
+    c.nota = nota or None
+    c.estado = "declarado"
+    c.declarado_en = ahora_utc()
+    db.commit()
+    log_action(db, user, "cierre_declarado", "caja", f"entrega={valor} esperado={esperado}")
+    return JSONResponse({"ok": True, "mensaje": "Entrega declarada. Falta que el administrador la confirme.",
+                         "cuadre": cuadre(db, user.empresa_id, user.id, hoy)})
+
+
+@router.post("/caja/cierre/confirmar")
+async def confirmar_cierre(request: Request, usuario_id: int = Form(...), fecha: str = Form(""),
+                           recibido: str = Form(""), nota: str = Form(""),
+                           db: Session = Depends(get_db)):
+    """El administrador confirma lo que recibio y cierra la caja de ese dia."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not puede_registrar_movimientos_caja(user):
+        return JSONResponse({"error": "Solo el administrador cierra la caja."}, status_code=403)
+    dia = _fecha(fecha)
+    if dia is None or dia > hoy_local():
+        return JSONResponse({"error": "Fecha invalida"}, status_code=400)
+    objetivo = (db.query(Usuario)
+                .filter(Usuario.id == usuario_id, Usuario.empresa_id == user.empresa_id).first())
+    if not objetivo or es_admin(objetivo):
+        return JSONResponse({"error": "Cobrador no encontrado"}, status_code=404)
+    try:
+        valor = _pesos_form(recibido)
+        nota = validar_descripcion(nota, "Nota", 300)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, status_code=e.status_code)
+    if valor is None:
+        return JSONResponse({"error": "Escribe cuanto recibiste"}, status_code=400)
+
+    c = cierre_de(db, objetivo.id, dia)
+    if c and c.estado == "confirmado":
+        return JSONResponse({"error": "Esa caja ya esta cerrada."}, status_code=409)
+    esperado = money(cuadre(db, user.empresa_id, objetivo.id, dia)["esperado"])
+    if not c:
+        c = CierreCaja(empresa_id=user.empresa_id, usuario_id=objetivo.id, fecha=dia)
+        db.add(c)
+    quien = user.nombre or user.username
+    if valor > 0:
+        db.add(MovimientoCaja(
+            empresa_id=user.empresa_id, usuario_id=objetivo.id, fecha=dia, tipo="entrega",
+            valor=valor, concepto="Entrega del cierre del dia",
+            registrado_por_id=user.id, registrado_por=quien))
+    c.esperado = esperado
+    c.recibido = valor
+    c.diferencia = valor - esperado
+    if nota:
+        c.nota = ((c.nota + " · ") if c.nota else "") + nota
+    c.estado = "confirmado"
+    c.confirmado_por_id = user.id
+    c.confirmado_por = quien
+    c.confirmado_en = ahora_utc()
+    db.commit()
+    log_action(db, user, "cierre_confirmado", "caja",
+               f"usuario={objetivo.username} fecha={dia} recibido={valor} esperado={esperado}")
+    dif = valor - esperado
+    texto = ("Caja cerrada: cuadra exacto." if dif == 0 else
+             f"Caja cerrada con {'sobrante' if dif > 0 else 'faltante'} de {abs(dif):,.0f}".replace(",", "."))
+    return JSONResponse({"ok": True, "mensaje": texto,
+                         "cuadre": cuadre(db, user.empresa_id, objetivo.id, dia)})

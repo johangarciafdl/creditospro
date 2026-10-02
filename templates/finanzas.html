@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+{% block title %}Finanzas{% endblock %}
+{% block topbar_title %}Finanzas{% endblock %}
+{% block topbar_sub %}Ciclos de 6 semanas y caja general{% endblock %}
+
+{% block content %}
+{#- Las cuentas del dueño. Dos cosas en una pantalla porque se miran juntas:
+    lo que dejo el ciclo (por zona y en total) y donde esta la plata ahora
+    (la caja general). Al cerrar un ciclo, su reparto sale de la caja. -#}
+<div style="max-width:900px;margin:0 auto;">
+
+<div id="estado" style="text-align:center;padding:36px 0;color:var(--t3);">Cargando...</div>
+
+<!-- CONFIGURAR LOS CICLOS (una vez) -->
+<div id="sin-config" class="card mb-3" style="display:none;">
+  <div class="card-body">
+    <div class="fw-600 mb-2">¿Desde qué día cuentan los ciclos?</div>
+    <div class="fs-12 text-3 mb-2">
+      Cada ciclo dura 6 semanas, lo que tarda en pagarse un préstamo. Elige el día en que empieza
+      el primero (normalmente un lunes); de ahí corren solos: ciclo 1, ciclo 2...
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+      <div style="flex:0 0 180px;"><label for="cfg-inicio" class="fs-11 text-3">Inicio del primer ciclo</label>
+        <input type="date" id="cfg-inicio"></div>
+      <button class="btn btn-gold" onclick="configurar(this)">Configurar ciclos</button>
+    </div>
+  </div>
+</div>
+
+<!-- EL CICLO -->
+<div id="bloque-ciclo" style="display:none;">
+  <div class="card mb-3">
+    <div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+      <div style="flex:1;min-width:220px;">
+        <label for="sel-ciclo" class="fs-11 text-3">Ciclo</label>
+        <select id="sel-ciclo" onchange="cargar()"></select>
+      </div>
+      <div class="fs-12" id="ciclo-estado"></div>
+    </div>
+  </div>
+
+  <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+    <div class="stat-card green"><div class="stat-label">Cobrado</div><div class="stat-val" id="t-cobrado">—</div></div>
+    <div class="stat-card"><div class="stat-label">Prestado</div><div class="stat-val" id="t-prestado">—</div></div>
+    <div class="stat-card red"><div class="stat-label">Gastos</div><div class="stat-val" id="t-gastos">—</div></div>
+    <div class="stat-card gold"><div class="stat-label">Resultado</div><div class="stat-val" id="t-resultado">—</div>
+      <div class="stat-sub">cobrado − prestado − gastos</div></div>
+    <div class="stat-card blue"><div class="stat-label">Ganancia por intereses</div><div class="stat-val" id="t-ganancia">—</div>
+      <div class="stat-sub">intereses cobrados − gastos</div></div>
+  </div>
+  <div class="fs-11 text-3 mb-3" id="explica-resultado"></div>
+
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Por zona</div></div>
+    <div class="tabla-scroll">
+      <table class="tabla-fin">
+        <thead><tr><th>Zona</th><th>Cobrado</th><th>Prestado</th><th>Intereses</th><th>Cobrado − prestado</th></tr></thead>
+        <tbody id="tb-zonas"></tbody>
+        <tfoot id="tf-zonas"></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <div class="card mb-3" id="card-gastos" style="display:none;">
+    <div class="card-header"><div class="card-title">Gastos por cobrador</div></div>
+    <div class="card-body" id="lista-gastos"></div>
+  </div>
+
+  <!-- REPARTO -->
+  <div class="card mb-3" id="card-reparto" style="display:none;">
+    <div class="card-header"><div class="card-title" id="reparto-titulo">Repartir el resultado</div></div>
+    <div class="card-body" id="reparto-cuerpo"></div>
+  </div>
+</div>
+
+<!-- CAJA GENERAL -->
+<div class="card mb-3" id="card-caja" style="display:none;">
+  <div class="card-header"><div class="card-title">Caja general</div></div>
+  <div class="card-body" id="caja-cuerpo"></div>
+</div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+let _d = null;
+// El signo menos delante del peso: "−$778.000" se lee; "$-778.000" no.
+const pesos = v => { const n = Math.round(Number(v) || 0); return n < 0 ? '−' + cop(-n) : cop(n); };
+
+async function cargar(){
+  const sel = document.getElementById('sel-ciclo');
+  const n = sel && sel.value ? '?ciclo=' + Number(sel.value) : '';
+  try {
+    const r = await window.fetch('/finanzas/datos' + n);
+    _d = await leerRespuesta(r);
+    if (_d.error) { document.getElementById('estado').textContent = _d.error; return; }
+  } catch(e) {
+    document.getElementById('estado').textContent = 'No hay conexión. Intenta de nuevo.'; return;
+  }
+  document.getElementById('estado').style.display = 'none';
+  document.getElementById('sin-config').style.display = _d.configurado ? 'none' : '';
+  document.getElementById('bloque-ciclo').style.display = _d.configurado ? '' : 'none';
+  if (_d.configurado) pintarCiclo();
+  pintarCaja();
+}
+
+function pintarCiclo(){
+  const sel = document.getElementById('sel-ciclo');
+  const elegido = _d.ciclo.numero;
+  const ETQ = {en_curso: 'en curso', por_cerrar: 'por repartir', cerrado: 'cerrado'};
+  const fecha = f => f.split('-').reverse().join('/');
+  sel.innerHTML = _d.ciclos.map(c =>
+    `<option value="${Number(c.numero)}" ${c.numero === elegido ? 'selected' : ''}>Ciclo ${Number(c.numero)} · ${fecha(c.desde)} – ${fecha(c.hasta)} · ${ETQ[c.estado]}</option>`).join('');
+  const c = _d.ciclo;
+  const est = document.getElementById('ciclo-estado');
+  est.textContent = c.cerrado ? `Cerrado por ${c.cerrado_por || '—'}`
+    : c.se_puede_cerrar ? 'Terminó: listo para repartir'
+    : `En curso: termina el ${fecha(c.hasta)}. Las cifras son hasta hoy.`;
+
+  document.getElementById('t-cobrado').textContent = pesos(c.cobrado);
+  document.getElementById('t-prestado').textContent = pesos(c.prestado);
+  document.getElementById('t-gastos').textContent = pesos(c.gastos);
+  const tr = document.getElementById('t-resultado');
+  tr.textContent = pesos(c.resultado);
+  tr.className = 'stat-val ' + (c.resultado < 0 ? 'red' : 'gold');
+  document.getElementById('t-ganancia').textContent = pesos(c.ganancia);
+  document.getElementById('explica-resultado').textContent = c.resultado < 0
+    ? 'Resultado negativo: en este ciclo se prestó más de lo que entró. La cartera creció; esa plata está en la calle y vuelve en los ciclos siguientes.'
+    : 'El resultado es la plata que de verdad quedó libre y es lo que se reparte. La ganancia por intereses es lo que ganó el negocio, aunque parte siga en la calle.';
+
+  document.getElementById('tb-zonas').innerHTML = (c.zonas || []).map(z => `
+    <tr><td>${esc(z.zona)}</td><td>${pesos(z.cobrado)}</td><td>${pesos(z.prestado)}</td>
+        <td>${pesos(z.intereses)}</td><td class="${z.flujo < 0 ? 'neg' : ''}">${pesos(z.flujo)}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="text-3">Sin movimiento en este ciclo</td></tr>';
+  document.getElementById('tf-zonas').innerHTML = `
+    <tr><th>Total</th><th>${pesos(c.cobrado)}</th><th>${pesos(c.prestado)}</th>
+        <th>${pesos(c.intereses)}</th><th>${pesos(c.cobrado - c.prestado)}</th></tr>`;
+
+  const gastos = c.gastos_por_cobrador || [];
+  document.getElementById('card-gastos').style.display = gastos.length ? '' : 'none';
+  document.getElementById('lista-gastos').innerHTML = gastos.map(g =>
+    `<div class="flex-between fs-13" style="padding:4px 0;"><span>${esc(g.nombre)}</span><b class="num">${pesos(g.gastos)}</b></div>`).join('');
+
+  pintarReparto();
+}
+
+function pintarReparto(){
+  const c = _d.ciclo;
+  const card = document.getElementById('card-reparto');
+  const cuerpo = document.getElementById('reparto-cuerpo');
+  if (c.cerrado) {
+    const r = c.reparto;
+    card.style.display = '';
+    document.getElementById('reparto-titulo').textContent = 'Cómo se repartió';
+    cuerpo.innerHTML = [
+      ['Se queda en caja como base', r.base], ['Retiro del dueño', r.retiro],
+      ['Reserva', r.reserva],
+    ].map(([n, v]) => `<div class="flex-between fs-13" style="padding:4px 0;"><span>${n}</span><b class="num">${pesos(v)}</b></div>`).join('')
+      + (r.pagos || []).map(p => `<div class="flex-between fs-13" style="padding:4px 0;"><span>Pago a ${esc(p.nombre)}</span><b class="num">${pesos(p.valor)}</b></div>`).join('');
+    return;
+  }
+  if (!c.se_puede_cerrar) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('reparto-titulo').textContent = 'Repartir el resultado';
+  if (c.resultado <= 0) {
+    cuerpo.innerHTML = `<div class="fs-13 mb-2">Este ciclo no dejó resultado positivo, así que no hay nada que repartir. Ciérralo para dejarlo registrado.</div>
+      <button class="btn btn-gold" onclick="cerrarCiclo(this)">Cerrar ciclo ${Number(c.numero)}</button>`;
+    return;
+  }
+  const campo = (id, etiqueta) => `<div class="form-group"><label for="${id}">${etiqueta}</label>
+      <input type="text" inputmode="numeric" id="${id}" class="rp" value="0" oninput="sumarReparto()"></div>`;
+  cuerpo.innerHTML = `
+    <div class="fs-13 mb-2">Resultado a repartir: <b class="num">${pesos(c.resultado)}</b></div>
+    <div class="form-grid">
+      ${campo('rp-base', 'Se queda en caja como base')}
+      ${campo('rp-retiro', 'Retiro del dueño')}
+      ${campo('rp-reserva', 'Reserva')}
+    </div>
+    <div class="fw-600 fs-12 mt-2 mb-1">Pago a cada cobrador</div>
+    <div class="form-grid">
+      ${_d.cobradores.map(u => campo('rp-pago-' + Number(u.id), esc(u.nombre))).join('')}
+    </div>
+    <div class="fs-13 mt-2" id="rp-suma"></div>
+    <button class="btn btn-gold mt-2" id="btn-cerrar" onclick="cerrarCiclo(this)" disabled>Cerrar ciclo ${Number(c.numero)}</button>`;
+  sumarReparto();
+}
+
+const _valorDe = id => Number(String(document.getElementById(id).value || '0').replace(/\D/g, '')) || 0;
+
+function sumarReparto(){
+  const c = _d.ciclo;
+  const total = [...document.querySelectorAll('.rp')].reduce((s, el) => s + _valorDe(el.id), 0);
+  const falta = Math.round(c.resultado) - total;
+  const caja = document.getElementById('rp-suma');
+  caja.innerHTML = falta === 0
+    ? '<span style="color:var(--green);">✓ El reparto cuadra con el resultado.</span>'
+    : falta > 0 ? `Falta repartir <b class="num">${pesos(falta)}</b>`
+    : `<span style="color:var(--red);">Te pasaste por <b class="num">${pesos(-falta)}</b></span>`;
+  document.getElementById('btn-cerrar').disabled = falta !== 0;
+}
+
+async function cerrarCiclo(btn){
+  const c = _d.ciclo;
+  const ok = await confirmar(`El ciclo ${c.numero} quedará cerrado y su reparto ya no se podrá cambiar. El retiro, la reserva y los pagos salen de la caja general.`,
+                             {titulo: '¿Cerrar el ciclo?', aceptar: 'Cerrar ciclo'});
+  if (!ok) return;
+  const fd = new FormData();
+  if (c.resultado > 0) {
+    fd.append('base', _valorDe('rp-base'));
+    fd.append('retiro', _valorDe('rp-retiro'));
+    fd.append('reserva', _valorDe('rp-reserva'));
+    const pagos = {};
+    _d.cobradores.forEach(u => { const v = _valorDe('rp-pago-' + u.id); if (v) pagos[u.id] = v; });
+    fd.append('pagos', JSON.stringify(pagos));
+  }
+  await conBoton(btn, 'Cerrando...', async () => {
+    const r = await window.fetch('/finanzas/ciclo/' + Number(c.numero) + '/cerrar', {method:'POST', body:fd});
+    const d = await leerRespuesta(r);
+    if (d.ok) { toast(d.mensaje); cargar(); } else toast(d.error || 'No se pudo cerrar', 'error');
+  });
+}
+
+async function configurar(btn){
+  const fd = new FormData();
+  fd.append('ciclo_inicio', document.getElementById('cfg-inicio').value);
+  await conBoton(btn, 'Guardando...', async () => {
+    const d = await leerRespuesta(await window.fetch('/finanzas/config', {method:'POST', body:fd}));
+    if (d.ok) { toast(d.mensaje); cargar(); } else toast(d.error, 'error');
+  });
+}
+
+// ── CAJA GENERAL ──
+function pintarCaja(){
+  const k = _d.caja;
+  document.getElementById('card-caja').style.display = '';
+  const cuerpo = document.getElementById('caja-cuerpo');
+  if (!k.activa) {
+    cuerpo.innerHTML = `
+      <div class="fs-12 text-3 mb-2">La caja general es la plata de la empresa, aparte de la caja del día de cada cobrador.
+        Escribe cuánto tienes guardado al cerrar hoy; desde mañana el sistema suma las entregas de los cobradores
+        y resta las bases que salen, los retiros y los pagos.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="flex:0 0 200px;"><label for="cg-inicial" class="fs-11 text-3">Saldo de hoy</label>
+          <input type="text" inputmode="numeric" id="cg-inicial" placeholder="0"></div>
+        <button class="btn btn-gold" onclick="activarCaja(this)">Activar caja general</button>
+      </div>`;
+    return;
+  }
+  const fecha = f => f.split('-').reverse().join('/');
+  cuerpo.innerHTML = `
+    <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+      <div class="stat-card gold"><div class="stat-label">En caja</div><div class="stat-val ${k.caja < 0 ? 'red' : ''}">${pesos(k.caja)}</div></div>
+      <div class="stat-card blue"><div class="stat-label">Reserva</div><div class="stat-val">${pesos(k.reserva)}</div></div>
+      <div class="stat-card"><div class="stat-label">Con los cobradores hoy</div><div class="stat-val">${pesos(k.en_calle)}</div>
+        <div class="stat-sub">bases y cobros aún sin entregar</div></div>
+    </div>
+    <div class="fs-11 text-3 mb-3">Desde el ${fecha(k.desde)}: saldo inicial ${pesos(k.saldo_inicial)} + entregas de cobradores ${pesos(k.entregas)}
+      − bases que salieron ${pesos(k.bases)} ± lo anotado abajo.</div>
+    <div class="fw-600 fs-12 mb-1">Anotar un movimiento</div>
+    <div class="form-grid">
+      <div class="form-group"><label for="cg-tipo">Tipo</label>
+        <select id="cg-tipo">${_d.tipos_manuales.map(t => `<option value="${esc(t.tipo)}">${esc(t.nombre)}</option>`).join('')}</select></div>
+      <div class="form-group"><label for="cg-valor">Valor</label><input type="text" inputmode="numeric" id="cg-valor" placeholder="0"></div>
+      <div class="form-group"><label for="cg-concepto">Concepto (opcional)</label><input type="text" id="cg-concepto"></div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="anotarCaja(this)">Anotar</button>
+    <div class="tabla-scroll mt-3"><table class="tabla-fin">
+      <thead><tr><th>Fecha</th><th class="izq">Movimiento</th><th>Valor</th><th></th></tr></thead>
+      <tbody>${k.movimientos.map(m => `<tr>
+        <td>${fecha(m.fecha)}</td>
+        <td class="izq">${esc(m.nombre)}${m.concepto ? `<div class="fs-11 text-3">${esc(m.concepto)}</div>` : ''}</td>
+        <td class="${m.efecto < 0 ? 'neg' : 'pos'}">${m.efecto < 0 ? '−' : '+'}${pesos(m.valor)}</td>
+        <td>${(m.tipo !== 'saldo_inicial' && !m.de_liquidacion)
+              ? `<button class="btn btn-ghost btn-xs" onclick="borrarCaja(${Number(m.id)})">✕</button>` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function activarCaja(btn){
+  const fd = new FormData();
+  fd.append('valor', String(document.getElementById('cg-inicial').value).replace(/\D/g, ''));
+  await conBoton(btn, 'Activando...', async () => {
+    const d = await leerRespuesta(await window.fetch('/finanzas/caja/inicial', {method:'POST', body:fd}));
+    if (d.ok) { toast(d.mensaje); cargar(); } else toast(d.error, 'error');
+  });
+}
+
+async function anotarCaja(btn){
+  const fd = new FormData();
+  fd.append('tipo', document.getElementById('cg-tipo').value);
+  fd.append('valor', String(document.getElementById('cg-valor').value).replace(/\D/g, ''));
+  fd.append('concepto', document.getElementById('cg-concepto').value.trim());
+  await conBoton(btn, 'Anotando...', async () => {
+    const d = await leerRespuesta(await window.fetch('/finanzas/caja/movimiento', {method:'POST', body:fd}));
+    if (d.ok) { toast(d.mensaje); cargar(); } else toast(d.error, 'error');
+  });
+}
+
+async function borrarCaja(id){
+  if (!(await confirmar('El saldo de la caja general se recalcula.', {titulo: '¿Retirar este movimiento?', aceptar: 'Retirar', peligro: true}))) return;
+  const d = await leerRespuesta(await window.fetch('/finanzas/caja/movimiento/' + Number(id) + '/borrar', {method:'POST'}));
+  if (d.ok) { toast(d.mensaje); cargar(); } else toast(d.error, 'error');
+}
+
+cargar();
+</script>
+<style>
+.tabla-scroll{overflow-x:auto}
+.tabla-fin{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.tabla-fin th,.tabla-fin td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap}
+.tabla-fin th:first-child,.tabla-fin td:first-child,.tabla-fin .izq{text-align:left}
+.tabla-fin thead th{font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.tabla-fin tfoot th{font-weight:700}
+.tabla-fin .neg{color:var(--red)}
+.tabla-fin .pos{color:var(--green)}
+</style>
+{% endblock %}

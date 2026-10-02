@@ -22,7 +22,7 @@ from app.database import (get_db, Prestamo, Cliente, Cuota, NoPago, Usuario,
 from app.utils.permisos_rol import es_admin, puede_gestionar_prestamos
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import calcular_cuotas
-from app.utils.caja import cuadre
+from app.utils.caja import caja_cerrada, cuadre
 from app.utils.money import cop, money
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
 from app.utils.validators import (
@@ -367,6 +367,10 @@ async def crear_prestamo(
             return JSONResponse(
                 {"error": "No se puede anotar un desembolso en el futuro."},
                 status_code=400)
+        if caja_cerrada(db, entrega_id, dia_desembolso):
+            return JSONResponse(
+                {"error": "La caja de ese cobrador ese día ya está cerrada: el préstamo no puede salir de ella."},
+                status_code=409)
 
     try:
         # Log: Inicio de creación

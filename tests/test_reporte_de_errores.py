@@ -259,7 +259,7 @@ def test_las_ventanas_propias_existen_y_se_usan():
     app_js = (RAIZ / "static" / "js" / "app.js").read_text(encoding="utf-8")
     assert "function confirmar(" in app_js and "function pedirTexto(" in app_js
     caja = (RAIZ / "templates" / "caja.html").read_text(encoding="utf-8")
-    assert caja.count("await confirmar(") == 2
+    assert caja.count("await confirmar(") >= 2   # retirar gasto, retirar movimiento (y cerrar caja)
     base = (RAIZ / "templates" / "base.html").read_text(encoding="utf-8")
     assert "cerrarSesion(event)" in base
 

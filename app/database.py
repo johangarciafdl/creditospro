@@ -370,6 +370,9 @@ class Empresa(Base):
     # app/utils/interfaz.py): una empresa nunca se queda sin interfaz.
     interfaz_cobrador = Column(String(20), default="completa",
                                server_default="completa", nullable=False)
+    # Desde que dia corren los ciclos de liquidacion (bloques de 6 semanas).
+    # Lo pone el administrador; sin el, no hay ciclos que liquidar.
+    ciclo_inicio = Column(Date, nullable=True)
     creado = Column(DateTime, default=func.now())
 
     usuarios = relationship("Usuario", back_populates="empresa", cascade="all, delete-orphan")
@@ -558,6 +561,113 @@ class MovimientoCaja(Base):
             "tipo IN ('base','gasto','entrega','ajuste_mas','ajuste_menos')",
             name="ck_movimiento_tipo",
         ),
+    )
+
+
+class MovimientoCajaGeneral(Base):
+    """Lo que entra y sale de la caja general de la empresa a mano.
+
+    La caja general es la plata del dueño, aparte de la caja del dia de cada
+    cobrador. Su saldo NO se guarda: se calcula (ver app/utils/finanzas.py)
+    sumando el saldo inicial, las entregas de los cobradores y restando las
+    bases que salen -- datos que ya viven en movimientos_caja -- mas estas
+    filas, que son lo unico que solo existe aqui: el saldo de arranque, los
+    retiros, los aportes, los pagos a cobradores, lo que pasa a la reserva y
+    los ajustes.
+
+    `valor` siempre positivo; el tipo dice si suma o resta (como en
+    movimientos_caja).
+    """
+    __tablename__ = "movimientos_caja_general"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
+    fecha = Column(Date, nullable=False)
+    tipo = Column(String(20), nullable=False)
+    valor = Column(Numeric(14, 2), nullable=False)
+    concepto = Column(String(300), nullable=True)
+    # El cobrador al que se le paga, en un pago_cobrador.
+    usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    # La liquidacion que lo genero, si salio de un cierre de ciclo.
+    liquidacion_id = Column(Integer, ForeignKey("liquidaciones.id", ondelete="SET NULL"), nullable=True)
+    registrado_por_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    registrado_por = Column(String(200), nullable=True)
+    creado = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        Index("ix_caja_general_empresa_fecha", "empresa_id", "fecha"),
+        CheckConstraint("valor >= 0", name="ck_caja_general_valor"),
+        CheckConstraint(
+            "tipo IN ('saldo_inicial','aporte','retiro','pago_cobrador','a_reserva',"
+            "'de_reserva','ajuste_mas','ajuste_menos')",
+            name="ck_caja_general_tipo",
+        ),
+    )
+
+
+class CierreCaja(Base):
+    """El cierre del dia de la caja de un cobrador.
+
+    El cobrador declara cuanto entrega; el administrador confirma lo que
+    recibio. Al confirmar se anota la entrega (en movimientos_caja, de donde
+    la toma tambien la caja general), queda la diferencia contra lo esperado
+    y ese dia de esa caja se cierra: ya no se le pueden anotar ni retirar
+    movimientos, ni registrar cobros con esa fecha.
+    """
+    __tablename__ = "cierres_caja"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    fecha = Column(Date, nullable=False)
+    esperado = Column(Numeric(14, 2), nullable=False, default=0)
+    declarado = Column(Numeric(14, 2), nullable=True)
+    recibido = Column(Numeric(14, 2), nullable=True)
+    diferencia = Column(Numeric(14, 2), nullable=True)
+    nota = Column(String(300), nullable=True)
+    estado = Column(String(20), nullable=False, default="declarado")
+    declarado_en = Column(DateTime, nullable=True)
+    confirmado_por_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    confirmado_por = Column(String(200), nullable=True)
+    confirmado_en = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "fecha", name="uq_cierre_usuario_fecha"),
+        Index("ix_cierres_empresa_fecha", "empresa_id", "fecha"),
+        CheckConstraint("estado IN ('declarado','confirmado')", name="ck_cierre_estado"),
+    )
+
+
+class Liquidacion(Base):
+    """Un ciclo de 6 semanas ya cerrado: las cifras y como se repartio.
+
+    Se guarda la foto de las cifras en el momento del cierre (detalle) y no se
+    recalcula despues: si alguien corrige un cobro de hace dos meses, la
+    liquidacion que ya se repartio no puede cambiar sola. Cerrada, no se edita;
+    un error se corrige con un ajuste en la caja general.
+    """
+    __tablename__ = "liquidaciones"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
+    numero = Column(Integer, nullable=False)
+    desde = Column(Date, nullable=False)
+    hasta = Column(Date, nullable=False)
+    cobrado = Column(Numeric(14, 2), nullable=False, default=0)
+    prestado = Column(Numeric(14, 2), nullable=False, default=0)
+    gastos = Column(Numeric(14, 2), nullable=False, default=0)
+    intereses = Column(Numeric(14, 2), nullable=False, default=0)
+    resultado = Column(Numeric(14, 2), nullable=False, default=0)
+    # El reparto.
+    base = Column(Numeric(14, 2), nullable=False, default=0)
+    retiro = Column(Numeric(14, 2), nullable=False, default=0)
+    reserva = Column(Numeric(14, 2), nullable=False, default=0)
+    pagos_cobradores = Column(Numeric(14, 2), nullable=False, default=0)
+    # Zona por zona y el pago de cada cobrador, tal como estaban al cerrar.
+    detalle = Column(Text, nullable=True)
+    cerrado_por_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    cerrado_por = Column(String(200), nullable=True)
+    creado = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "numero", name="uq_liquidacion_empresa_numero"),
     )
 
 

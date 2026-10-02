@@ -36,7 +36,7 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.database import Cobro, MovimientoCaja, Prestamo, Usuario
+from app.database import CierreCaja, Cobro, MovimientoCaja, Prestamo, Usuario
 from app.utils.money import money
 
 # Lo que la oficina le entrega a un cobrador para empezar el dia. Es
@@ -72,6 +72,24 @@ NOMBRES = {
 # El unico tipo que el cobrador anota en su propia caja. Los demas los pone
 # el administrador: quien recibe la base no puede ser quien la escribe.
 TIPOS_DEL_COBRADOR = ("gasto",)
+
+
+def cierre_de(db: Session, usuario_id: int, fecha: datetime.date):
+    return (db.query(CierreCaja)
+            .filter(CierreCaja.usuario_id == usuario_id, CierreCaja.fecha == fecha)
+            .first())
+
+
+def caja_cerrada(db: Session, usuario_id: int, fecha: datetime.date) -> bool:
+    """Si el administrador ya confirmo el cierre de esa caja ese dia.
+
+    Cerrada, no se le anotan ni retiran movimientos ni se presta con fecha de
+    ese dia. Los COBROS si entran (pueden llegar tarde de la cola sin señal,
+    y rechazarlos seria perder el registro de un pago): el cierre los muestra
+    aparte, como llegados despues.
+    """
+    c = cierre_de(db, usuario_id, fecha)
+    return bool(c and c.estado == "confirmado")
 
 
 def cuadre(db: Session, empresa_id: int, usuario_id: int,
@@ -160,7 +178,30 @@ def cuadre(db: Session, empresa_id: int, usuario_id: int,
 
     esperado = base + cobrado - gastos - prestado - entregado + ajustes
 
+    cierre = None
+    c = cierre_de(db, usuario_id, fecha)
+    if c:
+        cierre = {
+            "estado": c.estado,
+            "declarado": float(money(c.declarado)) if c.declarado is not None else None,
+            "recibido": float(money(c.recibido)) if c.recibido is not None else None,
+            "esperado": float(money(c.esperado or 0)),
+            "diferencia": float(money(c.diferencia)) if c.diferencia is not None else None,
+            "nota": c.nota or "",
+            "confirmado_por": c.confirmado_por or "",
+            "despues": 0.0,
+        }
+        if c.estado == "confirmado" and c.confirmado_en:
+            # Cobros que entraron despues del cierre (de la cola sin señal):
+            # no estaban en lo que se conto, y el administrador tiene que verlos.
+            cierre["despues"] = float(money(
+                db.query(func.coalesce(func.sum(Cobro.valor_cobrado), 0))
+                .filter(Cobro.empresa_id == empresa_id, Cobro.usuario_id == usuario_id,
+                        Cobro.fecha == fecha, Cobro.hora > c.confirmado_en)
+                .scalar() or 0))
+
     return {
+        "cierre": cierre,
         "usuario_id": usuario_id,
         "fecha": fecha.isoformat(),
         "base": float(base),

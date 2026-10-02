@@ -50,6 +50,9 @@ ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usuario_zonas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rutas_cobro ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orden_ruta ENABLE ROW LEVEL SECURITY;
+ALTER TABLE liquidaciones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE movimientos_caja_general ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cierres_caja ENABLE ROW LEVEL SECURITY;
 ALTER TABLE no_pagos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE archivos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notas_cliente ENABLE ROW LEVEL SECURITY;
@@ -159,6 +162,21 @@ CREATE POLICY empresa_isolation_orden_ruta ON orden_ruta
       WHERE c.id = orden_ruta.cliente_id AND c.empresa_id = public.current_empresa_id()
     )
   );
+
+DROP POLICY IF EXISTS empresa_isolation_liquidaciones ON liquidaciones;
+CREATE POLICY empresa_isolation_liquidaciones ON liquidaciones
+  USING (empresa_id = public.current_empresa_id())
+  WITH CHECK (empresa_id = public.current_empresa_id());
+
+DROP POLICY IF EXISTS empresa_isolation_movimientos_caja_general ON movimientos_caja_general;
+CREATE POLICY empresa_isolation_movimientos_caja_general ON movimientos_caja_general
+  USING (empresa_id = public.current_empresa_id())
+  WITH CHECK (empresa_id = public.current_empresa_id());
+
+DROP POLICY IF EXISTS empresa_isolation_cierres_caja ON cierres_caja;
+CREATE POLICY empresa_isolation_cierres_caja ON cierres_caja
+  USING (empresa_id = public.current_empresa_id())
+  WITH CHECK (empresa_id = public.current_empresa_id());
 
 DROP POLICY IF EXISTS empresa_isolation_no_pagos ON no_pagos;
 CREATE POLICY empresa_isolation_no_pagos ON no_pagos
