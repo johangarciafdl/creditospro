@@ -328,7 +328,7 @@ async function cargar(quieto){
     document.getElementById('recortada').style.display =
       (d.resumen && d.resumen.recortada) ? 'block' : 'none';
     pintar(_filas);
-    if (quieto === true) window.scrollTo(0, y);
+    if (quieto === true && Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
   } catch(e) {
     console.error('[Ruta] No se pudo cargar la zona:', e);
     if (quieto !== true) _estado('No hay conexion. Intenta de nuevo.', '📡');

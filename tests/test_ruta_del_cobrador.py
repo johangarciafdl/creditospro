@@ -956,3 +956,19 @@ def test_la_clasica_trae_la_manija_y_no_aparta_a_quien_no_pago():
     html = Path("templates/cobros.html").read_text(encoding="utf-8")
     assert "sortable-1.15.7.min.js" in html and "guardarOrdenPend" in html
     assert "draggable:'.grupo-cliente'" in html
+
+
+def test_abrir_una_ventana_no_mueve_el_scroll_de_la_lista():
+    """Al cobrar, la lista subia y volvia a bajar a la tarjeta cobrada: el
+    bloqueo del fondo usaba position:fixed, que pone el scroll a 0 mientras la
+    ventana esta abierta y lo devuelve de un salto al cerrarla. Ahora se
+    bloquea con overflow:hidden y la posicion no se toca."""
+    css = Path("static/css/app.css").read_text(encoding="utf-8")
+    base = Path("templates/base.html").read_text(encoding="utf-8")
+    regla = [l for l in css.splitlines() if "modal-abierto" in l and "{" in l]
+    assert regla and all("position:fixed" not in l for l in regla), regla
+    assert "overflow:hidden" in regla[0]
+    assert "body.style.top" not in base, "vuelve el truco que movia el scroll"
+    # Y tras cobrar, la lista se refresca en su sitio.
+    html = Path("templates/app_cobrador.html").read_text(encoding="utf-8")
+    assert "window.alRegistrarCobro = () => recargarQuieto();" in html

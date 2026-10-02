@@ -295,16 +295,36 @@ window.hoyLocal = function (fecha) {
     if (hayModalAbierto() === bloqueado) return;
 
     if (!bloqueado) {
+      // El scroll no se toca: solo se apunta, por si algo lo moviera.
       scrollGuardado = window.scrollY || document.documentElement.scrollTop || 0;
-      body.style.top = `-${scrollGuardado}px`;
       body.classList.add('modal-abierto');
+      document.documentElement.classList.add('modal-abierto');
     } else {
       body.classList.remove('modal-abierto');
-      body.style.top = '';
-      // Devolver al usuario exactamente donde estaba leyendo.
-      window.scrollTo(0, scrollGuardado);
+      document.documentElement.classList.remove('modal-abierto');
+      // Red de seguridad: solo si de verdad se movio (un teclado que empujo
+      // la pagina, por ejemplo). Si no, no hay salto que valga.
+      const ahora = window.scrollY || document.documentElement.scrollTop || 0;
+      if (Math.abs(ahora - scrollGuardado) > 1) window.scrollTo(0, scrollGuardado);
     }
   }
+
+  // iOS ignora overflow:hidden para el arrastre con el dedo: sin esto, se
+  // podia mover la lista de atras mientras se llenaba el formulario. Se
+  // frena el arrastre que no ocurre dentro de algo desplazable del modal.
+  document.addEventListener('touchmove', (e) => {
+    if (!document.body.classList.contains('modal-abierto')) return;
+    let el = e.target;
+    while (el && el !== document.body) {
+      if (el.classList && el.classList.contains('modal-overlay')) break;
+      const estilo = getComputedStyle(el);
+      if (/(auto|scroll)/.test(estilo.overflowY) && el.scrollHeight > el.clientHeight) return;
+      el = el.parentElement;
+    }
+    // Dentro de un campo de texto se deja: el navegador maneja su cursor.
+    if (e.target.closest && e.target.closest('input,textarea,select')) return;
+    e.preventDefault();
+  }, {passive: false});
 
   const observador = new MutationObserver(sincronizar);
   function arrancar() {

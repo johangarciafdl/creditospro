@@ -201,9 +201,12 @@ tbody tr:hover{background:var(--surface-2)}
    su propia barra de desplazamiento, asi que girando la rueda o arrastrando
    el dedo se movia el listado de atras mientras se llenaba el formulario, y
    al cerrar el modal el usuario aparecia en otro punto de la lista.
-   position:fixed (y no overflow:hidden) es lo unico que tambien detiene el
-   arrastre tactil en iOS; el top negativo conserva donde estaba leyendo. */
-body.modal-abierto{position:fixed;left:0;right:0;width:100%;overflow:hidden}
+   Se congela con overflow:hidden y NO con position:fixed: fixed ponia el
+   scroll a 0 y al cerrar lo devolvia de un salto, y en el celular (con el
+   teclado abriendose y cerrandose) se veia la lista subir y volver a bajar a
+   la tarjeta cobrada. Con overflow la posicion no se toca nunca. El arrastre
+   tactil de fondo en iOS, que era lo que fixed resolvia, lo frena base.html. */
+html.modal-abierto,body.modal-abierto{overflow:hidden;overscroll-behavior:none}
 .modal-overlay.open{display:flex}
 /* La confirmacion puede abrirse desde otro modal: va siempre encima. */
 .modal-overlay.dialogo-app{z-index:1100}

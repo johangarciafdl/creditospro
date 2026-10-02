@@ -127,7 +127,7 @@ function verTodos(){_verTodosActivo=true;buscar();}
 window.alRegistrarCobro = async () => {
   const y = window.scrollY;
   await buscar();
-  window.scrollTo(0, y);
+  if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
 };
 
 async function buscar(){
