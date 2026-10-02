@@ -18,6 +18,8 @@ from app.services.prestamo_service import get_estado_prestamo
 from app.utils.audit import log_action
 from app.utils.interfaz import redirigir_a_vista_simple
 from app.utils.ubicacion import leer_coordenadas
+from app.utils import orden_ruta
+from app.utils.permisos_rol import es_admin
 from app.utils.money import cop, money, money_int
 from app.utils.almacen_imagenes import guardar_imagen
 from app.utils.validators import (
@@ -204,6 +206,21 @@ async def pendientes(request: Request, zona_id: int=None, q: str="", fecha: str=
         query = query.filter(Prestamo.zona_id.in_(allowed_zones or [-1]))
     rows = query.order_by(Cuota.fecha_vencimiento).limit(150).all()
 
+    # El orden lo pone el cobrador (el mismo que en la vista simple): zona
+    # por zona, y dentro de cada una sus clientes en el orden que el armo,
+    # con las cuotas de cada cliente juntas y por vencimiento. Cobrar o que
+    # una cuota venza ya no mueve a nadie de sitio. El administrador ve la
+    # lista como siempre, por vencimiento: el orden de un cobrador lo mira y
+    # lo cambia desde "Mi ruta".
+    ordenable = not es_admin(user)
+    if ordenable and rows:
+        zona_de = {z.id: (z.nombre or "").lower() for z in db.query(Zona.id, Zona.nombre)
+                   .filter(Zona.id.in_({cl.zona_id for _, _, cl in rows if cl.zona_id}))}
+        pos = orden_ruta.posiciones(db, user.id, zona_de.keys())
+        rows.sort(key=lambda r: (zona_de.get(r[2].zona_id, ""), r[2].zona_id or 0,
+                                 orden_ruta.clave_de_orden(r[2], pos), r[2].id,
+                                 r[0].fecha_vencimiento or dia, r[0].numero))
+
     # Marcar el cliente como "no pago" no cambiaba nada en esta lista: seguia
     # apareciendo igual que el resto y el cobrador no sabia si ya habia
     # pasado por el. Se envia si se registro no pago en el dia consultado y
@@ -233,7 +250,8 @@ async def pendientes(request: Request, zona_id: int=None, q: str="", fecha: str=
         "no_pago_hoy": cu.id in del_dia,
         "no_pago_motivo": motivos.get(cu.id, ""),
         "no_pagos": historico.get(cu.id, 0),
-    } for cu, p, cl in rows]})
+        "zona_id": cl.zona_id,
+    } for cu, p, cl in rows], "ordenable": ordenable})
 
 @router.post("/registrar")
 async def registrar_cobro(

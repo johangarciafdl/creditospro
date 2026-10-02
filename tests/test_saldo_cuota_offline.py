@@ -56,7 +56,9 @@ def test_la_vista_simple_prellena_el_saldo_que_calculo_el_servidor():
     assert '"falta": float(falta)' in ruta, (
         "/ruta/zona debe enviar el saldo pendiente de la cuota"
     )
-    llamadas = re.findall(r"abrirCobro\((.*?)\)\"", html)
+    # La llamada se arma en una plantilla de texto (`abrirCobro(...)`) que
+    # luego va en el onclick de cada prestamo de la tarjeta.
+    llamadas = re.findall(r"abrirCobro\((.*?)\)[`\"]", html)
     assert llamadas, "app_cobrador.html: no se encontro la llamada a abrirCobro"
     for args in llamadas:
         assert "p.falta" in args, (

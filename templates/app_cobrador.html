@@ -47,6 +47,15 @@
         <input type="date" id="sel-fecha" value="{{ hoy }}" max="{{ hoy }}" onchange="recargar()">
       </div>
       {% endif %}
+      {% if es_admin and cobradores %}
+      <div style="flex:1;">
+        <label for="sel-cobrador" style="display:block;font-size:11px;color:var(--t3);margin-bottom:4px;">Orden de</label>
+        <select id="sel-cobrador" onchange="recargar()">
+          <option value="">— Alfabético —</option>
+          {% for u in cobradores %}<option value="{{ u.id }}">{{ u.nombre or u.username }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
       <div style="flex:1;">
         <label for="inp-buscar" style="display:block;font-size:11px;color:var(--t3);margin-bottom:4px;">Buscar</label>
         <input type="text" id="inp-buscar" placeholder="Nombre o cedula" oninput="buscarDebounce()">
@@ -69,12 +78,10 @@
     <b id="r-esperado" style="color:var(--gold);">$0</b> por cobrar</span>
 </div>
 
-{#- Ordenar por cercania. El calculo se hace en el propio celular con las
-    posiciones que ya vinieron en la lista: no se vuelve a preguntar al
-    servidor, asi que reordenar es instantaneo aunque la señal sea mala. -#}
-<div id="cercania" class="cercania" style="display:none;">
-  <button class="btn btn-sm" id="btn-cercania" onclick="alternarCercania(this)">📍 Más cercanos primero</button>
-  <span class="fs-11 text-3" id="cercania-txt"></span>
+{#- El orden lo pone el cobrador: arrastra cada tarjeta desde su manija.
+    Cobrar, o que alguien cambie de color, ya no mueve a nadie de sitio. -#}
+<div id="pista-orden" class="fs-11 text-3" style="display:none;margin:0 2px 8px;">
+  Mantén presionado <b>☰</b> y arrastra para cambiar el orden.
 </div>
 
 {#- Habia tres pestañas -- Por cobrar, Todos, Cobrados -- sobre el mismo
@@ -220,9 +227,22 @@
   </div>
 </div>
 </div>
+<!-- MODAL HISTORIAL -->
+{#- Lo que ya no se enseña en la tarjeta compacta: los prestamos que ha
+    tenido el cliente y sus pagos. Solo lectura. -#}
+<div class="modal-overlay" id="modal-historial" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal" onclick="event.stopPropagation()">
+  <div class="modal-header">
+    <div class="modal-title" id="h-titulo">Historial</div>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('modal-historial').classList.remove('open')">✕</button>
+  </div>
+  <div class="modal-body" id="h-cuerpo"></div>
+</div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="/static/assets/vendor/sortable-1.15.7.min.js"></script>
 {% include "_modal_cobro_js.html" %}
 <script nonce="{{ csp_nonce }}">
 // La pantalla arranca vacia a proposito. Un cobrador con tres zonas asignadas
@@ -231,12 +251,9 @@
 // es la peticion que se queda colgada.
 let _zona = null, _elegida = false, _deb = null;
 let _filas = [];
-// Orden por cercania. Se calcula entero en el celular, sobre la lista que ya
-// llego: ni una peticion mas al servidor, ni a ningun servicio de mapas.
-let _porCercania = false, _miPos = null, _ubicados = 0;
-// Cuanto hay que andar hasta cada parada, desde la anterior (o desde el
-// cobrador, la primera): es lo que explica el orden de la lista.
-let _tramos = new Map();
+// Si quien mira puede mover las tarjetas (el cobrador, o el admin que eligio
+// de que cobrador es el orden), y los arrastres activos.
+let _ordenable = false, _arrastres = [];
 // La ventana del cobro trae el boton "No pagó": aqui no hay otro sitio
 // donde marcarlo, y asi la visita sin pago tambien deja su GPS.
 window.MODAL_CON_NO_PAGO = true;
@@ -276,44 +293,51 @@ function verTodas(){
 }
 
 function recargar(){ if (_elegida) cargar(); }
+function _cobradorElegido(){
+  const s = document.getElementById('sel-cobrador');   // solo lo tiene el admin
+  return s ? s.value : '';
+}
 function buscarDebounce(){ clearTimeout(_deb); _deb = setTimeout(recargar, 400); }
 
-async function cargar(){
+// `quieto`: refrescar en el sitio (tras un cobro, un "no pago", un alta). La
+// lista no se vacia ni salta arriba: el cobrador sigue donde estaba, y como
+// el orden ya no cambia al cobrar, la tarjeta que acaba de tocar sigue ahi.
+async function cargar(quieto){
   if (!_elegida) return;
-  _vaciar();
-  _estado('Cargando la ruta...', '⏳');
+  const y = window.scrollY;
+  if (quieto !== true) {
+    _vaciar();
+    _estado('Cargando la ruta...', '⏳');
+  }
 
   const p = new URLSearchParams();
   if (_zona) p.set('zona_id', _zona);
   p.set('fecha', _dia());
   const q = document.getElementById('inp-buscar').value.trim();
   if (q) p.set('q', q);
+  const cob = _cobradorElegido();
+  if (cob) p.set('cobrador_id', cob);
 
   try {
     const r = await window.fetch('/ruta/zona?' + p);
     const d = await leerRespuesta(r);
     if (d.error) { _estado(d.error, '⚠️'); return; }
     _filas = d.clientes || [];
+    _ordenable = !!d.ordenable;
     pintarResumen(d.resumen || {});
     document.getElementById('recortada').style.display =
       (d.resumen && d.resumen.recortada) ? 'block' : 'none';
-    // Si esta ordenando por cercania, se mantiene al recargar (p. ej. tras
-    // un cobro), desde la ultima posicion conocida.
-    pintar(_porCercania && _miPos ? ordenarPorCercania(_filas, _miPos) : _filas);
+    pintar(_filas);
+    if (quieto === true) window.scrollTo(0, y);
   } catch(e) {
     console.error('[Ruta] No se pudo cargar la zona:', e);
-    _estado('No hay conexion. Intenta de nuevo.', '📡');
+    if (quieto !== true) _estado('No hay conexion. Intenta de nuevo.', '📡');
   }
 }
+const recargarQuieto = () => cargar(true);
 
 function pintarResumen(r){
   document.getElementById('resumen').style.display = 'flex';
-  // Cuantos se pueden ordenar por cercania. Dicho en voz alta para que el
-  // cobrador entienda por que algunos quedan al final: aun no se les ha
-  // visitado con el GPS encendido.
-  _ubicados = r.ubicados || 0;
-  document.getElementById('cercania').style.display = 'flex';
-  _pintarEstadoCercania(r.clientes || 0);
   // Si el servidor no manda el total, es que a quien mira no le corresponde.
   const tarjeta = document.getElementById('tarjeta-por-cobrar');
   if (r.esperado === null || r.esperado === undefined) {
@@ -331,74 +355,194 @@ function pintarResumen(r){
 // pantalla al sol, o que no distingue el rojo del verde, tiene que poder
 // leer en que estado esta el cliente.
 const LUCES = {
-  rojo:     {clase:'luz-roja',     texto:'Debe'},
-  amarillo: {clase:'luz-amarilla', texto:'Hoy'},
-  verde:    {clase:'luz-verde',    texto:'Al dia'},
+  rojo:     {clase:'luz-roja'},
+  amarillo: {clase:'luz-amarilla'},
+  verde:    {clase:'luz-verde'},
+  gris:     {clase:'luz-gris'},
 };
 
-function pintar(filas){
+function _textoLuz(c){
+  const n = Number(c.atrasadas) || 0;
+  if (c.estado === 'gris') return 'Sin cobros';
+  if (c.estado === 'verde') return 'Al dia';
+  return 'Debe ' + n + (n === 1 ? ' cuota' : ' cuotas');
+}
+
+function _avatar(c){
+  const inicial = esc((c.nombre || '?').trim().slice(0,2).toUpperCase());
+  return `<div class="mini-av">${inicial}${
+    c.miniatura ? `<img data-mini="${attr(c.miniatura)}" alt="">` : ''}</div>`;
+}
+
+// La manija solo sale si quien mira puede mover: es lo unico que arrastra,
+// asi que tocar el resto de la tarjeta sigue abriendo el cobro y nadie se
+// mueve de sitio por accidente.
+const _manija = () => _ordenable
+  ? '<div class="manija" title="Arrastra para mover" aria-label="Mover">☰</div>' : '';
+
+function _bloquePrestamo(c, pr, varios){
+  const p = pr.pendiente;
+  const cobrar = `abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(c.nombre||''))},${Number(p.falta)||0},${Number(p.cuota_num)||0})`;
+  const etiquetas = [];
+  if (varios) etiquetas.push(`Prestamo ${Number(pr.n)}`);
+  if (pr.nuevo) etiquetas.push('<span class="fila-nuevo">Nuevo</span>');
+  if (pr.atrasadas > 0 && varios) etiquetas.push(`<span class="txt-${pr.estado}">debe ${Number(pr.atrasadas)}</span>`);
+  // Con un solo prestamo, "cobrar hoy" ya lo dice la cabecera de la tarjeta.
+  if (pr.cobrar_hoy && varios) etiquetas.push('<span class="cobrar-hoy">Cobrar hoy</span>');
+  if (pr.cobrado_hoy > 0) etiquetas.push(`cobrado ${cop(pr.cobrado_hoy)}`);
+  if (pr.no_pago_hoy) etiquetas.push('sin pago');
+  return `
+    <div class="prestamo-bloque" onclick="${cobrar}">
+      ${etiquetas.length ? `<div class="prestamo-tags">${etiquetas.join(' · ')}</div>` : ''}
+      <div class="fila-cifras">
+        <div><span>Prestado</span><b>${cop(pr.prestado)}</b>
+          ${pr.total > pr.prestado ? `<small>total ${cop(pr.total)}</small>` : ''}</div>
+        <div><span>Le falta</span><b class="falta">${cop(pr.restante)}</b></div>
+        <div><span>Cuota ${Number(p.cuota_num)||0}/${Number(p.total_cuotas)||0}</span><b>${cop(p.cuota)}</b>
+          ${p.falta < p.cuota ? `<small>faltan ${cop(p.falta)}</small>` : ''}</div>
+      </div>
+    </div>`;
+}
+
+function _tarjeta(c){
+  const luz = LUCES[c.estado] || LUCES.verde;
+  const wa = String(c.whatsapp || '').replace(/\D/g,'').slice(0,20);
+  const nombreJs = attr(JSON.stringify(c.nombre || ''));
+  const nuevo = c.nuevo ? '<span class="fila-nuevo">Nuevo</span> ' : '';
+
+  // Sin nada que cobrarle (nunca le prestaron, o ya termino): solo foto,
+  // nombre, su historial y prestarle. Ocupa poco para no estorbar.
+  if (c.estado === 'gris') {
+    return `
+    <div class="fila-cliente compacta ${luz.clase}" data-cliente="${Number(c.cliente_id)||0}">
+      <div class="fila-top">
+        ${_manija()}${_avatar(c)}
+        <div style="flex:1;min-width:0;">
+          <div class="fila-nombre">${esc(c.nombre)}</div>
+          <div class="fila-luz">${nuevo}${_textoLuz(c)}</div>
+        </div>
+        <button class="btn btn-sm" onclick="verHistorial(${Number(c.cliente_id)||0},${nombreJs})">Historial</button>
+        <button class="btn btn-sm btn-gold" onclick="prestarA(${Number(c.cliente_id)||0},${nombreJs},${Number(c.zona_id)||0})">Prestar</button>
+      </div>
+    </div>`;
+  }
+
+  const extra = [];
+  if (c.cobrar_hoy && c.estado === 'verde') extra.push('<span class="cobrar-hoy">Cobrar hoy</span>');
+  if (c.cobrado_hoy > 0) extra.push(`cobrado ${cop(c.cobrado_hoy)}`);
+  if (c.no_pago_hoy) extra.push('sin pago');
+  const varios = c.prestamos.length > 1;
+  return `
+    <div class="fila-cliente ${luz.clase}" data-cliente="${Number(c.cliente_id)||0}">
+      <div class="fila-top">
+        ${_manija()}${_avatar(c)}
+        <div style="flex:1;min-width:0;">
+          <div class="fila-nombre">${esc(c.nombre)}</div>
+          <div class="fila-luz">${nuevo}${_textoLuz(c)}${extra.length ? ' · ' + extra.join(' · ') : ''}</div>
+        </div>
+        ${wa ? `<a href="https://wa.me/57${attr(wa)}" target="_blank" rel="noopener"
+             class="btn btn-sm btn-wa">💬</a>` : ''}
+      </div>
+      ${c.prestamos.map(pr => _bloquePrestamo(c, pr, varios)).join('')}
+    </div>`;
+}
+
+function pintar(clientes){
   const lista = document.getElementById('lista-ruta');
-  if (!filas.length) {
+  _arrastres.forEach(a => a.destroy());
+  _arrastres = [];
+  if (!clientes.length) {
     lista.innerHTML = '';
     _estado('La zona no tiene clientes activos', '👥');
     return;
   }
   document.getElementById('estado').style.display = 'none';
+  document.getElementById('pista-orden').style.display = _ordenable ? 'block' : 'none';
 
-  lista.innerHTML = filas.map(f => {
-    const luz = LUCES[f.semaforo] || LUCES.verde;
-    const p = f.pendiente;
-    const wa = String(f.whatsapp || '').replace(/\D/g,'').slice(0,20);
-    const inicial = esc((f.nombre || '?').trim().slice(0,2).toUpperCase());
-    // La fila entera abre el cobro: en un celular es un blanco mucho mas
-    // grande que un boton, y el cobrador la pulsa con el telefono en una
-    // mano. El unico boton que queda es el de WhatsApp, que hace otra cosa.
-    const cobrable = p ? `onclick="abrirCobro(${Number(p.cuota_id)||0},${attr(JSON.stringify(f.nombre||''))},${Number(p.falta)||0},${Number(p.cuota_num)||0})"` : '';
-    // La posicion del cliente, si ya se le ha visitado con GPS.
-    const conPos = typeof f.lat === 'number' && typeof f.lng === 'number';
-    // La distancia solo se enseña ordenando por cercania: es cuando ya se
-    // sabe donde esta el cobrador, sin pedir el GPS solo para pintar esto.
-    // Solo en la primera fila del cliente: con dos prestamos es una sola parada.
-    const t = _porCercania ? _tramos.get(f.cliente_id) : null;
-    const tramo = t && t.fila === f ? t : null;
-    const distancia = tramo
-      ? `<span class="fila-dist">${_textoDistancia(tramo.m, tramo.primero)}</span>` : '';
-    // Google Maps con la navegacion hasta ese punto: gratis, y no manda a
-    // nadie la lista de clientes -- solo el destino de ese.
-    const llegar = conPos
-      ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${Number(f.lat)},${Number(f.lng)}"
-           target="_blank" rel="noopener" class="btn btn-sm btn-llegar" title="Como llegar"
-           onclick="event.stopPropagation()">Ir</a>` : '';
+  // Zona por zona: con "Ver todos" cada una lleva su titulo y su propio orden.
+  // Se arrastra dentro de cada zona, no de una a otra.
+  const grupos = [];
+  clientes.forEach(c => {
+    const g = grupos[grupos.length - 1];
+    if (g && g.zona_id === c.zona_id) g.clientes.push(c);
+    else grupos.push({zona_id: c.zona_id, zona: c.zona, clientes: [c]});
+  });
+  const conTitulo = !_zona && grupos.length > 1;
+  lista.innerHTML = grupos.map(g => `
+    ${conTitulo ? `<div class="grupo-zona-titulo">${esc(g.zona || 'Sin zona')}</div>` : ''}
+    <div class="grupo-zona" data-zona="${Number(g.zona_id)||0}">
+      ${g.clientes.map(_tarjeta).join('')}
+    </div>`).join('');
 
-    return `
-    <div class="fila-cliente ${luz.clase}${p ? ' cobrable' : ''}" ${cobrable}>
-      <div class="fila-top">
-        <div class="mini-av">${inicial}${
-          f.miniatura ? `<img data-mini="${attr(f.miniatura)}" alt="">` : ''}</div>
-        <div style="flex:1;min-width:0;">
-          <div class="fila-nombre">${esc(f.nombre)}</div>
-          <div class="fila-luz">${f.nuevo ? '<span class="fila-nuevo">Nuevo</span> ' : ''}${luz.texto}${
-            f.prestamos_total > 1 ? ` · prestamo ${Number(f.prestamo_n)} de ${Number(f.prestamos_total)}` : ''}${
-            f.cobrado_hoy > 0 ? ` · cobrado ${cop(f.cobrado_hoy)}` : ''}${
-            f.no_pago_hoy ? ' · sin pago' : ''}${distancia}</div>
-        </div>
-        ${llegar}
-        ${wa ? `<a href="https://wa.me/57${attr(wa)}" target="_blank" rel="noopener"
-             class="btn btn-sm btn-wa" onclick="event.stopPropagation()">💬</a>` : ''}
-      </div>
-      ${p ? `
-      <div class="fila-cifras">
-        <div><span>Prestado</span><b>${cop(f.prestado)}</b>
-          ${f.total > f.prestado ? `<small>total ${cop(f.total)}</small>` : ''}</div>
-        <div><span>Le falta</span><b class="falta">${cop(f.restante)}</b></div>
-        <div><span>Cuota ${Number(p.cuota_num)||0}/${Number(p.total_cuotas)||0}</span><b>${cop(p.cuota)}</b>
-          ${p.falta < p.cuota ? `<small>faltan ${cop(p.falta)}</small>` : ''}</div>
-      </div>` : `
-      <div class="fila-cifras"><div><span>Sin cuotas pendientes</span></div></div>`}
-    </div>`;
-  }).join('');
-
+  if (_ordenable && window.Sortable) {
+    lista.querySelectorAll('.grupo-zona').forEach(cont => {
+      _arrastres.push(Sortable.create(cont, {
+        handle: '.manija',
+        animation: 150,
+        ghostClass: 'arrastre-hueco',
+        chosenClass: 'arrastre-elegida',
+        // En el celular el dedo hace scroll; solo la manija arrastra.
+        delayOnTouchOnly: true, delay: 120, touchStartThreshold: 4,
+        scroll: true, bubbleScroll: true, scrollSensitivity: 80, scrollSpeed: 14,
+        onEnd: ev => { if (ev.oldIndex !== ev.newIndex) guardarOrden(cont); },
+      }));
+    });
+  }
   observarMiniaturas();
+}
+
+// Se guarda en cuanto se suelta. Si falla (sin señal), se avisa y se vuelve a
+// pintar lo que tiene el servidor, para que la pantalla nunca enseñe un orden
+// que no quedo guardado.
+async function guardarOrden(cont){
+  const ids = [...cont.querySelectorAll('[data-cliente]')].map(el => el.dataset.cliente);
+  const fd = new FormData();
+  fd.append('zona_id', cont.dataset.zona);
+  fd.append('cliente_ids', ids.join(','));
+  const cob = _cobradorElegido();
+  if (cob) fd.append('cobrador_id', cob);
+  try {
+    const r = await window.fetch('/ruta/orden', {method:'POST', body:fd});
+    const d = await leerRespuesta(r);
+    if (!d.ok) { toast(d.error || 'No se pudo guardar el orden', 'error'); recargarQuieto(); }
+  } catch(e) {
+    console.error('[Ruta] No se pudo guardar el orden:', e);
+    toast('Sin conexion: el orden no se guardo.', 'error');
+    recargarQuieto();
+  }
+}
+
+// ── HISTORIAL Y PRESTAR DESDE LA TARJETA ─────────────────────────────────
+async function verHistorial(clienteId, nombre){
+  const cuerpo = document.getElementById('h-cuerpo');
+  document.getElementById('h-titulo').textContent = nombre;
+  cuerpo.innerHTML = '<div class="fs-12 text-3">Cargando...</div>';
+  document.getElementById('modal-historial').classList.add('open');
+  try {
+    const r = await window.fetch('/ruta/cliente/' + Number(clienteId) + '/historial');
+    const d = await leerRespuesta(r);
+    if (d.error) { cuerpo.innerHTML = `<div class="fs-12 text-3">${esc(d.error)}</div>`; return; }
+    if (!d.prestamos.length) { cuerpo.innerHTML = '<div class="fs-13 text-3">Todavia no ha tenido prestamos.</div>'; return; }
+    const fecha = f => f ? f.split('-').reverse().join('/') : '—';
+    cuerpo.innerHTML = d.prestamos.map(p => `
+      <details class="hist-prestamo">
+        <summary>
+          <div class="flex-between"><b>${fecha(p.fecha)}</b><span class="fs-11 text-3">${esc(p.estado)}</span></div>
+          <div class="fs-12 text-2">Prestado ${cop(p.prestado)} · total ${cop(p.total)} · pagado ${cop(p.pagado)}</div>
+        </summary>
+        ${p.pagos.length ? p.pagos.map(x => `
+          <div class="flex-between fs-12 hist-pago"><span>${fecha(x.fecha)} · ${esc(x.metodo)}</span><b class="num">${cop(x.valor)}</b></div>`).join('')
+          : '<div class="fs-12 text-3 hist-pago">Sin pagos registrados</div>'}
+      </details>`).join('');
+  } catch(e) {
+    console.error('[Ruta] Historial:', e);
+    cuerpo.innerHTML = '<div class="fs-12 text-3">No hay conexion. Intenta de nuevo.</div>';
+  }
+}
+
+function prestarA(clienteId, nombre, zonaId){
+  abrirPrestar();
+  elegirCliente(clienteId, nombre, '', zonaId);
 }
 
 // ── MINIATURAS: se piden al entrar en pantalla, no todas de golpe ─────────
@@ -440,97 +584,8 @@ function cargarMiniatura(img){
   img.src = '/uploads/miniaturas/' + encodeURIComponent(nombre);
 }
 
-// ── CERCANIA ─────────────────────────────────────────────────────────────
-// Distancia en metros. Equirectangular: en los pocos km de una ruta de
-// cobro el error frente a la formula exacta es de centimetros, y cuesta
-// una fraccion.
-function _dist(a, b){
-  const rad = Math.PI / 180;
-  const x = (b.lng - a.lng) * rad * Math.cos((a.lat + b.lat) / 2 * rad);
-  const y = (b.lat - a.lat) * rad;
-  return Math.sqrt(x * x + y * y) * 6371000;
-}
-
-function _textoDistancia(m, primero){
-  if (!isFinite(m)) return '';
-  const cifra = m < 1000 ? (Math.round(m / 10) * 10) + ' m'
-                         : (m / 1000).toFixed(1).replace('.', ',') + ' km';
-  return primero ? ' · a ' + cifra + ' de ti' : ' · ' + cifra + ' del anterior';
-}
-
-// Vecino mas cercano y luego 2-opt (deshacer cruces), con un tope de tiempo.
-// La primera parada no se toca: es la mas cercana al cobrador, que es lo que
-// promete el boton; el 2-opt solo reordena lo que viene despues.
-// con 200 paradas cabe de sobra, y si un celular viejo no llega, se queda
-// con la mejor ruta encontrada hasta ahi -- nunca se congela la pantalla.
-function _ordenarParadas(origen, paradas){
-  const pend = paradas.slice(), ruta = [];
-  let aqui = origen;
-  while (pend.length) {
-    let mejor = 0, dMejor = Infinity;
-    for (let i = 0; i < pend.length; i++) {
-      const d = _dist(aqui, pend[i]);
-      if (d < dMejor) { dMejor = d; mejor = i; }
-    }
-    aqui = pend.splice(mejor, 1)[0];
-    ruta.push(aqui);
-  }
-  // El reloj se mira en cada fila, no por pasada: una pasada entera sobre
-  // 300 paradas ya son decenas de miles de distancias.
-  const limite = performance.now() + 30;
-  let mejoro = true;
-  pasadas: while (mejoro) {
-    mejoro = false;
-    for (let i = 1; i < ruta.length - 1; i++) {
-      if (performance.now() > limite) break pasadas;
-      const a = ruta[i - 1];
-      for (let k = i + 1; k < ruta.length; k++) {
-        const b = ruta[i], c = ruta[k], dd = ruta[k + 1];   // dd no existe en la ultima
-        const antes = _dist(a, b) + (dd ? _dist(c, dd) : 0);
-        const despues = _dist(a, c) + (dd ? _dist(b, dd) : 0);
-        if (despues + 0.5 < antes) {
-          // Invertir el tramo i..k deshace el cruce.
-          for (let x = i, y = k; x < y; x++, y--) { const t = ruta[x]; ruta[x] = ruta[y]; ruta[y] = t; }
-          mejoro = true;
-        }
-      }
-    }
-  }
-  return ruta;
-}
-
-// Solo se enruta a quien falta visitar: rojo o amarillo y sin visita hoy
-// (ni cobro ni "no pago"; si no, el que acaba de atender volveria a salir
-// primero, a 0 m). Los que no tienen posicion van despues, en el orden de
-// siempre; los ya visitados y los verdes, al final. No se esconde a nadie.
-function ordenarPorCercania(filas, origen){
-  const porCliente = new Map();
-  filas.forEach(f => {
-    const k = f.cliente_id != null ? f.cliente_id : f.nombre;
-    if (!porCliente.has(k)) porCliente.set(k, []);
-    porCliente.get(k).push(f);
-  });
-  const conPos = [], sinPos = [], verdes = [];
-  porCliente.forEach(grupo => {
-    const visitado = grupo.some(f => f.cobrado_hoy > 0 || f.no_pago_hoy);
-    const visitar = !visitado &&
-      grupo.some(f => f.semaforo === 'rojo' || f.semaforo === 'amarillo');
-    const f0 = grupo[0];
-    if (!visitar) verdes.push(grupo);
-    else if (typeof f0.lat === 'number' && typeof f0.lng === 'number')
-      conPos.push({lat: f0.lat, lng: f0.lng, grupo});
-    else sinPos.push(grupo);
-  });
-  const ruta = _ordenarParadas(origen, conPos);
-  _tramos = new Map();
-  ruta.forEach((p, i) => {
-    const k = p.grupo[0].cliente_id;
-    if (k != null) _tramos.set(k, {m: _dist(i ? ruta[i - 1] : origen, p), primero: !i,
-                                   fila: p.grupo[0]});
-  });
-  return [].concat(...ruta.map(p => p.grupo), ...sinPos, ...verdes);
-}
-
+// GPS de fondo para las altas: queda guardado como dato de la visita, en
+// silencio. Si no contesta, se registra igual.
 function obtenerPosicion(){
   return new Promise(resolve => {
     if (!navigator.geolocation) return resolve(null);
@@ -539,42 +594,6 @@ function obtenerPosicion(){
       () => resolve(null),
       {enableHighAccuracy: true, timeout: 8000, maximumAge: 60000});
   });
-}
-
-function _contarClientes(){
-  return new Set(_filas.map(f => f.cliente_id != null ? f.cliente_id : f.nombre)).size;
-}
-
-function _pintarEstadoCercania(total){
-  const txt = document.getElementById('cercania-txt');
-  if (txt) txt.textContent = '📍 ' + _ubicados + ' de ' + total + ' ubicados';
-  const btn = document.getElementById('btn-cercania');
-  if (btn) btn.textContent = _porCercania ? '↩ Orden normal' : '📍 Más cercanos primero';
-}
-
-async function alternarCercania(btn){
-  if (_porCercania) {
-    _porCercania = false;
-    pintar(_filas);
-    _pintarEstadoCercania(_contarClientes());
-    return;
-  }
-  if (!_ubicados) {
-    toast('Aun no hay clientes ubicados aqui. Se ubican solos al cobrarles o visitarlos con el GPS encendido.', 'warn', 7000);
-    return;
-  }
-  btn.disabled = true; btn.textContent = 'Buscando tu ubicación…';
-  const pos = await obtenerPosicion();
-  btn.disabled = false;
-  if (!pos) {
-    toast('No se pudo leer tu ubicación. Activa el GPS y dale permiso al navegador.', 'error', 7000);
-    _pintarEstadoCercania(_contarClientes());
-    return;
-  }
-  _miPos = pos; _porCercania = true;
-  pintar(ordenarPorCercania(_filas, _miPos));
-  _pintarEstadoCercania(_contarClientes());
-  window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
 // Posicion de fondo para las altas: se pide al abrir la ventana y, si llega
@@ -606,7 +625,7 @@ async function marcarNoPago(cuotaId, cliente){
   try {
     const r = await window.fetch('/cobros/no-pago', {method:'POST', body:fd});
     const d = await leerRespuesta(r);
-    if (d.ok) { toast(d.mensaje, d.duplicado ? 'warn' : 'success'); setTimeout(cargar, 600); }
+    if (d.ok) { toast(d.mensaje, d.duplicado ? 'warn' : 'success'); setTimeout(recargarQuieto, 600); }
     else toast(d.error || d.detail || 'No se pudo registrar', 'error');
   } catch(e) {
     console.error('[Ruta] Error registrando no pago:', e);
@@ -622,7 +641,7 @@ async function deshacerNoPago(cuotaId){
   try {
     const r = await window.fetch('/cobros/no-pago/deshacer', {method:'POST', body:fd});
     const d = await leerRespuesta(r);
-    if (d.ok) { toast(d.mensaje); setTimeout(cargar, 600); }
+    if (d.ok) { toast(d.mensaje); setTimeout(recargarQuieto, 600); }
     else toast(d.error || d.detail || 'No se pudo deshacer', 'error');
   } catch(e) {
     console.error('[Ruta] Error deshaciendo no pago:', e);
@@ -683,7 +702,7 @@ async function guardarClienteNuevo(btn){
       if (d.ok) {
         document.getElementById('modal-cliente').classList.remove('open');
         toast(d.mensaje || 'Cliente registrado', 'success');
-        setTimeout(cargar, 700);
+        setTimeout(recargarQuieto, 700);
       } else {
         toast(d.error || d.detail || 'No se pudo registrar', 'error');
       }
@@ -810,7 +829,7 @@ async function confirmarPrestamo(btn){
         toast(d.mensaje, 'success');
         // El sobregiro no lo impide, pero tiene que verlo ahora.
         if (d.aviso) toast(d.aviso, 'warn', 9000);
-        setTimeout(cargar, 700);
+        setTimeout(recargarQuieto, 700);
       } else if (d.duplicado && d.cliente_id) {
         toast(d.error, 'warn', 7000);
         elegirCliente(d.cliente_id, document.getElementById('p-nombre').value.trim() || 'Ese cliente',
@@ -827,14 +846,7 @@ async function confirmarPrestamo(btn){
 
 // El modal de cobro es el compartido con Cobros y Clientes; cada pantalla
 // dice como refrescarse despues de un cobro.
-window.alRegistrarCobro = () => {
-  // El cobrador esta donde acaba de cobrar: si se ordena por cercania, la
-  // ruta sigue desde ahi. Se usa el GPS que ya capturo la ventana.
-  const lat = parseFloat(document.getElementById('mc-lat').value);
-  const lng = parseFloat(document.getElementById('mc-lng').value);
-  if (isFinite(lat) && isFinite(lng)) _miPos = {lat, lng};
-  cargar();
-};
+window.alRegistrarCobro = () => recargarQuieto();
 
 {% if zona_unica %}
 // Con una sola zona posible no hay nada que elegir: se carga directo.
@@ -876,10 +888,26 @@ _zona = {{ zona_unica }}; _elegida = true; cargar();
    Asi, mientras la miniatura viaja -- que en la calle puede tardar -- la fila
    no muestra un cuadro gris vacio, y si la foto no se puede leer se retira y
    la inicial ya estaba puesta. */
-.cercania{gap:10px;align-items:center;flex-wrap:wrap;margin:0 2px 10px}
 .fila-nuevo{background:var(--gold);color:#fff;border-radius:4px;padding:1px 5px;margin-right:2px}
-.fila-dist{text-transform:none;color:var(--t2);font-weight:600}
-.btn-llegar{flex-shrink:0;font-weight:700}
+.luz-gris{border-left-color:var(--t3)}
+.luz-gris .fila-luz{color:var(--t3)}
+.txt-rojo{color:var(--red)}
+.txt-amarillo{color:var(--amber)}
+.cobrar-hoy{background:var(--green);color:#fff;border-radius:4px;padding:1px 5px}
+/* La tarjeta compacta: un cliente sin nada que cobrar ocupa una linea. */
+.fila-cliente.compacta .fila-top{padding:8px 10px}
+.fila-cliente.compacta .btn{flex-shrink:0;padding:6px 8px;font-size:12px}
+.fila-cliente.compacta .fila-nombre{white-space:normal;line-height:1.2}
+/* Cada prestamo es su propio boton de cobrar: las cifras son de ese, y
+   tocarlo cobra ese. */
+.prestamo-bloque{cursor:pointer;border-top:1px dashed var(--border)}
+.prestamo-bloque:first-of-type{border-top:none}
+.prestamo-bloque:active{background:var(--bg-2)}
+.prestamo-tags{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--t2);padding:6px 12px 0}
+.grupo-zona-titulo{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);margin:8px 2px 0}
+.hist-prestamo{border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-bottom:8px}
+.hist-prestamo summary{cursor:pointer;list-style:none}
+.hist-pago{padding:6px 0 0;border-top:1px dashed var(--border);margin-top:6px}
 .resumen-linea{gap:14px;flex-wrap:wrap;align-items:baseline;padding:4px 2px 10px;font-size:13px;color:var(--t2)}
 .resumen-linea b{font-family:var(--mono);font-size:15px}
 .mini-av{position:relative;width:42px;height:42px;border-radius:10px;flex-shrink:0;overflow:hidden;background:var(--bg-2);color:var(--t2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}

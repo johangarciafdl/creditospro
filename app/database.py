@@ -588,6 +588,34 @@ class RutaCobro(Base):
     )
 
 
+class OrdenRuta(Base):
+    """En que orden visita un cobrador a los clientes de una zona.
+
+    Lo arma el propio cobrador arrastrando las tarjetas (o el administrador
+    por el). Es suyo y por zona: dos cobradores en la misma zona pueden
+    recorrerla en orden distinto. Una zona sin filas para ese cobrador sale
+    en orden alfabetico, con los clientes recien dados de alta arriba.
+
+    La posicion es un entero que puede ser negativo: un cliente nuevo entra
+    con la posicion minima menos uno, para quedar arriba sin renumerar a los
+    demas.
+    """
+    __tablename__ = "orden_ruta"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="CASCADE"), nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    posicion = Column(Integer, nullable=False)
+    actualizado = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "zona_id", "cliente_id", name="uq_orden_usuario_zona_cliente"),
+        # Siempre se lee "el orden de este cobrador en esta zona".
+        Index("ix_orden_ruta_usuario_zona", "usuario_id", "zona_id"),
+    )
+
+
 class Zona(Base):
     __tablename__ = "zonas"
     id = Column(Integer, primary_key=True, index=True)

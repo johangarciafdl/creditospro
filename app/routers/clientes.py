@@ -37,6 +37,7 @@ from app.utils.permisos_rol import (
 )
 from app.routers.auth import get_current_user
 from app.utils.zone_permissions import get_allowed_zone_ids, require_zone_access, visible_zonas_query
+from app.utils import orden_ruta
 from app.utils.validators import (
     validar_cedula_persona, validar_descripcion, validar_nombre_persona,
     validar_telefono, validar_whatsapp, limpiar_texto,
@@ -314,6 +315,9 @@ async def crear_cliente(
     )
     db.add(cliente)
     try:
+        db.flush()
+        # Entra arriba en el orden de quien ya tiene la zona ordenada.
+        orden_ruta.poner_arriba(db, user.empresa_id, zona_id_int, cliente.id)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -392,6 +396,9 @@ async def editar_cliente(
     cliente.nombre = nombre
     cliente.telefono = telefono
     cliente.whatsapp = whatsapp or None
+    if cliente.zona_id != zona_id_int:
+        # Llega a otra zona: alli entra arriba, como un cliente nuevo.
+        orden_ruta.poner_arriba(db, user.empresa_id, zona_id_int, cliente.id)
     cliente.zona_id = zona_id_int
     cliente.direccion = direccion or None
     cliente.barrio = barrio or None

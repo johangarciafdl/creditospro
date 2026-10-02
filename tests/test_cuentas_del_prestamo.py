@@ -101,9 +101,13 @@ def _prestar(cli, d, capital, fecha):
 
 
 def _filas(cli, d):
+    """Los prestamos del cliente, tal como vienen dentro de su tarjeta: una
+    tarjeta por cliente, y cada prestamo con sus propias cifras."""
     r = cli.get("/ruta/zona", params={"zona_id": d["zona"]})
     assert r.status_code == 200, r.text
-    return [f for f in r.json()["clientes"] if f["cliente_id"] == d["cliente"]]
+    tarjetas = [f for f in r.json()["clientes"] if f["cliente_id"] == d["cliente"]]
+    assert len(tarjetas) <= 1, "un cliente sale en una sola tarjeta"
+    return tarjetas[0]["prestamos"] if tarjetas else []
 
 
 def _fila_de(cli, d, prestamo_id):
@@ -120,10 +124,8 @@ def test_el_caso_real_cuota_a_cuota(entorno):
     p500 = _prestar(cli, d, 500000, d["hoy"])
 
     filas = _filas(cli, d)
-    assert len(filas) == 2, "un cliente con dos prestamos tiene que salir en dos filas"
+    assert len(filas) == 2, "un cliente con dos prestamos trae los dos en su tarjeta"
     assert {f["prestamo_id"] for f in filas} == {p200, p500}
-    for f in filas:
-        assert f["prestamos_total"] == 2
 
     fila = _fila_de(cli, d, p500)
     # 500.000 al 20 % en 4 cuotas: 100.000 de interes, 600.000 en total,
@@ -163,7 +165,7 @@ def test_el_caso_real_cuota_a_cuota(entorno):
     assert fila200["total"] == 240000.0
     assert fila200["restante"] == 240000.0, "se le desconto al de 200.000 lo del otro"
     assert fila200["pendiente"]["cuota"] == 60000.0
-    assert fila200["prestamos_total"] == 1
+    assert len(_filas(cli, d)) == 1
 
     # Y en la base, el de 500.000 esta pagado entero y el de 200.000 intacto.
     from app.database import Cuota, Prestamo

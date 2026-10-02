@@ -97,6 +97,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="/static/assets/vendor/sortable-1.15.7.min.js"></script>
 <script nonce="{{ csp_nonce }}">
 document.getElementById('sel-fecha').value = hoyLocal();
 document.getElementById('fecha-display').textContent = new Date().toLocaleDateString('es-CO',{day:'2-digit',month:'long',year:'numeric'});
@@ -123,7 +124,11 @@ function verTodos(){_verTodosActivo=true;buscar();}
 // justamente la unica pantalla que no lo definia, asi que la lista no se
 // recargaba: el cliente al que se acababa de cobrar seguia apareciendo, y al
 // pulsar Cobrar otra vez respondia "la cuota ya esta pagada".
-window.alRegistrarCobro = () => buscar();
+window.alRegistrarCobro = async () => {
+  const y = window.scrollY;
+  await buscar();
+  window.scrollTo(0, y);
+};
 
 async function buscar(){
   const q=document.getElementById('inp-buscar').value.trim();
@@ -156,7 +161,7 @@ async function buscar(){
     if(_tab==='pendientes'){
       const r=await window.fetch('/cobros/pendientes-ajax?'+params);
       const d=await r.json();
-      renderPendientes(d.pendientes||[]);
+      renderPendientes(d.pendientes||[], !!d.ordenable);
     }else{
       const r=await window.fetch('/cobros/buscar-ajax?'+params);
       const d=await r.json();
@@ -175,8 +180,11 @@ async function buscar(){
   }
 }
 
-function renderPendientes(items){
+let _arrastresPend = [];
+
+function renderPendientes(items, ordenable){
   const el=document.getElementById('lista-pendientes');
+  _arrastresPend.forEach(a=>a.destroy()); _arrastresPend=[];
   if(!items.length){
     el.innerHTML='<div class="empty"><div class="empty-title">Sin pendientes</div><div class="empty-sub">Todo al dia en este filtro</div></div>';
     el.style.display='block';return;
@@ -189,7 +197,7 @@ function renderPendientes(items){
   const porVisitar = items.filter(p=>!p.no_pago_hoy);
   const noPagaron  = items.filter(p=>p.no_pago_hoy);
 
-  const tarjeta = (p)=>{
+  const tarjeta = (p, manija)=>{
     const dias = Number(p.dias||0);
     const venc=dias>0;
     const color=venc?'var(--red)':dias===0?'var(--amber)':'var(--green)';
@@ -204,6 +212,7 @@ function renderPendientes(items){
     const visitas = Number(p.no_pagos||0);
     return `<div class="card${marcada?'':' card-hover'}"${marcada?' style="opacity:.72;border-left:3px solid var(--amber);"':''}>
       <div style="display:flex;align-items:center;gap:12px;padding:13px 16px;">
+        ${manija?'<div class="manija" title="Arrastra para mover" aria-label="Mover">☰</div>':''}
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;font-size:13px;">${esc(p.cliente)}</div>
           <div style="font-size:11px;color:var(--t3);">CC ${esc(p.cedula)} &nbsp;&middot;&nbsp; Cuota ${Number(p.cuota_num||0)}/${Number(p.total_cuotas||0)} &nbsp;&middot;&nbsp; Vence ${esc(p.vencimiento)}</div>
@@ -229,6 +238,44 @@ function renderPendientes(items){
   const encabezado = (texto, n) =>
     `<div style="display:flex;align-items:center;gap:8px;margin:6px 2px 0;font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;">${texto} (${n})</div>`;
 
+  // Con el orden del cobrador, nadie se mueve solo: ni quien no pago se
+  // aparta al final. Va zona por zona y cliente por cliente, con sus cuotas
+  // juntas, y se arrastra desde la manija de la primera cuota del cliente.
+  if(ordenable){
+    const zonas=[];
+    items.forEach(p=>{
+      let z=zonas[zonas.length-1];
+      if(!z||z.zona_id!==p.zona_id){ z={zona_id:p.zona_id,clientes:[]}; zonas.push(z); }
+      let c=z.clientes[z.clientes.length-1];
+      if(!c||c.cliente_id!==p.cliente_id){ c={cliente_id:p.cliente_id,cuotas:[]}; z.clientes.push(c); }
+      c.cuotas.push(p);
+    });
+    const nombreZona=id=>{
+      const o=document.querySelector(`#sel-zona option[value="${Number(id)||0}"]`);
+      return o?o.textContent:'';
+    };
+    const varias=zonas.length>1;
+    el.innerHTML='<div style="display:flex;flex-direction:column;gap:8px;">'+zonas.map(z=>`
+      ${varias?encabezado(esc(nombreZona(z.zona_id)||'Zona'), z.clientes.length):''}
+      <div class="grupo-zona" data-zona="${Number(z.zona_id)||0}">
+        ${z.clientes.map(c=>`<div class="grupo-cliente" data-cliente="${Number(c.cliente_id)||0}">
+          ${c.cuotas.map((p,i)=>tarjeta(p, i===0)).join('')}</div>`).join('')}
+      </div>`).join('')+'</div>';
+    el.style.display='block';
+    if(window.Sortable){
+      el.querySelectorAll('.grupo-zona').forEach(cont=>{
+        _arrastresPend.push(Sortable.create(cont,{
+          handle:'.manija', draggable:'.grupo-cliente', animation:150,
+          ghostClass:'arrastre-hueco', chosenClass:'arrastre-elegida',
+          delayOnTouchOnly:true, delay:120, touchStartThreshold:4,
+          scroll:true, bubbleScroll:true, scrollSensitivity:80, scrollSpeed:14,
+          onEnd:ev=>{ if(ev.oldIndex!==ev.newIndex) guardarOrdenPend(cont); },
+        }));
+      });
+    }
+    return;
+  }
+
   let html='<div style="display:flex;flex-direction:column;gap:8px;">';
   if(noPagaron.length && porVisitar.length) html+=encabezado('Por cobrar', porVisitar.length);
   html+=porVisitar.map(tarjeta).join('');
@@ -238,6 +285,24 @@ function renderPendientes(items){
   }
   el.innerHTML=html+'</div>';
   el.style.display='block';
+}
+
+// El mismo orden que en la vista simple: se guarda en cuanto se suelta. La
+// lista solo enseña a quien debe; el resto de la zona conserva su lugar.
+async function guardarOrdenPend(cont){
+  const ids=[...cont.querySelectorAll('.grupo-cliente')].map(g=>g.dataset.cliente);
+  const fd=new FormData();
+  fd.append('zona_id', cont.dataset.zona);
+  fd.append('cliente_ids', ids.join(','));
+  try{
+    const r=await window.fetch('/ruta/orden',{method:'POST',body:fd});
+    const d=await leerRespuesta(r);
+    if(!d.ok){ toast(d.error||'No se pudo guardar el orden','error'); buscar(); }
+  }catch(e){
+    console.error('[Cobros] No se pudo guardar el orden:',e);
+    toast('Sin conexion: el orden no se guardo.','error');
+    buscar();
+  }
 }
 
 function renderHistorial(items){

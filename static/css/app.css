@@ -354,3 +354,12 @@ img{max-width:100%;height:auto}
 /* ANIMATIONS STAGGER - Fallback CSS puro */
 @keyframes fadeInLeft{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
 @keyframes fadeInUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Orden manual de la ruta (vista simple y Cobros -> Pendientes) ──
+   La manija es lo unico que arrastra: grande para el pulgar, y touch-action
+   none para que el navegador no la tome por un scroll. */
+.manija{flex-shrink:0;width:30px;height:42px;margin-left:-4px;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--t3);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.manija:active{cursor:grabbing;color:var(--t1)}
+.grupo-zona,.grupo-cliente{display:flex;flex-direction:column;gap:8px}
+.arrastre-hueco{opacity:.35}
+.arrastre-elegida{box-shadow:var(--slg)}

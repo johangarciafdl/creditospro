@@ -171,20 +171,6 @@ def test_la_visita_sin_pago_sin_gps_o_con_gps_malo_se_guarda_igual(entorno):
         db.close()
 
 
-def test_la_ruta_trae_la_posicion_y_cuantos_hay_ubicados(entorno):
-    cli, d, _ = entorno
-    r = cli.get("/ruta/zona", params={"zona_id": d["zona"]})
-    assert r.status_code == 200, r.text
-    cuerpo = r.json()
-    filas = {f["cliente_id"]: f for f in cuerpo["clientes"]}
-    assert (filas[d["visitado"]]["lat"], filas[d["visitado"]]["lng"]) == (LAT, LNG)
-    assert (filas[d["con_ficha"]]["lat"], filas[d["con_ficha"]]["lng"]) == (6.25, -75.59)
-    assert filas[d["sin_posicion"]]["lat"] is None
-    assert filas[d["sin_posicion"]]["lng"] is None
-    assert cuerpo["resumen"]["ubicados"] == 2
-    assert cuerpo["resumen"]["clientes"] == 3
-
-
 def test_la_posicion_es_la_mediana_y_un_punto_raro_no_la_mueve(entorno):
     """Un cobro registrado luego desde la casa del cobrador no arrastra la
     posicion del cliente a medio camino."""
@@ -380,14 +366,11 @@ def test_prestar_a_un_cliente_que_ya_existe_no_toca_su_ficha(entorno):
 
 # ── La pantalla ───────────────────────────────────────────────────────────
 
-def test_la_vista_simple_trae_la_ruta_por_cercania(entorno):
-    cli, _, _ = entorno
+def test_la_vista_simple_sigue_guardando_el_gps_de_las_altas(entorno):
+    """El orden por cercania se quito; el GPS se sigue guardando en silencio."""
     html = Path("templates/app_cobrador.html").read_text(encoding="utf-8")
-    for pieza in ("alternarCercania", "ordenarPorCercania", "_ordenarParadas",
-                  "google.com/maps/dir/?api=1&destination=",
-                  "window.MODAL_CON_NO_PAGO = true", "_anexarPosAlta(fd)"):
+    for pieza in ("window.MODAL_CON_NO_PAGO = true", "_anexarPosAlta(fd)", "_pedirPosAlta()"):
         assert pieza in html, f"falta {pieza}"
-
 
 def test_las_pantallas_clasicas_no_encienden_el_no_pago_del_modal():
     """Cobros y Clientes ya tienen su boton; ahi el modal queda como estaba."""

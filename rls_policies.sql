@@ -49,6 +49,7 @@ ALTER TABLE configuracion ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usuario_zonas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rutas_cobro ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orden_ruta ENABLE ROW LEVEL SECURITY;
 ALTER TABLE no_pagos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE archivos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notas_cliente ENABLE ROW LEVEL SECURITY;
@@ -132,6 +133,30 @@ CREATE POLICY empresa_isolation_rutas_cobro ON rutas_cobro
     AND EXISTS (
       SELECT 1 FROM usuarios u
       WHERE u.id = rutas_cobro.usuario_id AND u.empresa_id = public.current_empresa_id()
+    )
+  );
+
+-- orden_ruta: igual que rutas_cobro, se valida tambien el cobrador dueño del
+-- orden, y ademas el cliente: el orden de un cobrador nunca puede apuntar a
+-- un cliente de otra empresa.
+DROP POLICY IF EXISTS empresa_isolation_orden_ruta ON orden_ruta;
+CREATE POLICY empresa_isolation_orden_ruta ON orden_ruta
+  USING (
+    empresa_id = public.current_empresa_id()
+    AND EXISTS (
+      SELECT 1 FROM usuarios u
+      WHERE u.id = orden_ruta.usuario_id AND u.empresa_id = public.current_empresa_id()
+    )
+  )
+  WITH CHECK (
+    empresa_id = public.current_empresa_id()
+    AND EXISTS (
+      SELECT 1 FROM usuarios u
+      WHERE u.id = orden_ruta.usuario_id AND u.empresa_id = public.current_empresa_id()
+    )
+    AND EXISTS (
+      SELECT 1 FROM clientes c
+      WHERE c.id = orden_ruta.cliente_id AND c.empresa_id = public.current_empresa_id()
     )
   );
 

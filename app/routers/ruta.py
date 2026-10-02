@@ -20,9 +20,10 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import func, nulls_last
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.database import (Cliente, Cobro, Cuota, NoPago, Prestamo, Zona, ahora_utc,
+from app.database import (Cliente, Cobro, Cuota, NoPago, Prestamo, Usuario, Zona,
                           get_db, hoy_local)
 from app.routers.auth import get_current_user
 from app.services.prestamo_service import calcular_cuotas
@@ -31,7 +32,8 @@ from app.utils.audit import log_action
 from app.utils.caja import cuadre
 from app.utils.money import cop, money
 from app.utils.permisos_rol import es_admin, puede_gestionar_prestamos
-from app.utils.ubicacion import leer_coordenadas, posiciones_de_clientes
+from app.utils import orden_ruta
+from app.utils.ubicacion import leer_coordenadas
 from app.utils.validators import (filtro_busqueda, sin_html, validar_cedula_persona,
                                   validar_descripcion, validar_entero_positivo,
                                   validar_nombre_persona, validar_numero_positivo,
@@ -50,11 +52,8 @@ ESTADOS_PENDIENTES = ("Pendiente", "Vencida", "Parcial")
 # que no acaba de cargar nunca.
 MAX_CLIENTES = 400
 
-# Lo que se dio de alta hace menos de esto sale arriba de la lista, del mas
-# nuevo al mas viejo. Sin esto, el cliente al que se le acaba de prestar
-# quedaba al fondo: su primera cuota aun no vence, asi que sale "al dia", y
-# el cobrador tenia que buscarlo entre doscientos.
-RECIENTE = datetime.timedelta(days=3)
+# Cuanto tiempo un alta cuenta como "nueva" (sale arriba y marcada).
+RECIENTE = orden_ruta.RECIENTE
 
 
 @router.get("/ruta")
@@ -80,28 +79,56 @@ async def mi_ruta(request: Request, db: Session = Depends(get_db)):
         "hoy": hoy_local().isoformat(),
         # El selector de dia solo lo tiene el administrador.
         "es_admin": es_admin(user),
+        # Y el de "orden de que cobrador".
+        "cobradores": (
+            db.query(Usuario).filter(Usuario.empresa_id == user.empresa_id,
+                                     Usuario.activo == True,
+                                     Usuario.rol.notin_(("admin", "superadmin")))
+            .order_by(Usuario.nombre).all()
+            if es_admin(user) else []),
     })
 
 
-def _semaforo(vence: datetime.date | None, dia: datetime.date, tiene_deuda: bool) -> str:
-    """Tres colores y nada mas: rojo debe, amarillo le toca hoy, verde al dia.
+# Desde cuantas cuotas atrasadas un cliente pasa de amarillo a rojo.
+ROJO_DESDE = 4
 
-    Habia un cuarto, gris, para quien no debia nada. Se quito: para el
-    cobrador que mira la lista, "no debe nada" y "esta al dia" son lo mismo
-    -- ninguno de los dos le hace parar -- y dos grises que significan casi
-    lo mismo es justo lo que hace que un semaforo deje de leerse de un
-    vistazo.
+
+def _estado(atrasadas: int, tiene_deuda: bool) -> str:
+    """El semaforo del cliente, por cuantas cuotas tiene atrasadas.
+
+    - gris: esta en la zona pero no tiene nada que cobrarle (nunca le
+      prestaron, o ya termino de pagar).
+    - verde: al dia. Si hoy le toca pagar, la tarjeta lo dice aparte
+      ("cobrar hoy"), pero sigue verde: aun no debe nada.
+    - amarillo: de 1 a 3 cuotas atrasadas.
+    - rojo: 4 o mas.
 
     Se calcula en el servidor porque si cada pantalla lo dedujera por su
-    cuenta, el mismo cliente podria salir amarillo en una y verde en otra.
+    cuenta, el mismo cliente podria salir de un color en una y de otro en
+    otra.
     """
-    if not tiene_deuda or vence is None:
-        return "verde"
-    if vence < dia:
+    if not tiene_deuda:
+        return "gris"
+    if atrasadas >= ROJO_DESDE:
         return "rojo"
-    if vence == dia:
+    if atrasadas >= 1:
         return "amarillo"
     return "verde"
+
+
+def _orden_de(db: Session, user, cobrador_id: int | None):
+    """De quien es el orden que se mira: el del propio cobrador, o el del
+    cobrador que el administrador elige. (usuario, puede_moverlo)."""
+    if not es_admin(user):
+        return user, True
+    if not cobrador_id:
+        return None, False
+    otro = db.query(Usuario).filter(Usuario.id == cobrador_id,
+                                    Usuario.empresa_id == user.empresa_id,
+                                    Usuario.activo == True).first()
+    if not otro or es_admin(otro):
+        return None, False
+    return otro, True
 
 
 @router.get("/ruta/zona")
@@ -110,15 +137,11 @@ async def datos_de_la_zona(
     zona_id: int = None,
     fecha: str = "",
     q: str = "",
+    cobrador_id: int = None,
     db: Session = Depends(get_db),
 ):
-    """Todos los clientes de la zona con su estado del dia, y el resumen.
-
-    Una sola peticion y no una por pestaña: las tres pestañas (Por cobrar,
-    Todos, Cobrados) son tres vistas del mismo conjunto, y pedirlas por
-    separado obligaria al cobrador a esperar cada vez que cambia de pestaña,
-    con tres respuestas que pueden no coincidir entre si.
-    """
+    """Los clientes de la zona, una tarjeta por cliente, en el orden del
+    cobrador, con su semaforo y lo que se le cobra de cada prestamo."""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
@@ -133,12 +156,11 @@ async def datos_de_la_zona(
         dia = datetime.date.fromisoformat(fecha.strip()) if fecha.strip() else hoy_local()
     except ValueError:
         return JSONResponse({"error": "Fecha invalida. Usa AAAA-MM-DD."}, status_code=400)
-    # El cobrador recorre la ruta de hoy. Poder mirar otro dia le obligaba a
-    # comprobar cada vez que la fecha era la buena, y un semaforo calculado
-    # para otro dia le pinta de rojo a quien hoy esta al corriente. Revisar
-    # dias pasados es del administrador.
+    # El cobrador recorre la ruta de hoy. Revisar dias pasados es del admin.
     if not es_admin(user):
         dia = hoy_local()
+
+    dueno, ordenable = _orden_de(db, user, cobrador_id)
 
     # ── Los clientes de la zona ────────────────────────────────────────────
     consulta = db.query(Cliente).filter(Cliente.empresa_id == eid,
@@ -148,36 +170,23 @@ async def datos_de_la_zona(
     elif permitidas is not None:
         consulta = consulta.filter(Cliente.zona_id.in_(permitidas or [-1]))
     if q.strip():
-        from app.utils.validators import filtro_busqueda
         consulta = consulta.filter(filtro_busqueda(q.strip(), Cliente.nombre,
                                                    Cliente.cedula))
-    # Si la lista se recorta, que no se lleve por delante a los nuevos: se
-    # piden primero los mas recientes. El orden de la pantalla se decide
-    # abajo; esto solo decide quien entra si hay mas de MAX_CLIENTES.
+    # Si la lista se recorta, que no se lleve por delante a los nuevos.
     clientes = (consulta.order_by(nulls_last(Cliente.creado.desc()), Cliente.nombre)
                 .limit(MAX_CLIENTES).all())
     if not clientes:
-        return JSONResponse({"clientes": [], "resumen": _resumen_vacio()})
+        return JSONResponse({"clientes": [], "resumen": _resumen_vacio(),
+                             "ordenable": ordenable})
 
     ids = [c.id for c in clientes]
-
-    # Donde esta cada uno, para poder ordenar la ruta por cercania en el
-    # celular. Viaja en esta misma respuesta y no en una aparte: el orden se
-    # calcula en el telefono, sin volver a preguntar al servidor, que es lo que
-    # hace que reordenar no tarde nada aunque la señal sea mala.
-    posiciones = posiciones_de_clientes(db, eid, ids)
+    zonas = {z.id: z.nombre for z in db.query(Zona.id, Zona.nombre).filter(
+        Zona.id.in_({c.zona_id for c in clientes if c.zona_id}))}
 
     # ── Lo que se debe, PRESTAMO A PRESTAMO ───────────────────────────────
-    # Una fila por prestamo activo, no por cliente. Con una por cliente, un
-    # cliente con dos prestamos enseñaba las cifras del que vencia antes: en
-    # produccion, un cobrador estaba cobrando uno de 500.000 y la fila le
-    # mostraba el "le falta" y la cuota de otro de 200.000 del mismo cliente,
-    # sin ningun aviso. Ninguna cuenta estaba mal en la base; lo que estaba
-    # mal era mezclar en una fila cifras de dos prestamos. Y tocar la fila
-    # cobraba el que vencia antes, no el que el cobrador creia.
-    #
-    # Se traen las cuotas pendientes de todos de una vez y se agrupan aqui:
-    # una consulta por cliente serian ochenta idas y vueltas a la base.
+    # Las cifras van por prestamo, nunca mezcladas: un cliente con dos
+    # prestamos enseñaba las de uno y cobraba el otro. La tarjeta es por
+    # cliente (es una sola parada), con sus prestamos dentro.
     filas = (
         db.query(Cuota, Prestamo)
         .join(Prestamo, Cuota.prestamo_id == Prestamo.id)
@@ -187,20 +196,23 @@ async def datos_de_la_zona(
         .order_by(Cuota.fecha_vencimiento, Cuota.numero)
         .all()
     )
-    # La cuota mas urgente de cada prestamo (la consulta viene ordenada por
-    # vencimiento, asi que la primera que aparece es esa).
-    siguiente: dict[int, tuple] = {}
-    # Los prestamos de cada cliente, en el orden en que vencen.
-    prestamos_de: dict[int, list[int]] = {}
+    siguiente: dict[int, tuple] = {}            # la cuota mas urgente de cada prestamo
+    prestamos_de: dict[int, list[int]] = {}     # los prestamos de cada cliente
+    atrasadas_de: dict[int, int] = {}           # cuotas vencidas sin pagar, por prestamo
+    hoy_de: set[int] = set()                    # prestamos con cuota que vence ese dia
     for cu, pr in filas:
         if pr.id not in siguiente:
             siguiente[pr.id] = (cu, pr)
             prestamos_de.setdefault(pr.cliente_id, []).append(pr.id)
+        saldo = money(cu.valor) - money(cu.valor_pagado or 0)
+        if saldo > 0 and cu.fecha_vencimiento:
+            if cu.fecha_vencimiento < dia:
+                atrasadas_de[pr.id] = atrasadas_de.get(pr.id, 0) + 1
+            elif cu.fecha_vencimiento == dia:
+                hoy_de.add(pr.id)
 
-    # Total y saldo de cada prestamo, con TODAS sus cuotas -- tambien las ya
-    # pagadas y las que aun no vencen. El total se suma de las cuotas y no se
-    # lee de prestamos.total_pagar porque los prestamos importados de antes no
-    # lo tienen guardado; las cuotas si, siempre.
+    # Total y saldo de cada prestamo con TODAS sus cuotas (los importados no
+    # tienen total_pagar guardado; las cuotas si).
     total_de: dict[int, Decimal] = {}
     restante_de: dict[int, Decimal] = {}
     if siguiente:
@@ -214,9 +226,7 @@ async def datos_de_la_zona(
             total_de[pid] = money(total or 0)
             restante_de[pid] = max(Decimal("0"), money(total or 0) - money(pagado or 0))
 
-    # ── Lo que ya se cobro ese dia ─────────────────────────────────────────
-    # Por prestamo para las filas, y por cliente para el que ya no debe nada
-    # (si termino de pagar hoy, su fila tiene que decir que hoy pago).
+    # ── Lo que ya se cobro ese dia, y por donde se paso sin cobrar ─────────
     cobrado_prestamo: dict[int, Decimal] = {}
     cobrado_cliente: dict[int, Decimal] = {}
     for cliente_id, prestamo_id, valor in (
@@ -228,7 +238,6 @@ async def datos_de_la_zona(
         cobrado_prestamo[prestamo_id] = cobrado_prestamo.get(prestamo_id, Decimal("0")) + money(valor)
         cobrado_cliente[cliente_id] = cobrado_cliente.get(cliente_id, Decimal("0")) + money(valor)
 
-    # ── Y por donde ya se paso sin cobrar ──────────────────────────────────
     no_pago_prestamo: set[int] = set()
     no_pago_cliente: set[int] = set()
     for np in (
@@ -240,126 +249,212 @@ async def datos_de_la_zona(
         no_pago_prestamo.add(np.prestamo_id)
         no_pago_cliente.add(np.cliente_id)
 
-    # ── Armar la lista ─────────────────────────────────────────────────────
+    # ── El orden: zona por zona, y dentro de cada una el del cobrador ──────
+    pos = orden_ruta.posiciones(db, dueno.id if dueno else None,
+                                {c.zona_id for c in clientes})
+    clientes.sort(key=lambda c: ((zonas.get(c.zona_id) or "").lower(), c.zona_id or 0,
+                                 orden_ruta.clave_de_orden(c, pos)))
+
+    # ── Armar las tarjetas ─────────────────────────────────────────────────
     salida = []
     resumen = _resumen_vacio()
-    desde = ahora_utc() - RECIENTE
-
-    def _nuevo(momento):
-        """El momento del alta si es reciente, en texto; si no, None."""
-        return momento.isoformat() if momento and momento >= desde else None
-
     for c in clientes:
-        base_fila = {
+        pids = prestamos_de.get(c.id, [])
+        prestamos = []
+        atrasadas = 0
+        for n, pid in enumerate(pids, start=1):
+            cu, pr = siguiente[pid]
+            falta = max(Decimal("0"), money(cu.valor) - money(cu.valor_pagado or 0))
+            atr = atrasadas_de.get(pid, 0)
+            atrasadas += atr
+            prestamos.append({
+                "prestamo_id": pid,
+                "n": n,
+                "estado": _estado(atr, True),
+                "atrasadas": atr,
+                "cobrar_hoy": pid in hoy_de,
+                "nuevo": orden_ruta.es_reciente(pr.creado),
+                # Las cifras, TODAS del mismo prestamo.
+                "prestado": float(money(pr.capital or 0)),
+                "total": float(total_de.get(pid, Decimal("0"))),
+                "restante": float(restante_de.get(pid, Decimal("0"))),
+                "cobrado_hoy": float(cobrado_prestamo.get(pid, Decimal("0"))),
+                "no_pago_hoy": pid in no_pago_prestamo,
+                "pendiente": {
+                    "cuota_id": cu.id,
+                    "cuota_num": cu.numero,
+                    "total_cuotas": pr.num_cuotas,
+                    "cuota": float(money(cu.valor)),
+                    # Lo que queda de ESTA cuota: si abono una parte, es
+                    # menos que la cuota, y es lo que se le cobra.
+                    "falta": float(falta),
+                },
+            })
+            if atr or pid in hoy_de:
+                resumen["esperado"] += float(falta)
+
+        estado = _estado(atrasadas, bool(prestamos))
+        cobrado = cobrado_cliente.get(c.id, Decimal("0"))
+        salida.append({
             "cliente_id": c.id,
             "nombre": c.nombre,
             "whatsapp": c.whatsapp or c.telefono or "",
-            # El nombre del archivo, no la foto: la lista pide las miniaturas
-            # una a una al hacer scroll.
+            # El nombre del archivo, no la foto: se piden una a una al hacer scroll.
             "miniatura": (c.foto_path or "").replace("fotos/", "") or None,
-            # Posicion deducida de sus visitas (o la de la ficha). null si
-            # todavia no se le ha visitado con GPS.
-            "lat": posiciones.get(c.id, {}).get("lat"),
-            "lng": posiciones.get(c.id, {}).get("lng"),
-        }
-        pids = prestamos_de.get(c.id, [])
-        luces_del_cliente = []
+            "zona_id": c.zona_id,
+            "zona": zonas.get(c.zona_id) or "",
+            "nuevo": orden_ruta.es_reciente(c.creado),
+            "estado": estado,
+            "atrasadas": atrasadas,
+            "cobrar_hoy": any(p["cobrar_hoy"] for p in prestamos),
+            "cobrado_hoy": float(cobrado),
+            "no_pago_hoy": c.id in no_pago_cliente,
+            "prestamos": prestamos,
+        })
 
-        if not pids:
-            # No debe nada: una sola fila, verde, sin cifras.
-            fila = dict(base_fila, fila_id=f"{c.id}-0", semaforo="verde",
-                        nuevo=_nuevo(c.creado),
-                        prestamo_id=None, prestamo_n=0, prestamos_total=0,
-                        prestado=0.0, total=0.0, restante=0.0,
-                        cobrado_hoy=float(cobrado_cliente.get(c.id, Decimal("0"))),
-                        no_pago_hoy=c.id in no_pago_cliente, pendiente=None)
-            salida.append(fila)
-            luces_del_cliente.append("verde")
-        else:
-            for n, pid in enumerate(pids, start=1):
-                cu, pr = siguiente[pid]
-                falta = max(Decimal("0"), money(cu.valor) - money(cu.valor_pagado or 0))
-                luz = _semaforo(cu.fecha_vencimiento, dia, True)
-                fila = dict(
-                    base_fila,
-                    fila_id=f"{c.id}-{pid}",
-                    semaforo=luz,
-                    # Un prestamo nuevo a un cliente de siempre tambien lo es.
-                    nuevo=_nuevo(pr.creado),
-                    prestamo_id=pid,
-                    # "Prestamo 2 de 3": cuando un cliente tiene mas de uno,
-                    # la pantalla lo dice, para que no parezca repetido.
-                    prestamo_n=n,
-                    prestamos_total=len(pids),
-                    # Las cifras de la fila, TODAS del mismo prestamo: lo que
-                    # se le presto, lo que tiene que devolver con el interes,
-                    # lo que le queda, y la cuota en la que va.
-                    prestado=float(money(pr.capital or 0)),
-                    total=float(total_de.get(pid, Decimal("0"))),
-                    restante=float(restante_de.get(pid, Decimal("0"))),
-                    cobrado_hoy=float(cobrado_prestamo.get(pid, Decimal("0"))),
-                    no_pago_hoy=pid in no_pago_prestamo,
-                    pendiente={
-                        "cuota_id": cu.id,
-                        "cuota_num": cu.numero,
-                        "total_cuotas": pr.num_cuotas,
-                        "cuota": float(money(cu.valor)),
-                        # Lo que queda de ESTA cuota: si abono una parte,
-                        # es menos que la cuota, y es lo que se le cobra.
-                        "falta": float(falta),
-                    },
-                )
-                salida.append(fila)
-                luces_del_cliente.append(luz)
-                if luz in ("rojo", "amarillo"):
-                    resumen["esperado"] += float(falta)
-
-        # El resumen cuenta CLIENTES, no filas: un cliente con dos prestamos
-        # vencidos es una persona que debe, no dos.
         resumen["clientes"] += 1
-        if c.id in posiciones:
-            resumen["ubicados"] += 1
-        if "rojo" in luces_del_cliente or "amarillo" in luces_del_cliente:
-            resumen["por_cobrar"] += 1
-        if "rojo" in luces_del_cliente:
+        if estado in ("amarillo", "rojo"):
             resumen["vencidos"] += 1
-        cobrado = cobrado_cliente.get(c.id, Decimal("0"))
+        if estado in ("amarillo", "rojo") or salida[-1]["cobrar_hoy"]:
+            resumen["por_cobrar"] += 1
         if cobrado > 0:
             resumen["cobrados"] += 1
             resumen["cobrado"] += float(cobrado)
         if c.id in no_pago_cliente:
             resumen["no_pagos"] += 1
 
-    # Una sola lista, ordenada por lo que hay que hacer: primero lo que se
-    # debe, luego lo que toca hoy, y al final lo que esta al dia. Los
-    # prestamos de un mismo cliente quedan juntos dentro de cada color.
-    # Antes que todo, lo recien dado de alta (cliente o prestamo), del mas
-    # nuevo al mas viejo: es lo que el cobrador acaba de hacer y lo que busca.
-    urgencia = {"rojo": 0, "amarillo": 1, "verde": 2}
-    salida.sort(key=lambda f: (urgencia.get(f["semaforo"], 3),
-                               (f["nombre"] or "").lower(),
-                               f["prestamo_n"]))
-    # Orden estable: los nuevos suben manteniendo entre si el del mas reciente.
-    salida.sort(key=lambda f: f["nuevo"] or "", reverse=True)
-
     resumen["esperado"] = round(resumen["esperado"], 2)
     resumen["cobrado"] = round(resumen["cobrado"], 2)
     resumen["recortada"] = len(clientes) >= MAX_CLIENTES
-    # El total que falta por cobrar en la zona es una cifra de negocio, no
-    # una herramienta de trabajo: el cobrador necesita saber cuanto le debe
-    # el cliente que tiene delante -- eso sigue en cada fila -- y no cuanto
-    # le falta por recoger a la empresa. Al cobrador no se le oculta en la
-    # pantalla: no se le manda.
+    # El total que falta por cobrar en la zona es una cifra de negocio: al
+    # cobrador no se le oculta en la pantalla, no se le manda.
     if not es_admin(user):
         resumen["esperado"] = None
 
     return JSONResponse({"clientes": salida, "resumen": resumen,
-                         "fecha": dia.isoformat()})
+                         "fecha": dia.isoformat(), "ordenable": ordenable})
 
 
 def _resumen_vacio() -> dict:
-    return {"clientes": 0, "ubicados": 0, "por_cobrar": 0, "cobrados": 0, "vencidos": 0,
+    return {"clientes": 0, "por_cobrar": 0, "cobrados": 0, "vencidos": 0,
             "no_pagos": 0, "esperado": 0.0, "cobrado": 0.0, "recortada": False}
+
+
+# ── EL ORDEN DEL COBRADOR ─────────────────────────────────────────────────
+@router.post("/ruta/orden")
+async def guardar_orden(
+    request: Request,
+    zona_id: int = Form(...),
+    cliente_ids: str = Form(""),
+    cobrador_id: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Guarda el orden en que el cobrador quiere ver la zona.
+
+    `cliente_ids` llega en el orden nuevo, separados por comas. Puede ser solo
+    una parte de la zona (lo que la pantalla muestra): el resto conserva su
+    lugar (ver orden_ruta.guardar).
+    """
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+
+    try:
+        cid_cobrador = int(cobrador_id) if cobrador_id.strip() else None
+    except ValueError:
+        return JSONResponse({"error": "Cobrador invalido"}, status_code=400)
+    dueno, ordenable = _orden_de(db, user, cid_cobrador)
+    if not ordenable:
+        return JSONResponse(
+            {"error": "Elige primero de que cobrador es el orden."}, status_code=400)
+
+    zona = db.query(Zona).filter(Zona.id == zona_id,
+                                 Zona.empresa_id == user.empresa_id).first()
+    if not zona:
+        return JSONResponse({"error": "Zona no encontrada"}, status_code=404)
+    if not require_zone_access(db, user, zona_id):
+        return JSONResponse({"error": "Hoy no cobras en esa zona"}, status_code=403)
+
+    ordenados = []
+    for parte in cliente_ids.split(","):
+        parte = parte.strip()
+        if parte.isdigit():
+            ordenados.append(int(parte))
+    if not ordenados:
+        return JSONResponse({"error": "No llego ningun cliente"}, status_code=400)
+
+    todos = db.query(Cliente).filter(Cliente.empresa_id == user.empresa_id,
+                                     Cliente.zona_id == zona_id,
+                                     Cliente.activo == True).all()
+    try:
+        total = orden_ruta.guardar(db, user.empresa_id, dueno.id, zona_id, todos, ordenados)
+        db.commit()
+    except IntegrityError:
+        # Dos guardados del mismo orden a la vez (dos pestañas, un doble
+        # arrastre): gana el otro, y este se puede repetir sin perder nada.
+        db.rollback()
+        return JSONResponse({"error": "No se pudo guardar el orden. Intenta de nuevo."},
+                            status_code=409)
+    return JSONResponse({"ok": True, "guardados": total})
+
+
+# ── HISTORIAL DEL CLIENTE ─────────────────────────────────────────────────
+@router.get("/ruta/cliente/{cliente_id}/historial")
+async def historial_del_cliente(request: Request, cliente_id: int,
+                                db: Session = Depends(get_db)):
+    """Los prestamos que ha tenido un cliente y los pagos de cada uno.
+
+    Solo lectura. Es lo que reemplaza, en la tarjeta compacta de un cliente
+    que no debe nada, a las cifras que ya no se enseñan.
+    """
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    cliente = db.query(Cliente).filter(Cliente.id == cliente_id,
+                                       Cliente.empresa_id == user.empresa_id).first()
+    if not cliente or not require_zone_access(db, user, cliente.zona_id):
+        return JSONResponse({"error": "Cliente no encontrado"}, status_code=404)
+
+    prestamos = (db.query(Prestamo)
+                 .filter(Prestamo.empresa_id == user.empresa_id,
+                         Prestamo.cliente_id == cliente.id)
+                 .order_by(Prestamo.fecha_inicio.desc(), Prestamo.id.desc())
+                 .limit(50).all())
+    pids = [p.id for p in prestamos]
+    pagos: dict[int, list] = {}
+    if pids:
+        for co in (db.query(Cobro)
+                   .filter(Cobro.empresa_id == user.empresa_id, Cobro.prestamo_id.in_(pids))
+                   .order_by(Cobro.fecha.desc(), Cobro.id.desc())
+                   .all()):
+            pagos.setdefault(co.prestamo_id, []).append({
+                "fecha": co.fecha.isoformat() if co.fecha else None,
+                "valor": float(money(co.valor_cobrado or 0)),
+                "metodo": co.metodo_pago or "Efectivo",
+            })
+    totales = {}
+    if pids:
+        for pid, total, pagado in (
+            db.query(Cuota.prestamo_id, func.sum(Cuota.valor),
+                     func.sum(func.coalesce(Cuota.valor_pagado, 0)))
+            .filter(Cuota.empresa_id == user.empresa_id, Cuota.prestamo_id.in_(pids))
+            .group_by(Cuota.prestamo_id).all()
+        ):
+            totales[pid] = (money(total or 0), money(pagado or 0))
+
+    return JSONResponse({
+        "cliente": {"id": cliente.id, "nombre": cliente.nombre},
+        "prestamos": [{
+            "id": p.id,
+            "fecha": p.fecha_inicio.isoformat() if p.fecha_inicio else None,
+            "prestado": float(money(p.capital or 0)),
+            "total": float(totales.get(p.id, (money(p.total_pagar or 0), 0))[0]),
+            "pagado": float(totales.get(p.id, (0, money(0)))[1]),
+            "cuotas": p.num_cuotas,
+            "estado": p.estado or "",
+            "pagos": pagos.get(p.id, []),
+        } for p in prestamos],
+    })
 
 
 # ── PRESTAR DESDE LA CALLE ────────────────────────────────────────────────
@@ -496,6 +591,7 @@ async def prestar(
         )
         db.add(cliente)
         db.flush()
+        orden_ruta.poner_arriba(db, user.empresa_id, zona.id, cliente.id)
         es_nuevo = True
 
     # ── El prestamo ───────────────────────────────────────────────────────

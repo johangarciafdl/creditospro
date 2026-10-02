@@ -137,6 +137,22 @@ def entorno():
         sin_nada = _cliente("Elmer SinDeuda", "S1", za.id)
         d["cliente_sin_deuda"] = sin_nada.id
 
+        # Cuatro cuotas atrasadas: el unico rojo.
+        muy = _cliente("Gabo Atrasado", "G1", za.id)
+        pm = Prestamo(empresa_id=e.id, cliente_id=muy.id, zona_id=za.id,
+                      capital=Decimal("100000"), tasa_interes=Decimal("20"),
+                      total_pagar=Decimal("120000"), num_cuotas=6,
+                      valor_cuota=Decimal("20000"), estado="Activo",
+                      fecha_inicio=hoy - datetime.timedelta(days=30),
+                      fecha_fin=hoy + datetime.timedelta(days=30))
+        db.add(pm); db.flush()
+        for k in range(6):
+            db.add(Cuota(empresa_id=e.id, prestamo_id=pm.id, numero=k + 1,
+                         valor=Decimal("20000"), valor_pagado=Decimal("0"),
+                         estado="Pendiente",
+                         fecha_vencimiento=hoy + datetime.timedelta(days=k - 4)))
+        d["cliente_muy_atrasado"] = muy.id
+
         # Otra zona de la misma empresa, que el cobrador no tiene asignada.
         otro_zona = _cliente("Fito DeNorte", "N1", zb.id)
         _prestamo(otro_zona, zb.id, hoy)
@@ -264,22 +280,38 @@ def test_una_fecha_invalida_se_rechaza(entorno):
 # ── El semaforo ───────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("clave,esperado", [
-    ("cliente_vencido", "rojo"),
-    ("cliente_hoy", "amarillo"),
+    ("cliente_muy_atrasado", "rojo"),      # 4 cuotas atrasadas
+    ("cliente_vencido", "amarillo"),       # 1 cuota atrasada
+    ("cliente_hoy", "verde"),              # le toca hoy, pero aun no debe nada
     ("cliente_aldia", "verde"),
-    # Quien no debe nada sale verde igual que quien esta al dia: para el
-    # cobrador que mira la lista son lo mismo -- ninguno le hace parar -- y
-    # dos colores que significan casi lo mismo es lo que hace que un
-    # semaforo deje de leerse de un vistazo.
-    ("cliente_sin_deuda", "verde"),
+    ("cliente_sin_deuda", "gris"),         # esta, pero no hay nada que cobrarle
 ])
 def test_el_semaforo_lo_decide_el_servidor(entorno, clave, esperado):
+    """Gris sin cobros; verde al dia; amarillo de 1 a 3 cuotas atrasadas;
+    rojo desde 4. Lo decide el servidor para que no cambie de una pantalla
+    a otra."""
+    cobra, _, d, _ = entorno
+    tarjeta = _por_id(_zona(cobra, d), d[clave])
+    assert tarjeta is not None, f"{clave} no salio en la lista"
+    assert tarjeta["estado"] == esperado, \
+        f"{clave} salio {tarjeta['estado']} y deberia ser {esperado}"
+
+
+def test_cuenta_las_cuotas_atrasadas_y_marca_la_de_hoy(entorno):
     cobra, _, d, _ = entorno
     cuerpo = _zona(cobra, d)
-    fila = _por_id(cuerpo, d[clave])
-    assert fila is not None, f"{clave} no salio en la lista"
-    assert fila["semaforo"] == esperado, \
-        f"{clave} salio {fila['semaforo']} y deberia ser {esperado}"
+    assert _por_id(cuerpo, d["cliente_muy_atrasado"])["atrasadas"] == 4
+    assert _por_id(cuerpo, d["cliente_vencido"])["atrasadas"] == 1
+    hoy = _por_id(cuerpo, d["cliente_hoy"])
+    assert hoy["atrasadas"] == 0 and hoy["cobrar_hoy"] is True
+    assert _por_id(cuerpo, d["cliente_aldia"])["cobrar_hoy"] is False
+
+
+def test_el_limite_del_rojo_es_cuatro():
+    from app.routers.ruta import _estado
+    assert [_estado(n, True) for n in range(6)] == \
+        ["verde", "amarillo", "amarillo", "amarillo", "rojo", "rojo"]
+    assert _estado(0, False) == "gris"
 
 
 def test_el_semaforo_sigue_a_la_fecha_elegida(entorno):
@@ -289,9 +321,9 @@ def test_el_semaforo_sigue_a_la_fecha_elegida(entorno):
     _, _, d, _ = entorno
     manana = (d["hoy"] + datetime.timedelta(days=1)).isoformat()
     cuerpo = _zona(d["sesion_admin"], d, fecha=manana)
-    assert _por_id(cuerpo, d["cliente_hoy"])["semaforo"] == "rojo", \
-        "vista desde mañana, la cuota de hoy esta vencida"
-    assert _por_id(cuerpo, d["cliente_aldia"])["semaforo"] == "verde"
+    assert _por_id(cuerpo, d["cliente_hoy"])["estado"] == "amarillo", \
+        "vista desde mañana, la cuota de hoy esta atrasada"
+    assert _por_id(cuerpo, d["cliente_aldia"])["estado"] == "verde"
 
 
 # ── El dinero ─────────────────────────────────────────────────────────────
@@ -300,9 +332,9 @@ def test_lo_que_falta_es_el_saldo_y_no_el_valor_de_la_cuota(entorno):
     """Pre-llenar el cobro con el valor completo de una cuota parcial hace que
     el servidor rechace el cobro con el cliente delante."""
     cobra, _, d, _ = entorno
-    fila = _por_id(_zona(cobra, d), d["cliente_parcial"])
-    assert fila["pendiente"]["cuota"] == 50000.0
-    assert fila["pendiente"]["falta"] == 30000.0
+    pr = _por_id(_zona(cobra, d), d["cliente_parcial"])["prestamos"][0]
+    assert pr["pendiente"]["cuota"] == 50000.0
+    assert pr["pendiente"]["falta"] == 30000.0
 
 
 def test_el_resumen_suma_lo_que_hay_que_cobrar(entorno):
@@ -315,12 +347,12 @@ def test_el_resumen_suma_lo_que_hay_que_cobrar(entorno):
     _, _, d, _ = entorno
     cuerpo = _zona(d["sesion_admin"], d)
     r = cuerpo["resumen"]
-    # Vencida (60000) + vence hoy (60000) + parcial (30000). El de al dia y el
-    # que no debe nada no entran en lo de hoy.
-    assert r["esperado"] == 150000.0, r
-    assert r["por_cobrar"] == 3, r
-    assert r["vencidos"] == 1, r
-    assert r["clientes"] == 5, r
+    # Vencida (60000) + vence hoy (60000) + parcial (30000) + la siguiente del
+    # muy atrasado (20000). El de al dia y el que no debe nada no entran.
+    assert r["esperado"] == 170000.0, r
+    assert r["por_cobrar"] == 4, r
+    assert r["vencidos"] == 2, r
+    assert r["clientes"] == 6, r
 
 
 def test_un_cobro_del_dia_aparece_en_la_fila_y_en_el_resumen(entorno):
@@ -334,9 +366,9 @@ def test_un_cobro_del_dia_aparece_en_la_fila_y_en_el_resumen(entorno):
     assert fila["cobrado_hoy"] == 25000.0
     assert cuerpo["resumen"]["cobrado"] == 25000.0
     assert cuerpo["resumen"]["cobrados"] == 1
-    # Y sigue en "por cobrar": abono no es pago.
-    assert fila["semaforo"] == "amarillo"
-    assert fila["pendiente"]["falta"] == 35000.0
+    # Abono no es pago: le sigue tocando hoy.
+    assert fila["estado"] == "verde" and fila["cobrar_hoy"] is True
+    assert fila["prestamos"][0]["pendiente"]["falta"] == 35000.0
 
 
 def test_una_visita_sin_cobro_queda_marcada(entorno):
@@ -567,10 +599,10 @@ def test_al_cobrador_no_se_le_manda_el_total_por_cobrar(entorno):
 def test_cada_cliente_sigue_trayendo_lo_que_debe(entorno):
     """Quitarle esto le impediria cobrar."""
     cobra, _, d, _ = entorno
-    fila = _por_id(_zona(cobra, d), d["cliente_vencido"])
-    assert fila["pendiente"]["falta"] > 0, "no sabe cuanto cobrarle"
-    assert fila["prestado"] > 0, "no sabe cuanto se le presto"
-    assert fila["restante"] > 0, "no sabe cuanto le falta del prestamo"
+    pr = _por_id(_zona(cobra, d), d["cliente_vencido"])["prestamos"][0]
+    assert pr["pendiente"]["falta"] > 0, "no sabe cuanto cobrarle"
+    assert pr["prestado"] > 0, "no sabe cuanto se le presto"
+    assert pr["restante"] > 0, "no sabe cuanto le falta del prestamo"
 
 
 def test_la_pantalla_esconde_la_tarjeta_si_no_llega_el_total():
@@ -617,23 +649,23 @@ def test_cada_fila_trae_las_cuatro_cifras(entorno):
     """Lo que el cobrador canta en la puerta: cuanto se le presto, cuanto le
     falta, en que cuota va y cuanto es esa cuota."""
     cobra, _, d, _ = entorno
-    fila = _por_id(_zona(cobra, d), d["cliente_vencido"])
-    assert fila["prestado"] == 100000.0
-    assert fila["restante"] > 0
-    assert fila["pendiente"]["cuota_num"] == 1
-    assert fila["pendiente"]["total_cuotas"] == 2
-    assert fila["pendiente"]["cuota"] == 60000.0
+    pr = _por_id(_zona(cobra, d), d["cliente_vencido"])["prestamos"][0]
+    assert pr["prestado"] == 100000.0
+    assert pr["restante"] > 0
+    assert pr["pendiente"]["cuota_num"] == 1
+    assert pr["pendiente"]["total_cuotas"] == 2
+    assert pr["pendiente"]["cuota"] == 60000.0
 
 
 def test_lo_que_falta_baja_con_cada_pago(entorno):
     """El "le falta" es del prestamo entero y tiene que bajar al cobrar."""
     cobra, _, d, _ = entorno
-    antes = _por_id(_zona(cobra, d), d["cliente_parcial"])["restante"]
+    antes = _por_id(_zona(cobra, d), d["cliente_parcial"])["prestamos"][0]["restante"]
     r = cobra.post("/cobros/registrar", data={
         "cuota_id": d["cuota_parcial"], "valor_cobrado": "10000",
         "metodo_pago": "Efectivo"})
     assert r.status_code == 200, r.text
-    despues = _por_id(_zona(cobra, d), d["cliente_parcial"])["restante"]
+    despues = _por_id(_zona(cobra, d), d["cliente_parcial"])["prestamos"][0]["restante"]
     assert despues == antes - 10000.0, f"antes {antes}, despues {despues}"
 
 
@@ -652,12 +684,12 @@ def test_la_pantalla_no_tiene_pestanas_y_solo_el_boton_de_whatsapp():
             / "app_cobrador.html").read_text(encoding="utf-8")
     for resto in ("verPestana", 'id="tab-cobrar"', 'id="tab-todos"', 'id="tab-cobrados"'):
         assert resto not in html, f"quedan pestañas: {resto}"
-    pintar = html.split("function pintar(filas)")[1].split("\nfunction ")[0]
-    assert "wa.me" in pintar, "falta el boton de WhatsApp"
+    tarjetas = html.split("const LUCES")[1].split("// ── HISTORIAL")[0]
+    assert "wa.me" in tarjetas, "falta el boton de WhatsApp"
     for quitado in ("marcarNoPago", "tel:", "/clientes/${", "💰 Cobrar"):
-        assert quitado not in pintar, f"la fila sigue ofreciendo {quitado}"
-    # Cobrar sigue siendo posible: la fila entera lo abre.
-    assert "abrirCobro(" in pintar, "ya no hay forma de cobrar desde la lista"
+        assert quitado not in tarjetas, f"la tarjeta sigue ofreciendo {quitado}"
+    # Cobrar sigue siendo posible: cada prestamo de la tarjeta lo abre.
+    assert "abrirCobro(" in tarjetas, "ya no hay forma de cobrar desde la lista"
 
 
 def test_la_ruta_del_cobrador_es_la_de_hoy(entorno):
@@ -666,8 +698,8 @@ def test_la_ruta_del_cobrador_es_la_de_hoy(entorno):
     cobra, _, d, _ = entorno
     manana_iso = (d["hoy"] + datetime.timedelta(days=1)).isoformat()
     # Pedir otro dia no cambia nada: se le calcula el de hoy.
-    hoy = _por_id(_zona(cobra, d), d["cliente_hoy"])["semaforo"]
-    otro = _por_id(_zona(cobra, d, fecha=manana_iso), d["cliente_hoy"])["semaforo"]
+    hoy = _por_id(_zona(cobra, d), d["cliente_hoy"])["estado"]
+    otro = _por_id(_zona(cobra, d, fecha=manana_iso), d["cliente_hoy"])["estado"]
     assert otro == hoy, "al cobrador se le calculo el semaforo de otro dia"
     html = cobra.get("/ruta").text
     assert 'id="sel-fecha"' not in html, "le ofrece elegir dia"
@@ -675,17 +707,15 @@ def test_la_ruta_del_cobrador_es_la_de_hoy(entorno):
         "al admin le quito el selector de dia"
 
 
-def test_la_lista_pone_primero_a_quien_debe(entorno):
-    """Sin la pestaña "Por cobrar", el orden es lo unico que dice por donde
-    empezar. En orden alfabetico, los que ya pagaron salian arriba."""
+def test_sin_orden_propio_la_zona_sale_alfabetica(entorno):
+    """La primera vez (el cobrador aun no ha movido a nadie) la zona sale por
+    nombre. Ya no por urgencia: el orden lo pone el cobrador, y cobrar o
+    cambiar de color no mueve a nadie."""
     cobra, _, d, Sesion = entorno
     _envejecer(Sesion, d)
-    luces = [f["semaforo"] for f in _zona(cobra, d)["clientes"]]
-    orden = {"rojo": 0, "amarillo": 1, "verde": 2}
-    assert luces == sorted(luces, key=orden.get), f"orden: {luces}"
-    assert luces[0] == "rojo", "el primero de la lista no es alguien que debe"
-    # Y no se esconde a nadie: los cinco sembrados siguen ahi (otras pruebas
-    # del modulo pueden haber dado de alta alguno mas).
+    _borrar_orden(Sesion, d)
+    nombres = [f["nombre"].lower() for f in _zona(cobra, d)["clientes"]]
+    assert nombres == sorted(nombres), nombres
     ids = {f["cliente_id"] for f in _zona(cobra, d)["clientes"]}
     for clave in ("cliente_vencido", "cliente_hoy", "cliente_parcial",
                   "cliente_aldia", "cliente_sin_deuda"):
@@ -693,6 +723,16 @@ def test_la_lista_pone_primero_a_quien_debe(entorno):
 
 
 # ── Lo recien dado de alta, arriba ────────────────────────────────────────
+
+def _borrar_orden(Sesion, d):
+    from app.database import OrdenRuta
+    db = Sesion()
+    try:
+        db.query(OrdenRuta).filter(OrdenRuta.empresa_id == d["empresa_id"]).delete()
+        db.commit()
+    finally:
+        db.close()
+
 
 def _envejecer(Sesion, d, dias=30):
     """Todo lo sembrado pasa a ser de hace un mes: sin esto, todo es nuevo."""
@@ -709,11 +749,10 @@ def _envejecer(Sesion, d, dias=30):
         db.close()
 
 
-def test_el_cliente_y_el_prestamo_recien_creados_salen_primero(entorno):
-    """El prestamo que se acaba de hacer esta "al dia" (su primera cuota no
-    vence aun), y por urgencia quedaba al fondo. Sale arriba, marcado."""
+def test_el_cliente_recien_creado_sale_primero(entorno):
     cobra, _, d, Sesion = entorno
     _envejecer(Sesion, d)
+    _borrar_orden(Sesion, d)
     r = cobra.post("/ruta/prestar", data={
         "zona_id": d["zona_a"], "capital": "100000", "tasa_interes": "20",
         "num_cuotas": "20", "plazo_dias": "1",
@@ -721,27 +760,29 @@ def test_el_cliente_y_el_prestamo_recien_creados_salen_primero(entorno):
     assert r.status_code == 200 and r.json().get("ok"), r.text
     filas = _zona(cobra, d)["clientes"]
     assert filas[0]["nombre"] == "Zulema Recien", [f["nombre"] for f in filas[:3]]
-    assert filas[0]["nuevo"]
-    # Lo demas sigue por urgencia, y no se marca como nuevo.
-    resto = [f for f in filas if not f["nuevo"]]
-    orden = {"rojo": 0, "amarillo": 1, "verde": 2}
-    luces = [f["semaforo"] for f in resto]
-    assert luces == sorted(luces, key=orden.get)
+    assert filas[0]["nuevo"] and filas[0]["estado"] == "verde"
+    assert filas[0]["prestamos"][0]["nuevo"]
+    # Lo demas, alfabetico y sin marca.
+    resto = [f["nombre"].lower() for f in filas[1:]]
+    assert resto == sorted(resto) and not any(f["nuevo"] for f in filas[1:])
 
 
-def test_un_prestamo_nuevo_a_un_cliente_de_siempre_tambien_sube(entorno):
+def test_un_prestamo_nuevo_a_un_cliente_de_siempre_no_lo_mueve(entorno):
+    """Se queda donde el cobrador lo tenia; el prestamo sale marcado dentro
+    de su tarjeta."""
     cobra, _, d, Sesion = entorno
     _envejecer(Sesion, d)
+    antes = [f["cliente_id"] for f in _zona(cobra, d)["clientes"]]
     r = cobra.post("/ruta/prestar", data={
         "zona_id": d["zona_a"], "capital": "50000", "tasa_interes": "20",
         "num_cuotas": "10", "plazo_dias": "1",
         "cliente_id": str(d["cliente_aldia"])})
     assert r.status_code == 200 and r.json().get("ok"), r.text
-    filas = _zona(cobra, d)["clientes"]
-    assert filas[0]["cliente_id"] == d["cliente_aldia"] and filas[0]["nuevo"]
-    # Su prestamo viejo sigue en su sitio, sin la marca.
-    viejos = [f for f in filas if f["cliente_id"] == d["cliente_aldia"] and not f["nuevo"]]
-    assert viejos, "el prestamo de antes desaparecio"
+    cuerpo = _zona(cobra, d)
+    assert [f["cliente_id"] for f in cuerpo["clientes"]] == antes
+    tarjeta = _por_id(cuerpo, d["cliente_aldia"])
+    assert len(tarjeta["prestamos"]) == 2, "una tarjeta por cliente, con sus prestamos"
+    assert [p["nuevo"] for p in tarjeta["prestamos"]].count(True) == 1
 
 
 def test_lo_de_hace_mas_de_tres_dias_ya_no_es_nuevo(entorno):
@@ -752,4 +793,166 @@ def test_lo_de_hace_mas_de_tres_dias_ya_no_es_nuevo(entorno):
 
 def test_la_vista_marca_lo_nuevo():
     html = Path("templates/app_cobrador.html").read_text(encoding="utf-8")
-    assert "f.nuevo" in html and "fila-nuevo" in html
+    assert "c.nuevo" in html and "fila-nuevo" in html
+
+
+# ── El orden lo pone el cobrador ─────────────────────────────────────────
+
+def _orden(cli, d, ids, **extra):
+    datos = {"zona_id": d["zona_a"], "cliente_ids": ",".join(str(i) for i in ids)}
+    datos.update(extra)
+    return cli.post("/ruta/orden", data=datos)
+
+
+def test_el_cobrador_ordena_y_el_orden_se_queda(entorno):
+    cobra, _, d, Sesion = entorno
+    _envejecer(Sesion, d)
+    _borrar_orden(Sesion, d)
+    ids = [f["cliente_id"] for f in _zona(cobra, d)["clientes"]]
+    nuevo = list(reversed(ids))
+    r = _orden(cobra, d, nuevo)
+    assert r.status_code == 200 and r.json()["ok"], r.text
+    assert [f["cliente_id"] for f in _zona(cobra, d)["clientes"]] == nuevo
+
+
+def test_cobrar_no_mueve_a_nadie(entorno):
+    cobra, _, d, Sesion = entorno
+    antes = [f["cliente_id"] for f in _zona(cobra, d)["clientes"]]
+    r = cobra.post("/cobros/registrar", data={
+        "cuota_id": d["cuota_vencida"], "valor_cobrado": "60000", "metodo_pago": "Efectivo"})
+    assert r.status_code == 200, r.text
+    assert [f["cliente_id"] for f in _zona(cobra, d)["clientes"]] == antes
+
+
+def test_ordenar_una_parte_no_desordena_el_resto(entorno):
+    """La clasica (Pendientes) y el buscador mandan solo lo que se ve: los
+    demas conservan su lugar."""
+    cobra, _, d, _ = entorno
+    ids = [f["cliente_id"] for f in _zona(cobra, d)["clientes"]]
+    a, b = ids[1], ids[3]
+    r = _orden(cobra, d, [b, a])           # intercambia dos
+    assert r.status_code == 200, r.text
+    esperado = list(ids)
+    esperado[1], esperado[3] = b, a
+    assert [f["cliente_id"] for f in _zona(cobra, d)["clientes"]] == esperado
+
+
+def test_un_cliente_nuevo_entra_arriba_del_orden_guardado_y_se_queda(entorno):
+    cobra, _, d, Sesion = entorno
+    _envejecer(Sesion, d)
+    ids = [f["cliente_id"] for f in _zona(cobra, d)["clientes"]]
+    _orden(cobra, d, ids)
+    r = cobra.post("/clientes/nuevo", data={
+        "cedula": "1000003", "nombre": "Yolanda Llegando", "telefono": "3005550003",
+        "zona_id": str(d["zona_a"])})
+    assert r.status_code == 200, r.text
+    assert _zona(cobra, d)["clientes"][0]["nombre"] == "Yolanda Llegando"
+    # Pasados los dias de "nuevo", no salta a ninguna parte.
+    _envejecer(Sesion, d)
+    filas = _zona(cobra, d)["clientes"]
+    assert filas[0]["nombre"] == "Yolanda Llegando" and not filas[0]["nuevo"]
+    assert [f["cliente_id"] for f in filas[1:]] == ids
+
+
+def test_el_orden_es_de_cada_cobrador_y_el_admin_lo_ve_y_lo_cambia(entorno):
+    cobra, _, d, _ = entorno
+    admin = d["sesion_admin"]
+    propio = [f["cliente_id"] for f in _zona(cobra, d)["clientes"]]
+    # Sin elegir cobrador: alfabetico y sin poder mover.
+    cuerpo = _zona(admin, d)
+    assert cuerpo["ordenable"] is False
+    assert _orden(admin, d, propio).status_code == 400
+    # Eligiendo al cobrador: su orden, y lo puede cambiar.
+    cuerpo = _zona(admin, d, cobrador_id=d["usuario_id"])
+    assert cuerpo["ordenable"] is True
+    assert [f["cliente_id"] for f in cuerpo["clientes"]] == propio
+    otro = propio[1:] + propio[:1]
+    r = _orden(admin, d, otro, cobrador_id=str(d["usuario_id"]))
+    assert r.status_code == 200, r.text
+    assert [f["cliente_id"] for f in _zona(cobra, d)["clientes"]] == otro
+
+
+def test_el_cobrador_no_ordena_una_zona_que_no_es_suya(entorno):
+    cobra, _, d, _ = entorno
+    r = cobra.post("/ruta/orden", data={"zona_id": d["zona_b"],
+                                        "cliente_ids": str(d["cliente_zona_b"])})
+    assert r.status_code == 403
+    # Ni el de otro cobrador, aunque mande cobrador_id: siempre es el suyo.
+    r = cobra.post("/ruta/orden", data={"zona_id": d["zona_a"], "cobrador_id": "999999",
+                                        "cliente_ids": str(d["cliente_hoy"])})
+    assert r.status_code == 200
+
+
+def test_ids_de_otra_zona_o_empresa_se_ignoran_al_ordenar(entorno):
+    cobra, _, d, _ = entorno
+    antes = [f["cliente_id"] for f in _zona(cobra, d)["clientes"]]
+    r = _orden(cobra, d, [d["cliente_zona_b"], 987654])
+    assert r.status_code == 200, r.text
+    assert [f["cliente_id"] for f in _zona(cobra, d)["clientes"]] == antes
+
+
+# ── Tarjeta compacta: historial y prestar ────────────────────────────────
+
+def test_quien_no_debe_nada_viene_sin_cifras(entorno):
+    cobra, _, d, _ = entorno
+    t = _por_id(_zona(cobra, d), d["cliente_sin_deuda"])
+    assert t["estado"] == "gris" and t["prestamos"] == []
+
+
+def test_el_historial_trae_los_prestamos_y_sus_pagos(entorno):
+    cobra, _, d, _ = entorno
+    r = cobra.get(f"/ruta/cliente/{d['cliente_vencido']}/historial")
+    assert r.status_code == 200, r.text
+    h = r.json()
+    assert h["prestamos"], "sin prestamos"
+    pagos = [x for p in h["prestamos"] for x in p["pagos"]]
+    assert pagos and all(x["valor"] > 0 for x in pagos)
+
+
+def test_el_historial_de_otra_zona_o_empresa_no_se_ve(entorno):
+    cobra, ajena, d, _ = entorno
+    assert cobra.get(f"/ruta/cliente/{d['cliente_zona_b']}/historial").status_code == 404
+    assert ajena.get(f"/ruta/cliente/{d['cliente_vencido']}/historial").status_code == 404
+
+
+def test_la_vista_ya_no_tiene_la_ruta_por_cercania():
+    html = Path("templates/app_cobrador.html").read_text(encoding="utf-8")
+    for quitado in ("alternarCercania", "ordenarPorCercania", "google.com/maps",
+                    "ubicados", "btn-cercania"):
+        assert quitado not in html, f"queda {quitado}"
+    for puesto in ("sortable-1.15.7.min.js", "manija", "verHistorial(", "prestarA(",
+                   "guardarOrden(", "sel-cobrador"):
+        assert puesto in html, f"falta {puesto}"
+
+
+# ── La clasica: Cobros -> Pendientes en el mismo orden ───────────────────
+
+def test_pendientes_de_la_clasica_sigue_el_orden_del_cobrador(entorno):
+    cobra, _, d, _ = entorno
+    orden_simple = [f["cliente_id"] for f in _zona(cobra, d)["clientes"]]
+    r = cobra.get("/cobros/pendientes-ajax", params={"zona_id": d["zona_a"]})
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert cuerpo["ordenable"] is True
+    vistos = []
+    for p in cuerpo["pendientes"]:
+        if p["cliente_id"] not in vistos:
+            vistos.append(p["cliente_id"])
+    assert vistos == [c for c in orden_simple if c in vistos]
+    # Las cuotas de un mismo cliente van juntas.
+    corridas = [p["cliente_id"] for p in cuerpo["pendientes"]]
+    for cid in set(corridas):
+        idx = [i for i, c in enumerate(corridas) if c == cid]
+        assert idx == list(range(idx[0], idx[0] + len(idx)))
+
+
+def test_el_admin_ve_pendientes_por_vencimiento_sin_mover(entorno):
+    _, _, d, _ = entorno
+    r = d["sesion_admin"].get("/cobros/pendientes-ajax", params={"zona_id": d["zona_a"]})
+    assert r.status_code == 200 and r.json()["ordenable"] is False
+
+
+def test_la_clasica_trae_la_manija_y_no_aparta_a_quien_no_pago():
+    html = Path("templates/cobros.html").read_text(encoding="utf-8")
+    assert "sortable-1.15.7.min.js" in html and "guardarOrdenPend" in html
+    assert "draggable:'.grupo-cliente'" in html
