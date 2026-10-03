@@ -221,7 +221,11 @@ function renderPendientes(items, ordenable){
   const porVisitar = items.filter(p=>!p.no_pago_hoy);
   const noPagaron  = items.filter(p=>p.no_pago_hoy);
 
-  const tarjeta = (p, manija)=>{
+  // `otras`: en el modo de ordenar, cada cliente es UNA tarjeta (la cuota mas
+  // urgente) y aqui va el resto de lo que debe. Antes salia una tarjeta por
+  // cuota: un cliente con 7 atrasadas era un bloque de 1.000 px que habia que
+  // arrastrar entero por debajo de la pantalla, y no se movia.
+  const tarjeta = (p, manija, otras)=>{
     const dias = Number(p.dias||0);
     const venc=dias>0;
     const color=venc?'var(--red)':dias===0?'var(--amber)':'var(--green)';
@@ -241,6 +245,7 @@ function renderPendientes(items, ordenable){
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;font-size:13px;">${esc(p.cliente)}</div>
           <div style="font-size:11px;color:var(--t3);">CC ${esc(p.cedula)} &nbsp;&middot;&nbsp; Cuota ${Number(p.cuota_num||0)}/${Number(p.total_cuotas||0)} &nbsp;&middot;&nbsp; Vence ${esc(p.vencimiento)}</div>
+          ${otras&&otras.n?`<div style="font-size:11px;color:var(--red);font-weight:600;margin-top:3px;">+ ${otras.n} cuota${otras.n===1?'':'s'} más pendiente${otras.n===1?'':'s'} · total ${cop(otras.total)}</div>`:''}
           ${marcada?`<div style="font-size:11px;color:var(--amber);font-weight:600;margin-top:3px;">No pagó hoy${p.no_pago_motivo?' — '+esc(p.no_pago_motivo):''}</div>`:''}
           ${(!marcada&&visitas>0)?`<div style="font-size:10px;color:var(--t3);margin-top:3px;">${visitas} visita${visitas===1?'':'s'} sin cobro</div>`:''}
         </div>
@@ -283,8 +288,10 @@ function renderPendientes(items, ordenable){
     el.innerHTML='<div style="display:flex;flex-direction:column;gap:8px;">'+zonas.map(z=>`
       ${varias?encabezado(esc(nombreZona(z.zona_id)||'Zona'), z.clientes.length):''}
       <div class="grupo-zona" data-zona="${Number(z.zona_id)||0}">
-        ${z.clientes.map(c=>`<div class="grupo-cliente" data-cliente="${Number(c.cliente_id)||0}">
-          ${c.cuotas.map((p,i)=>tarjeta(p, i===0)).join('')}</div>`).join('')}
+        ${z.clientes.map(c=>{
+          const debe=c.cuotas.reduce((t,p)=>t+Math.max(0,Number(p.valor||0)-Number(p.valor_pagado||0)),0);
+          return `<div class="grupo-cliente" data-cliente="${Number(c.cliente_id)||0}">
+          ${tarjeta(c.cuotas[0], true, {n:c.cuotas.length-1, total:debe})}</div>`;}).join('')}
       </div>`).join('')+'</div>';
     el.style.display='block';
     if(window.Sortable){

@@ -896,6 +896,9 @@ def test_el_admin_mueve_la_ruta_del_cobrador_desde_cobros(entorno):
     assert ruta == nuevo
     pagina = admin.get("/cobros").text
     assert 'id="sel-orden"' in pagina
+    # Al ordenar, una tarjeta por cliente (no una por cuota): un cliente con
+    # muchas cuotas atrasadas era un bloque tan alto que no se podia arrastrar.
+    assert "tarjeta(c.cuotas[0], true, {n:c.cuotas.length-1" in pagina
 
 
 def test_el_cobrador_no_ordena_una_zona_que_no_es_suya(entorno):
