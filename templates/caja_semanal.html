@@ -97,7 +97,15 @@ document.addEventListener('input', e => {
 });
 
 async function cargar(){
-  const d = await leerRespuesta(await window.fetch(`/caja/semanal/datos?zona_id=${_zona}&semana=${_semana}`));
+  let d;
+  try {
+    d = await leerRespuesta(await window.fetch(`/caja/semanal/datos?zona_id=${_zona}&semana=${_semana}`));
+  } catch (e) {
+    // El cuadre se hace con las cifras del sistema: sin señal no hay con que.
+    document.getElementById('semana-txt').textContent = 'Sin señal';
+    toast('Sin señal: el cuadre necesita conexión para traer las cifras de la semana.', 'warn');
+    return;
+  }
   if (d.error) { toast(d.error, 'error'); return; }
   _d = d;
   document.getElementById('semana-txt').textContent = fechaTxt(d.semana) + ' – ' + fechaTxt(d.hasta);

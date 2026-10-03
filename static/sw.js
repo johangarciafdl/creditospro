@@ -48,7 +48,10 @@ self.addEventListener('fetch', e => {
   // Los datos de la ruta los guarda la propia pantalla con su hora, para
   // poder decir "datos de las 7:40". Si el worker los sirviera del cache, la
   // pantalla creeria que son frescos.
-  if (url.pathname.startsWith('/ruta/') || url.pathname.startsWith('/caja/')) return;
+  // Igual el tablero del admin: servido del cache, sin señal decia "En vivo"
+  // con cifras viejas.
+  if (url.pathname.startsWith('/ruta/') || url.pathname.startsWith('/caja/') ||
+      url.pathname.startsWith('/dashboard/')) return;
   // OJO con ignoreVary: el servidor responde "Vary: Cookie" en todas las
   // paginas, y caches.match() respeta ese encabezado. Como la cookie CSRF
   // cambia al iniciar sesion, la pagina guardada NUNCA coincidia con la

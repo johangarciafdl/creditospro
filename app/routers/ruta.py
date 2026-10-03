@@ -19,7 +19,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import func, nulls_last
+from sqlalchemy import func, nulls_last, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -227,12 +227,15 @@ async def datos_de_la_zona(
             restante_de[pid] = max(Decimal("0"), money(total or 0) - money(pagado or 0))
 
     # ── Lo que ya se cobro ese dia, y por donde se paso sin cobrar ─────────
+    # Solo efectivo: lo que se descuenta al renovar no es plata que el
+    # cobrador recibio (le salia "cobrado 90.000" a quien pago 15.000 y renovo).
     cobrado_prestamo: dict[int, Decimal] = {}
     cobrado_cliente: dict[int, Decimal] = {}
     for cliente_id, prestamo_id, valor in (
         db.query(Cobro.cliente_id, Cobro.prestamo_id, Cobro.valor_cobrado)
         .filter(Cobro.empresa_id == eid, Cobro.fecha == dia,
-                Cobro.cliente_id.in_(ids))
+                Cobro.cliente_id.in_(ids),
+                or_(Cobro.metodo_pago.is_(None), Cobro.metodo_pago != "Renovacion"))
         .all()
     ):
         cobrado_prestamo[prestamo_id] = cobrado_prestamo.get(prestamo_id, Decimal("0")) + money(valor)

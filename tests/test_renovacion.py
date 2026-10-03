@@ -154,6 +154,25 @@ def test_renovar_descuenta_lo_que_debe_y_cuadra_la_caja(entorno):
     assert despues["esperado"] == despues["base"] - 140000.0
 
 
+def test_la_ruta_no_cuenta_lo_descontado_como_cobrado(entorno):
+    """Lo que se descuenta al renovar no es plata que el cobrador recibio: en
+    la ruta salia "Cobrado 90.000" a quien pago 15.000 en efectivo y renovo."""
+    cli, d, Sesion = entorno
+    from app.database import Prestamo
+    # (El prestamo ya se renovo hoy en test_renovar_descuenta_lo_que_debe...)
+    db = Sesion()
+    try:
+        zona = db.get(Prestamo, d["prestamo"]).zona_id
+    finally:
+        db.close()
+    datos = cli.get("/ruta/zona", params={"zona_id": zona}).json()
+    tarjeta = next(c for c in datos["clientes"] if c["cliente_id"] == d["cliente"])
+    assert tarjeta["cobrado_hoy"] == 0
+    assert datos["resumen"]["cobrado"] == 0
+    # El prestamo nuevo aun no llega a su primera cuota: gris.
+    assert tarjeta["estado"] == "gris"
+
+
 def test_un_prestamo_ya_pagado_no_se_renueva(entorno):
     cli, d, _ = entorno
     r = _renovar(cli, d, 300000)
