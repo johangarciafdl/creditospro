@@ -448,18 +448,28 @@ function pintarResumen(r){
 // El texto del semaforo va SIEMPRE junto al color: un cobrador con la
 // pantalla al sol, o que no distingue el rojo del verde, tiene que poder
 // leer en que estado esta el cliente.
+// Tres colores: verde (todos los que tienen prestamo), rojo (4 cuotas o
+// mas atrasadas) y gris (nuevos que aun no llegan a la primera cuota, o sin
+// prestamo). Junto al color: Cobrado / Por cobrar y las cuotas.
 const LUCES = {
   rojo:     {clase:'luz-roja'},
-  amarillo: {clase:'luz-amarilla'},
   verde:    {clase:'luz-verde'},
   gris:     {clase:'luz-gris'},
 };
 
 function _textoLuz(c){
   const n = Number(c.atrasadas) || 0;
-  if (c.estado === 'gris') return 'Sin cobros';
-  if (c.estado === 'verde') return 'Al dia';
-  return 'Debe ' + n + (n === 1 ? ' cuota' : ' cuotas');
+  if (!c.prestamos || !c.prestamos.length) return 'Sin préstamo';
+  const partes = [];
+  if (c.cobrado_hoy > 0) partes.push('<span class="tag-cobrado">Cobrado</span>');
+  else if (c.prestamos.every(p => p.sin_empezar) && !n) partes.push('<span class="tag-nuevo-gris">Nuevo · aún sin cuotas</span>');
+  else partes.push('<span class="tag-por-cobrar">Por cobrar</span>');
+  if (c.prestamos.length === 1) {
+    const p = c.prestamos[0].pendiente || {};
+    partes.push(`Cuota ${Number(p.cuota_num)||0}/${Number(p.total_cuotas)||0}`);
+  }
+  if (n) partes.push(`<span class="${c.estado === 'rojo' ? 'txt-rojo' : ''}">debe ${n} ${n === 1 ? 'cuota' : 'cuotas'}</span>`);
+  return partes.join(' · ');
 }
 
 function _avatar(c){
@@ -480,7 +490,7 @@ function _bloquePrestamo(c, pr, varios){
   const etiquetas = [];
   if (varios) etiquetas.push(`Prestamo ${Number(pr.n)}`);
   if (pr.nuevo) etiquetas.push('<span class="fila-nuevo">Nuevo</span>');
-  if (pr.atrasadas > 0 && varios) etiquetas.push(`<span class="txt-${pr.estado}">debe ${Number(pr.atrasadas)}</span>`);
+  if (pr.atrasadas > 0 && varios) etiquetas.push(`<span class="${pr.estado === 'rojo' ? 'txt-rojo' : ''}">debe ${Number(pr.atrasadas)}</span>`);
   // Con un solo prestamo, "cobrar hoy" ya lo dice la cabecera de la tarjeta.
   if (pr.cobrar_hoy && varios) etiquetas.push('<span class="cobrar-hoy">Cobrar hoy</span>');
   if (pr.cobrado_hoy > 0) etiquetas.push(`cobrado ${cop(pr.cobrado_hoy)}`);
@@ -505,9 +515,10 @@ function _tarjeta(c){
   const nombreJs = attr(JSON.stringify(c.nombre || ''));
   const nuevo = c.nuevo ? '<span class="fila-nuevo">Nuevo</span> ' : '';
 
-  // Sin nada que cobrarle (nunca le prestaron, o ya termino): solo foto,
-  // nombre, su historial y prestarle. Ocupa poco para no estorbar.
-  if (c.estado === 'gris') {
+  // Sin prestamo (nunca le prestaron, o ya termino): solo foto, nombre, su
+  // historial y prestarle. Ocupa poco para no estorbar. (Un cliente nuevo
+  // tambien es gris, pero tiene prestamo: sale con su tarjeta completa.)
+  if (!c.prestamos || !c.prestamos.length) {
     return `
     <div class="fila-cliente compacta ${luz.clase}" data-cliente="${Number(c.cliente_id)||0}">
       <div class="fila-top">
@@ -524,7 +535,7 @@ function _tarjeta(c){
 
   const extra = [];
   if (c.cobrar_hoy && c.estado === 'verde') extra.push('<span class="cobrar-hoy">Cobrar hoy</span>');
-  if (c.cobrado_hoy > 0) extra.push(`cobrado ${cop(c.cobrado_hoy)}`);
+  if (c.cobrado_hoy > 0) extra.push(cop(c.cobrado_hoy));
   if (c.no_pago_hoy) extra.push('sin pago');
   const varios = c.prestamos.length > 1;
   return `
@@ -1045,7 +1056,9 @@ _zona = {{ zona_unica }}; _elegida = true; cargar();
 .luz-gris{border-left-color:var(--t3)}
 .luz-gris .fila-luz{color:var(--t3)}
 .txt-rojo{color:var(--red)}
-.txt-amarillo{color:var(--amber)}
+.tag-cobrado{background:var(--green);color:#fff;border-radius:4px;padding:1px 6px;font-weight:700}
+.tag-por-cobrar{border:1px solid currentColor;border-radius:4px;padding:0 5px;font-weight:700}
+.tag-nuevo-gris{color:var(--t3);font-weight:600}
 .cobrar-hoy{background:var(--green);color:#fff;border-radius:4px;padding:1px 5px}
 /* La tarjeta compacta: un cliente sin nada que cobrar ocupa una linea. */
 .fila-cliente.compacta .fila-top{padding:8px 10px}

@@ -1,6 +1,6 @@
 """Los reportes del administrador, en Excel.
 
-- Semanal: el cuadre de cada zona esa semana (lunes a domingo), su
+- Semanal: el cuadre de cada zona esa semana (domingo a sabado), su
   movimiento y la lista de cobros.
 - Cierre de cartera: un ciclo de 6 semanas -- resumen por zona, semana por
   semana y movimiento de cartera.
@@ -272,7 +272,7 @@ def _filas_movimiento(zonas, mov) -> list[list]:
 
 def reporte_semanal(db: Session, empresa_id: int, semana: datetime.date,
                     zona_id: int | None = None, zona_ids: list[int] | None = None) -> bytes:
-    lunes = cs.lunes_de(semana)
+    lunes = cs.inicio_semana(semana)
     domingo = lunes + datetime.timedelta(days=6)
     empresa = _nombre_empresa(db, empresa_id)
     zonas = _zonas(db, empresa_id, zona_id, zona_ids)
@@ -376,7 +376,7 @@ def reporte_cierre(db: Session, empresa_id: int, numero: int,
     ws = _hoja(wb, "Semana por semana", "CIERRE DE CARTERA — SEMANA POR SEMANA", periodo,
                empresa, [("Semana", 23, False), ("Zona", 16, False)] + CAB_CUADRE
                + [("Estado", 30, False)])
-    lunes = cs.lunes_de(desde)
+    lunes = cs.inicio_semana(desde)
     while lunes <= corte:
         filas = []
         for z in zonas:

@@ -89,19 +89,19 @@ async def mi_ruta(request: Request, db: Session = Depends(get_db)):
     })
 
 
-# Desde cuantas cuotas atrasadas un cliente pasa de amarillo a rojo.
+# Desde cuantas cuotas atrasadas un cliente pasa a rojo.
 ROJO_DESDE = 4
 
 
-def _estado(atrasadas: int, tiene_deuda: bool) -> str:
-    """El semaforo del cliente, por cuantas cuotas tiene atrasadas.
+def _estado(atrasadas: int, tiene_deuda: bool, sin_empezar: bool = False) -> str:
+    """El semaforo del cliente en la ruta del cobrador. Solo tres colores:
 
-    - gris: esta en la zona pero no tiene nada que cobrarle (nunca le
-      prestaron, o ya termino de pagar).
-    - verde: al dia. Si hoy le toca pagar, la tarjeta lo dice aparte
-      ("cobrar hoy"), pero sigue verde: aun no debe nada.
-    - amarillo: de 1 a 3 cuotas atrasadas.
-    - rojo: 4 o mas.
+    - gris: no hay nada que cobrarle todavia -- nunca le prestaron, ya
+      termino de pagar, o es nuevo: su prestamo aun no llega a la primera
+      cuota.
+    - rojo: debe 4 cuotas o mas.
+    - verde: todos los demas. Si debe 1 a 3 cuotas sigue verde y la tarjeta
+      dice cuantas debe, junto a "Cobrado" o "Por cobrar".
 
     Se calcula en el servidor porque si cada pantalla lo dedujera por su
     cuenta, el mismo cliente podria salir de un color en una y de otro en
@@ -111,8 +111,8 @@ def _estado(atrasadas: int, tiene_deuda: bool) -> str:
         return "gris"
     if atrasadas >= ROJO_DESDE:
         return "rojo"
-    if atrasadas >= 1:
-        return "amarillo"
+    if sin_empezar and atrasadas == 0:
+        return "gris"
     return "verde"
 
 
@@ -267,10 +267,14 @@ async def datos_de_la_zona(
             falta = max(Decimal("0"), money(cu.valor) - money(cu.valor_pagado or 0))
             atr = atrasadas_de.get(pid, 0)
             atrasadas += atr
+            # Nuevo: aun no llega la primera cuota, no hay nada que cobrar.
+            sin_empezar = (cu.numero == 1 and not money(cu.valor_pagado or 0)
+                           and cu.fecha_vencimiento is not None and cu.fecha_vencimiento > dia)
             prestamos.append({
                 "prestamo_id": pid,
                 "n": n,
-                "estado": _estado(atr, True),
+                "estado": _estado(atr, True, sin_empezar),
+                "sin_empezar": sin_empezar,
                 "atrasadas": atr,
                 "cobrar_hoy": pid in hoy_de,
                 "nuevo": orden_ruta.es_reciente(pr.creado),
@@ -293,7 +297,8 @@ async def datos_de_la_zona(
             if atr or pid in hoy_de:
                 resumen["esperado"] += float(falta)
 
-        estado = _estado(atrasadas, bool(prestamos))
+        estado = _estado(atrasadas, bool(prestamos),
+                         bool(prestamos) and all(p["sin_empezar"] for p in prestamos))
         cobrado = cobrado_cliente.get(c.id, Decimal("0"))
         salida.append({
             "cliente_id": c.id,
@@ -313,9 +318,9 @@ async def datos_de_la_zona(
         })
 
         resumen["clientes"] += 1
-        if estado in ("amarillo", "rojo"):
+        if atrasadas:
             resumen["vencidos"] += 1
-        if estado in ("amarillo", "rojo") or salida[-1]["cobrar_hoy"]:
+        if atrasadas or salida[-1]["cobrar_hoy"]:
             resumen["por_cobrar"] += 1
         if cobrado > 0:
             resumen["cobrados"] += 1

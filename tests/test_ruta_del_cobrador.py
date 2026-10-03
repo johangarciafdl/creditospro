@@ -102,7 +102,7 @@ def entorno():
             return c
 
         def _prestamo(cliente, zona_id, vence, valor="60000", pagado="0",
-                      estado="Pendiente"):
+                      estado="Pendiente", numero=1):
             p = Prestamo(empresa_id=e.id, cliente_id=cliente.id, zona_id=zona_id,
                          capital=Decimal("100000"), tasa_interes=Decimal("20"),
                          total_pagar=Decimal("120000"), num_cuotas=2,
@@ -110,7 +110,7 @@ def entorno():
                          fecha_inicio=hoy - datetime.timedelta(days=30),
                          fecha_fin=hoy + datetime.timedelta(days=30))
             db.add(p); db.flush()
-            cu = Cuota(empresa_id=e.id, prestamo_id=p.id, numero=1,
+            cu = Cuota(empresa_id=e.id, prestamo_id=p.id, numero=numero,
                        valor=Decimal(valor), valor_pagado=Decimal(pagado),
                        estado=estado, fecha_vencimiento=vence)
             db.add(cu); db.flush()
@@ -126,7 +126,8 @@ def entorno():
         d["cliente_hoy"], d["cuota_hoy"] = hoy_c.id, cu_h.id
 
         aldia = _cliente("Carla AlDia", "A1", za.id)
-        _, cu_a = _prestamo(aldia, za.id, hoy + datetime.timedelta(days=7))
+        # Ya va por la 2a cuota (si fuera la 1a sin pagar seria "nuevo": gris).
+        _, cu_a = _prestamo(aldia, za.id, hoy + datetime.timedelta(days=7), numero=2)
         d["cliente_aldia"], d["cuota_aldia"] = aldia.id, cu_a.id
 
         parcial = _cliente("Dora Parcial", "P1", za.id)
@@ -281,14 +282,13 @@ def test_una_fecha_invalida_se_rechaza(entorno):
 
 @pytest.mark.parametrize("clave,esperado", [
     ("cliente_muy_atrasado", "rojo"),      # 4 cuotas atrasadas
-    ("cliente_vencido", "amarillo"),       # 1 cuota atrasada
+    ("cliente_vencido", "verde"),          # 1 cuota atrasada: verde, y dice cuantas debe
     ("cliente_hoy", "verde"),              # le toca hoy, pero aun no debe nada
     ("cliente_aldia", "verde"),
     ("cliente_sin_deuda", "gris"),         # esta, pero no hay nada que cobrarle
 ])
 def test_el_semaforo_lo_decide_el_servidor(entorno, clave, esperado):
-    """Gris sin cobros; verde al dia; amarillo de 1 a 3 cuotas atrasadas;
-    rojo desde 4. Lo decide el servidor para que no cambie de una pantalla
+    """Gris sin cobros; rojo desde 4 cuotas atrasadas; verde todos los demas. Lo decide el servidor para que no cambie de una pantalla
     a otra."""
     cobra, _, d, _ = entorno
     tarjeta = _por_id(_zona(cobra, d), d[clave])
@@ -310,8 +310,11 @@ def test_cuenta_las_cuotas_atrasadas_y_marca_la_de_hoy(entorno):
 def test_el_limite_del_rojo_es_cuatro():
     from app.routers.ruta import _estado
     assert [_estado(n, True) for n in range(6)] == \
-        ["verde", "amarillo", "amarillo", "amarillo", "rojo", "rojo"]
+        ["verde", "verde", "verde", "verde", "rojo", "rojo"]
     assert _estado(0, False) == "gris"
+    # Nuevo: su prestamo aun no llega a la primera cuota.
+    assert _estado(0, True, sin_empezar=True) == "gris"
+    assert _estado(4, True, sin_empezar=True) == "rojo"
 
 
 def test_el_semaforo_sigue_a_la_fecha_elegida(entorno):
@@ -321,8 +324,8 @@ def test_el_semaforo_sigue_a_la_fecha_elegida(entorno):
     _, _, d, _ = entorno
     manana = (d["hoy"] + datetime.timedelta(days=1)).isoformat()
     cuerpo = _zona(d["sesion_admin"], d, fecha=manana)
-    assert _por_id(cuerpo, d["cliente_hoy"])["estado"] == "amarillo", \
-        "vista desde mañana, la cuota de hoy esta atrasada"
+    tarjeta = _por_id(cuerpo, d["cliente_hoy"])
+    assert tarjeta["atrasadas"] == 1 and tarjeta["estado"] == "verde",         "vista desde mañana, la cuota de hoy esta atrasada"
     assert _por_id(cuerpo, d["cliente_aldia"])["estado"] == "verde"
 
 
@@ -760,7 +763,10 @@ def test_el_cliente_recien_creado_sale_primero(entorno):
     assert r.status_code == 200 and r.json().get("ok"), r.text
     filas = _zona(cobra, d)["clientes"]
     assert filas[0]["nombre"] == "Zulema Recien", [f["nombre"] for f in filas[:3]]
-    assert filas[0]["nuevo"] and filas[0]["estado"] == "verde"
+    # Nuevo: su primera cuota aun no vence, asi que va en gris (con su
+    # prestamo dentro de la tarjeta, listo para cobrar cuando toque).
+    assert filas[0]["nuevo"] and filas[0]["estado"] == "gris"
+    assert filas[0]["prestamos"][0]["sin_empezar"]
     assert filas[0]["prestamos"][0]["nuevo"]
     # Lo demas, alfabetico y sin marca.
     resto = [f["nombre"].lower() for f in filas[1:]]
@@ -870,6 +876,26 @@ def test_el_orden_es_de_cada_cobrador_y_el_admin_lo_ve_y_lo_cambia(entorno):
     r = _orden(admin, d, otro, cobrador_id=str(d["usuario_id"]))
     assert r.status_code == 200, r.text
     assert [f["cliente_id"] for f in _zona(cobra, d)["clientes"]] == otro
+
+
+def test_el_admin_mueve_la_ruta_del_cobrador_desde_cobros(entorno):
+    """En Cobros el admin elige "Orden de <cobrador>": ve la lista en el orden
+    de ese cobrador, la mueve, y el cobrador la ve igual en su celular."""
+    cobra, _, d, _ = entorno
+    admin = d["sesion_admin"]
+    params = {"zona_id": d["zona_a"], "fecha": d["hoy"].isoformat()}
+    assert admin.get("/cobros/pendientes-ajax", params=params).json()["ordenable"] is False
+    lista = admin.get("/cobros/pendientes-ajax",
+                      params=dict(params, cobrador_id=d["usuario_id"])).json()
+    assert lista["ordenable"] is True
+    clientes = list(dict.fromkeys(p["cliente_id"] for p in lista["pendientes"]))
+    assert len(clientes) >= 2
+    nuevo = clientes[::-1]
+    assert _orden(admin, d, nuevo, cobrador_id=str(d["usuario_id"])).status_code == 200
+    ruta = [f["cliente_id"] for f in _zona(cobra, d)["clientes"] if f["cliente_id"] in nuevo]
+    assert ruta == nuevo
+    pagina = admin.get("/cobros").text
+    assert 'id="sel-orden"' in pagina
 
 
 def test_el_cobrador_no_ordena_una_zona_que_no_es_suya(entorno):

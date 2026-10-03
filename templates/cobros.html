@@ -59,6 +59,15 @@
           {% endfor %}
         </select>
       </div>
+      {% if cobradores %}
+      <div style="display:flex;flex-direction:column;">
+        <label for="sel-orden" style="font-size:11px;color:var(--t3);margin-bottom:3px;">Orden de</label>
+        <select id="sel-orden" onchange="elegirOrden()" style="width:170px;" title="Elige un cobrador para ver y mover su ruta: él la verá en ese orden">
+          <option value="">Por vencimiento</option>
+          {% for c in cobradores %}<option value="{{ c.id }}">{{ c.nombre or c.username }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
       <div style="display:flex;flex-direction:column;">
         <label for="sel-fecha" style="font-size:11px;color:var(--t3);margin-bottom:3px;">Fecha</label>
         <input type="date" id="sel-fecha" style="width:150px;" onchange="buscar()">
@@ -118,6 +127,19 @@ function buscarDebounce(){clearTimeout(_deb);_deb=setTimeout(buscar,400)}
 // "Ver todos" es la unica forma de traer todas las zonas de golpe: por defecto
 // el modulo arranca sin datos para que no pese al entrar.
 let _verTodosActivo=false;
+// Admin: de que cobrador es el orden que se ve y se mueve (vacio = por
+// vencimiento, sin mover). Se recuerda en este equipo.
+const _ordenDe=()=>{ const s=document.getElementById('sel-orden'); return s?s.value:''; };
+function elegirOrden(){
+  try{ localStorage.setItem('cp-cobros-orden-de', _ordenDe()); }catch(e){}
+  if(_ordenDe()) toast('Arrastra a los clientes desde ☰: el cobrador verá su ruta en ese orden.');
+  buscar();
+}
+(function(){
+  const s=document.getElementById('sel-orden'); if(!s) return;
+  let g=null; try{ g=localStorage.getItem('cp-cobros-orden-de'); }catch(e){}
+  if(g && [...s.options].some(o=>o.value===g)) s.value=g;
+})();
 function verTodos(){_verTodosActivo=true;buscar();}
 
 // El modal compartido llama aqui despues de registrar un cobro. Cobros era
@@ -148,6 +170,8 @@ async function buscar(){
   estado.style.display='block';
   const params=new URLSearchParams();
   if(q)params.set('q',q);if(zona_id)params.set('zona_id',zona_id);if(fecha)params.set('fecha',fecha);
+  const ordenDe=_ordenDe();
+  if(ordenDe)params.set('cobrador_id',ordenDe);
 
   if(_tab==='pendientes'&&!navigator.onLine&&window.pwa){
     const items=await window.pwa.getPendientesOffline(q,zona_id,fecha);
@@ -295,6 +319,7 @@ async function guardarOrdenPend(cont){
   const fd=new FormData();
   fd.append('zona_id', cont.dataset.zona);
   fd.append('cliente_ids', ids.join(','));
+  if(_ordenDe()) fd.append('cobrador_id', _ordenDe());
   // Sin señal se guarda en el celular y se envia solo al volver.
   const sinSenal=()=>{
     encolarSinSenal('/ruta/orden', Object.fromEntries(fd.entries()), 'orden:'+cont.dataset.zona+':');

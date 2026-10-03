@@ -605,7 +605,8 @@ class MovimientoCajaGeneral(Base):
 
 
 class CuadreSemanal(Base):
-    """El cuadre de una zona en una semana (lunes a domingo), verificado.
+    """El cuadre de una zona en una semana (domingo a sabado: el cuadre se hace
+    los sabados), verificado.
 
     Lo hace el administrador como en el programa que CreditosPro reemplaza:
     COBRO y PRESTAMOS los propone el sistema (y se pueden corregir); GASTOS,
@@ -623,7 +624,7 @@ class CuadreSemanal(Base):
     id = Column(Integer, primary_key=True, index=True)
     empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
     zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="CASCADE"), nullable=False)
-    semana = Column(Date, nullable=False)          # el lunes de la semana
+    semana = Column(Date, nullable=False)          # el domingo con que empieza la semana
     cobro = Column(Numeric(14, 2), nullable=False, default=0)
     prestamos = Column(Numeric(14, 2), nullable=False, default=0)
     gastos = Column(Numeric(14, 2), nullable=False, default=0)

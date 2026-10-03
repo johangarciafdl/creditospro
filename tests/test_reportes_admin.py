@@ -28,7 +28,7 @@ def entorno():
                               Zona, hoy_local)
     from app.main import app
     from app.utils.company_activation import assign_company_key
-    from app.utils.cuadre_semanal import calcular, lunes_de
+    from app.utils.cuadre_semanal import calcular, inicio_semana
     from app.utils.security import get_password_hash
 
     motor = create_engine(f"sqlite:///{bd}", connect_args={"check_same_thread": False})
@@ -45,7 +45,7 @@ def entorno():
     from conftest import sustituir_sesion, vaciar_limitador
     claves = sustituir_sesion(app, _sesion)
     hoy = hoy_local()
-    lunes = lunes_de(hoy)
+    lunes = inicio_semana(hoy)
     d = {"hoy": hoy, "lunes": lunes}
     db = Sesion()
     try:
@@ -226,5 +226,5 @@ def test_la_pagina_ofrece_los_tres_reportes(entorno):
     jefa, _, d, _ = entorno
     html = jefa.get("/reportes").text
     for pieza in ("bajar('semanal'", "bajar('clientes-prestamos'", 'id="rs-semana"',
-                  d["lunes"].isoformat(), "Primero indica el lunes"):
+                  d["lunes"].isoformat(), "Primero indica el domingo"):
         assert pieza in html, pieza

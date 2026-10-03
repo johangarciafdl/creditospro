@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 
 from app.database import (
-    get_db, Cobro, Cuota, NoPago, Prestamo, Cliente, Zona, IS_SQLITE,
+    get_db, Cobro, Cuota, NoPago, Prestamo, Cliente, Usuario, Zona, IS_SQLITE,
     a_hora_local, ahora_utc, dia_semana_local, hoy_local,
 )
 from app.routers.auth import get_current_user
@@ -125,8 +125,15 @@ async def listar_cobros(request: Request, db: Session = Depends(get_db)):
     # todas las suyas. Hay que decirselo: si no, parece que le desaparecieron.
     ruta = ruta_semanal(db, user.id) if user.rol not in ("admin", "superadmin") else {}
 
+    # El administrador puede mover a los clientes en el orden de un cobrador
+    # (el mismo que ese cobrador ve en su celular).
+    cobradores = []
+    if es_admin(user):
+        cobradores = (db.query(Usuario).filter(Usuario.empresa_id == eid, Usuario.activo == True,  # noqa: E712
+                                               Usuario.rol.notin_(("admin", "superadmin")))
+                      .order_by(Usuario.nombre).all())
     return templates.TemplateResponse(request, "cobros.html", {
-        "page": "cobros", "current_user": user,
+        "page": "cobros", "current_user": user, "cobradores": cobradores,
         "cuotas_vencidas_nav": vencidas,
         "zonas": zonas, "total_hoy": total_hoy,
         "num_hoy": num_hoy, "vencidas": vencidas,
@@ -174,7 +181,7 @@ async def buscar_cobros(request: Request, q: str="", zona_id: int=None, fecha: s
 
 @router.get("/pendientes-ajax")
 async def pendientes(request: Request, zona_id: int=None, q: str="", fecha: str="",
-                     db: Session = Depends(get_db)):
+                     cobrador_id: int=None, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error":"No autorizado"}, 401)
@@ -210,13 +217,14 @@ async def pendientes(request: Request, zona_id: int=None, q: str="", fecha: str=
     # por zona, y dentro de cada una sus clientes en el orden que el armo,
     # con las cuotas de cada cliente juntas y por vencimiento. Cobrar o que
     # una cuota venza ya no mueve a nadie de sitio. El administrador ve la
-    # lista como siempre, por vencimiento: el orden de un cobrador lo mira y
-    # lo cambia desde "Mi ruta".
-    ordenable = not es_admin(user)
+    # lista por vencimiento, salvo que elija de que cobrador es el orden:
+    # entonces la ve y la mueve como ese cobrador (lo mismo que en "Mi ruta").
+    from app.routers.ruta import _orden_de
+    dueno, ordenable = _orden_de(db, user, cobrador_id)
     if ordenable and rows:
         zona_de = {z.id: (z.nombre or "").lower() for z in db.query(Zona.id, Zona.nombre)
                    .filter(Zona.id.in_({cl.zona_id for _, _, cl in rows if cl.zona_id}))}
-        pos = orden_ruta.posiciones(db, user.id, zona_de.keys())
+        pos = orden_ruta.posiciones(db, dueno.id, zona_de.keys())
         rows.sort(key=lambda r: (zona_de.get(r[2].zona_id, ""), r[2].zona_id or 0,
                                  orden_ruta.clave_de_orden(r[2], pos), r[2].id,
                                  r[0].fecha_vencimiento or dia, r[0].numero))

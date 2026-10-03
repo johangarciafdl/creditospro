@@ -10,7 +10,7 @@ from app.routers.auth import get_current_user
 from app.services.excel_service import reporte_cobros_diarios, reporte_cartera, reporte_resumen_zonas
 from app.services import reportes_admin as ra
 from app.utils import finanzas as fz
-from app.utils.cuadre_semanal import lunes_de
+from app.utils.cuadre_semanal import inicio_semana
 from app.utils.permisos_rol import puede_ver_reportes
 from app.utils.rate_limit import is_rate_limited
 from app.utils.zone_permissions import get_allowed_zone_ids
@@ -44,8 +44,8 @@ async def pagina_reportes(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/cobros", status_code=302)
     hoy = hoy_local()
     zonas = db.query(Zona).filter(Zona.empresa_id == user.empresa_id).all()
-    # Las ultimas semanas (lunes) y los ciclos de 6 semanas, para elegir.
-    lunes = lunes_de(hoy)
+    # Las ultimas semanas (cada una empieza en domingo) y los ciclos de 6 semanas, para elegir.
+    lunes = inicio_semana(hoy)
     semanas = [lunes - datetime.timedelta(days=7 * i) for i in range(12)]
     ciclos = []
     empresa = db.get(Empresa, user.empresa_id)
@@ -182,7 +182,7 @@ async def descargar_semanal(request: Request, semana: str = Query(default=None),
         dia = datetime.date.fromisoformat(semana) if semana else hoy_local()
     except ValueError:
         return JSONResponse({"error": "Fecha invalida. Usa el formato AAAA-MM-DD."}, status_code=400)
-    lunes = lunes_de(dia)
+    lunes = inicio_semana(dia)
     data = ra.reporte_semanal(db, user.empresa_id, lunes, zona_id=zona_id, zona_ids=permitidas)
     return _excel_response(data, f"semana_{lunes.strftime('%Y%m%d')}.xlsx")
 

@@ -127,7 +127,9 @@ def test_el_cobro_devuelve_el_comprobante_para_whatsapp(entorno):
 # ── Cuadre semanal ────────────────────────────────────────────────────────
 
 def _lunes(d):
-    return d["hoy"] - datetime.timedelta(days=d["hoy"].weekday())
+    """El domingo con que empieza la semana (el cuadre se hace los sabados)."""
+    from app.utils.cuadre_semanal import inicio_semana
+    return inicio_semana(d["hoy"])
 
 
 def _form(d, **v):

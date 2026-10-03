@@ -22,7 +22,7 @@
     <button class="btn btn-sm" onclick="moverSemana(-1)" aria-label="Semana anterior">‹</button>
     <div style="flex:1;text-align:center;">
       <div class="fw-600" id="semana-txt">—</div>
-      <div class="fs-11 text-3">lunes a domingo</div>
+      <div class="fs-11 text-3">domingo a sábado</div>
     </div>
     <button class="btn btn-sm" onclick="moverSemana(1)" aria-label="Semana siguiente">›</button>
   </div>
@@ -72,7 +72,8 @@ const pesos = v => { const n = Math.round(Number(v) || 0); return n < 0 ? '−' 
 const fechaTxt = f => f.split('-').reverse().join('/');
 // Fecha local (Colombia), nunca toISOString(): en UTC la tarde ya es mañana.
 const iso = d => hoyLocal(d);
-function lunesDe(txt){ const d = new Date(txt + 'T12:00:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d); }
+// La semana va de domingo a sábado: el cuadre se hace los sábados.
+function inicioSemana(txt){ const d = new Date(txt + 'T12:00:00'); d.setDate(d.getDate() - d.getDay()); return iso(d); }
 
 function elegirZona(id){
   _zona = Number(id);
@@ -82,7 +83,7 @@ function elegirZona(id){
 }
 function moverSemana(n){
   const d = new Date(_semana + 'T12:00:00'); d.setDate(d.getDate() + 7 * n);
-  if (iso(d) > lunesDe('{{ hoy }}')) return;
+  if (iso(d) > inicioSemana('{{ hoy }}')) return;
   _semana = iso(d); cargar();
 }
 function irSemana(s){ _semana = s; cargar(); }
@@ -179,7 +180,7 @@ async function reabrir(btn){
 (function(){
   const botones = [...document.querySelectorAll('.zona-tab')];
   if (!botones.length) return;
-  _semana = lunesDe('{{ hoy }}');
+  _semana = inicioSemana('{{ hoy }}');
   let guardada = null;
   try { guardada = localStorage.getItem('cp-cuadre-zona'); } catch(e) {}
   elegirZona((botones.find(b => b.dataset.zona === guardada) || botones[0]).dataset.zona);

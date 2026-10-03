@@ -313,7 +313,7 @@ def _zona_y_semana(db, user, zona_id, semana_txt):
     dia = _fecha(semana_txt)
     if not zona or dia is None:
         return None, None
-    return zona, cs.lunes_de(dia)
+    return zona, cs.inicio_semana(dia)
 
 
 def _plano(d: dict) -> dict:

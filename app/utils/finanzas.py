@@ -158,7 +158,8 @@ def resumen(db: Session, empresa_id: int, desde: datetime.date,
     # por eso se cuenta cuantos faltan, para que el resultado no se lea como
     # definitivo si aun hay semanas sin cuadrar.
     from app.database import CuadreSemanal
-    lunes = desde - datetime.timedelta(days=desde.weekday())
+    from app.utils.cuadre_semanal import inicio_semana
+    lunes = inicio_semana(desde)
     cuadrados = 0
     for c in (db.query(CuadreSemanal)
               .filter(CuadreSemanal.empresa_id == empresa_id,

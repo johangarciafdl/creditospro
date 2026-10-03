@@ -157,9 +157,9 @@ async def configurar(request: Request, ciclo_inicio: str = Form(""),
         inicio = datetime.date.fromisoformat(ciclo_inicio.strip())
     except ValueError:
         return JSONResponse({"error": "Fecha invalida"}, status_code=400)
-    if inicio.weekday() != 0:
+    if inicio.weekday() != 6:
         return JSONResponse(
-            {"error": "Elige un lunes: las 6 semanas del ciclo son las de los cuadres semanales (lunes a domingo)."},
+            {"error": "Elige un domingo: las 6 semanas del ciclo son las de los cuadres semanales (domingo a sabado)."},
             status_code=400)
     if db.query(Liquidacion).filter(Liquidacion.empresa_id == user.empresa_id).first():
         return JSONResponse(

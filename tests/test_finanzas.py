@@ -53,9 +53,9 @@ def entorno():
     claves = sustituir_sesion(app, _sesion)
 
     hoy = hoy_local()
-    # Los ciclos empiezan un lunes (sus semanas son las del cuadre semanal).
+    # Los ciclos empiezan un domingo (sus semanas son las del cuadre semanal).
     hace50 = hoy - datetime.timedelta(days=50)
-    inicio = hace50 - datetime.timedelta(days=hace50.weekday())
+    inicio = hace50 - datetime.timedelta(days=(hace50.weekday() + 1) % 7)
     en_ciclo1 = inicio + datetime.timedelta(days=10)
     d = {"hoy": hoy, "inicio": inicio, "en_ciclo1": en_ciclo1}
     db = Sesion()
@@ -96,7 +96,7 @@ def entorno():
         prestamo(sur, "300000", "360000", inicio - datetime.timedelta(days=5), "360000")
         # Los gastos salen del cuadre semanal verificado de la zona.
         db.add(CuadreSemanal(empresa_id=e.id, zona_id=norte.id,
-                             semana=en_ciclo1 - datetime.timedelta(days=en_ciclo1.weekday()),
+                             semana=en_ciclo1 - datetime.timedelta(days=(en_ciclo1.weekday() + 1) % 7),
                              gastos=Decimal("20000")))
         db.commit()
     finally:

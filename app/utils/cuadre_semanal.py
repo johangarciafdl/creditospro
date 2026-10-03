@@ -27,13 +27,18 @@ CERO = Decimal("0")
 CAMPOS_ADMIN = ("gastos", "salarios", "base", "descuento", "efectivo")
 
 
-def lunes_de(fecha: datetime.date) -> datetime.date:
-    return fecha - datetime.timedelta(days=fecha.weekday())
+def inicio_semana(fecha: datetime.date) -> datetime.date:
+    """El domingo con que empieza la semana de esa fecha.
+
+    El cuadre se hace los sabados: cada semana va de domingo a sabado, y lo
+    que se cobre un domingo entra en el cuadre del sabado siguiente.
+    """
+    return fecha - datetime.timedelta(days=(fecha.weekday() + 1) % 7)
 
 
 def propuesta(db: Session, empresa_id: int, zona_id: int, semana: datetime.date) -> dict:
-    """Lo que el sistema sabe de esa zona esa semana (lunes a domingo)."""
-    desde = lunes_de(semana)
+    """Lo que el sistema sabe de esa zona esa semana (domingo a sabado)."""
+    desde = inicio_semana(semana)
     hasta = desde + datetime.timedelta(days=6)
     r = fz.resumen(db, empresa_id, desde, hasta)
     fila = next((z for z in r["zonas"] if z["zona_id"] == zona_id), None)
@@ -69,7 +74,7 @@ def calcular(cobro, prestamos, gastos, salarios, base, descuento, efectivo, inte
 def verificados(db: Session, empresa_id: int, desde: datetime.date,
                 hasta: datetime.date, zona_id: int | None = None) -> list[CuadreSemanal]:
     q = db.query(CuadreSemanal).filter(CuadreSemanal.empresa_id == empresa_id,
-                                       CuadreSemanal.semana >= lunes_de(desde),
+                                       CuadreSemanal.semana >= inicio_semana(desde),
                                        CuadreSemanal.semana <= hasta)
     if zona_id:
         q = q.filter(CuadreSemanal.zona_id == zona_id)

@@ -12,7 +12,7 @@
   <div class="card">
     <div class="card-header"><div class="card-title">Reporte semanal</div></div>
     <div class="card-body">
-      <div class="fs-12 text-2 mb-2">El cuadre de cada zona (cobro, préstamos, gastos, base, efectivo, diferencia), el movimiento y los cobros de la semana, de lunes a domingo.</div>
+      <div class="fs-12 text-2 mb-2">El cuadre de cada zona (cobro, préstamos, gastos, base, efectivo, diferencia), el movimiento y los cobros de la semana, de domingo a sábado (el cuadre del sábado).</div>
       <div class="form-group"><label for="rs-semana">Semana</label>
         <select id="rs-semana">
           {% for s in semanas %}<option value="{{ s.isoformat() }}">{{ s.strftime('%d/%m') }}–{{ (s + timedelta7).strftime('%d/%m') }}{% if loop.first %} (esta){% elif loop.index == 2 %} (pasada){% endif %}</option>{% endfor %}
@@ -35,7 +35,7 @@
         </select></div>
       <button class="btn btn-gold" onclick="bajar('cierre-cartera', {ciclo: val('rc-ciclo')})">⬇ Descargar cierre</button>
       {% else %}
-      <div class="fs-13">Primero indica el lunes en que empiezan los ciclos en <a href="/finanzas">Finanzas</a>.</div>
+      <div class="fs-13">Primero indica el domingo en que empiezan los ciclos en <a href="/finanzas">Finanzas</a>.</div>
       {% endif %}
     </div>
   </div>
