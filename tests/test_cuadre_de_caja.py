@@ -365,6 +365,16 @@ def test_el_cobrador_ve_su_propia_caja(entorno):
     assert cuerpo["cuadre"]["usuario_id"] == d["luis_id"]
 
 
+def test_la_caja_del_cobrador_sirve_sin_senal(entorno):
+    """Sus gastos viven en el celular: sin señal la caja no puede quedarse en
+    "No hay conexion". Guarda la ultima copia del dia y la muestra."""
+    s, _, _ = entorno
+    html = s["luis"].get("/caja").text
+    for pieza in ('id="d-sin-senal"', "_guardarCopia(d.cuadre)", "'cp-caja:' + YO",
+                  "Igual puedes anotar tus gastos"):
+        assert pieza in html, pieza
+
+
 def test_el_cobrador_no_ve_la_caja_de_otro(entorno):
     s, d, _ = entorno
     r = s["luis"].get("/caja/resumen", params={"usuario_id": d["marta_id"],

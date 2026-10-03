@@ -59,6 +59,7 @@
 
 <!-- UN SOLO COBRADOR -->
 <div id="detalle" style="display:none;">
+  <div id="d-sin-senal" class="fs-12 mb-3" style="display:none;padding:10px 12px;border-radius:var(--r-sm);background:var(--abg);color:#92400E;"></div>
   <div class="card mb-3">
     <div class="card-header">
       <div class="card-title" id="d-nombre">—</div>
@@ -214,13 +215,39 @@ async function cargar(){
     const r = await window.fetch('/caja/resumen?' + p);
     const d = await leerRespuesta(r);
     if (d.error) { _estado(d.error, '⚠️'); return; }
+    _avisoSinSenal('');
     if (d.cuadres) pintarTodos(d);
-    else pintarUno(d.cuadre);
+    else { if (!ES_ADMIN) _guardarCopia(d.cuadre); pintarUno(d.cuadre); }
   } catch(e) {
     console.error('[Caja] No se pudo cargar:', e);
+    // Sin señal: la caja del cobrador es una guia y sus gastos viven en el
+    // celular, asi que se sigue pudiendo usar con la ultima copia del dia.
+    if (!ES_ADMIN) {
+      const copia = _copia();
+      _avisoSinSenal(copia
+        ? `Sin señal: cifras de las ${copia.hora}. Tus gastos se siguen anotando en el celular.`
+        : 'Sin señal y aún no hay cifras guardadas de hoy. Igual puedes anotar tus gastos.');
+      pintarUno(copia ? copia.cuadre : {nombre: 'Mi caja', base: 0, cobrado: 0, num_cobros: 0,
+                prestado: 0, num_prestamos: 0, gastos: 0, entregado: 0, esperado: 0, movimientos: []});
+      return;
+    }
     _estado('No hay conexion. Intenta de nuevo.', '📡');
   }
 }
+
+function _avisoSinSenal(txt){
+  const a = document.getElementById('d-sin-senal');
+  a.textContent = txt; a.style.display = txt ? '' : 'none';
+}
+// La ultima caja que llego del servidor, por cobrador y dia.
+function _claveCopia(){ return 'cp-caja:' + YO + ':' + _dia(); }
+function _guardarCopia(c){
+  try {
+    const h = new Date(), p2 = n => String(n).padStart(2, '0');
+    localStorage.setItem(_claveCopia(), JSON.stringify({cuadre: c, hora: p2(h.getHours()) + ':' + p2(h.getMinutes())}));
+  } catch(e) {}
+}
+function _copia(){ try { return JSON.parse(localStorage.getItem(_claveCopia()) || 'null'); } catch(e) { return null; } }
 
 // Una linea del desglose. El signo va en el texto y no solo en el color,
 // porque en un cuadre confundir una suma con una resta lo cambia todo.

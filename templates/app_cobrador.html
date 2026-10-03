@@ -462,7 +462,7 @@ function _textoLuz(c){
   if (!c.prestamos || !c.prestamos.length) return 'Sin préstamo';
   const partes = [];
   if (c.cobrado_hoy > 0) partes.push('<span class="tag-cobrado">Cobrado</span>');
-  else if (c.prestamos.every(p => p.sin_empezar) && !n) partes.push('<span class="tag-nuevo-gris">Nuevo · aún sin cuotas</span>');
+  else if (c.prestamos.every(p => p.sin_empezar) && !n) partes.push('<span class="tag-nuevo-gris">Aún sin cuotas</span>');
   else partes.push('<span class="tag-por-cobrar">Por cobrar</span>');
   if (c.prestamos.length === 1) {
     const p = c.prestamos[0].pendiente || {};
@@ -534,7 +534,7 @@ function _tarjeta(c){
   }
 
   const extra = [];
-  if (c.cobrar_hoy && c.estado === 'verde') extra.push('<span class="cobrar-hoy">Cobrar hoy</span>');
+  // "Cobrar hoy" ya no va aparte: lo dice "Por cobrar" (ver _textoLuz).
   if (c.cobrado_hoy > 0) extra.push(cop(c.cobrado_hoy));
   if (c.no_pago_hoy) extra.push('sin pago');
   const varios = c.prestamos.length > 1;

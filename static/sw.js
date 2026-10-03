@@ -18,12 +18,16 @@ self.addEventListener('install', e => {
   // Uno por uno en vez de addAll: addAll es atomico, asi que si una sola URL
   // fallaba (p.ej. /clientes redirige al login cuando aun no hay sesion) se
   // perdia TODO el precacheo, en silencio por el .catch de antes.
-  e.waitUntil(caches.open(CACHE).then(c => Promise.allSettled(
-    STATIC.map(async u => {
-      const res = await fetch(new Request(u, { cache: 'reload' }));
-      if (res.ok && !res.redirected) await c.put(u, res);
-    })
-  )));
+  // Una tras otra, no todas a la vez: 8 pantallas juntas, mas la
+  // sincronizacion de datos, llenaban las conexiones del servidor.
+  e.waitUntil(caches.open(CACHE).then(async c => {
+    for (const u of STATIC) {
+      try {
+        const res = await fetch(new Request(u, { cache: 'reload' }));
+        if (res.ok && !res.redirected) await c.put(u, res);
+      } catch (err) { /* sin señal: se intenta en la proxima */ }
+    }
+  }));
   self.skipWaiting();
 });
 
@@ -106,12 +110,12 @@ function respuestaSinSeñal() {
  *  hubiera abierto. Esto lo dispara pwa.js despues de cada sincronizacion. */
 async function precargarPantallas() {
   const c = await caches.open(CACHE);
-  await Promise.allSettled(STATIC.map(async u => {
+  for (const u of STATIC) {                // una tras otra (ver install)
     try {
       const res = await fetch(new Request(u, { cache: 'reload' }), { credentials: 'same-origin' });
       if (res.ok && !res.redirected) await c.put(u, res);
     } catch (e) { /* sin señal: se queda lo que ya hubiera */ }
-  }));
+  }
 }
 
 self.addEventListener('message', e => {

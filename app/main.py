@@ -169,6 +169,9 @@ app.add_middleware(
 app.add_middleware(AuditMiddleware)
 app.add_middleware(MetricasMiddleware)
 app.add_middleware(RequestIDMiddleware)
+# La mas externa: cuantas peticiones entran a la vez (ver limite_concurrencia).
+from app.utils.limite_concurrencia import LimiteConcurrenciaMiddleware  # noqa: E402
+app.add_middleware(LimiteConcurrenciaMiddleware)
 
 # Los estaticos se construyen antes de montarlos: la carpeta static/dist no
 # esta en el repositorio (se genera), y StaticFiles exige que exista en el
