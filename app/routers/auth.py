@@ -313,11 +313,31 @@ async def login_submit(
     return response
 
 
+def _pagina_2fa(request: Request, error: str | None = None, status_code: int = 200):
+    """La pantalla del codigo, con el token CSRF en el formulario.
+
+    Es un <form> HTML de verdad (no un fetch), asi que el token no viaja en la
+    cabecera: tiene que ir en el campo csrf_token. Sin el, el middleware
+    rechazaba TODOS los codigos -- buenos o malos -- con "Solicitud bloqueada
+    por CSRF", y nadie con la verificacion en dos pasos podia entrar.
+    """
+    token = request.cookies.get(CSRF_COOKIE)
+    nuevo = not token
+    if nuevo:
+        token = generate_csrf_token()
+    respuesta = templates.TemplateResponse(
+        request, "auth/2fa.html", {"error": error, "csrf_token": token}, status_code=status_code)
+    if nuevo:
+        respuesta.set_cookie(key=CSRF_COOKIE, value=token, httponly=False, samesite="strict",
+                             max_age=60 * 60 * 12, secure=IS_PRODUCTION)
+    return respuesta
+
+
 @router.get("/2fa")
 async def two_factor_page(request: Request):
     if not request.session.get("two_factor_pending_user_id"):
         return RedirectResponse(url="/license/activar", status_code=302)
-    return templates.TemplateResponse(request, "auth/2fa.html", {"error": None})
+    return _pagina_2fa(request)
 
 
 @router.post("/2fa")
@@ -329,9 +349,7 @@ async def two_factor_submit(
     from time import time
 
     if is_rate_limited(request, "/auth/2fa", 5, 300):
-        return templates.TemplateResponse(
-            request, "auth/2fa.html", {"error": "Demasiados intentos. Intenta mas tarde."}, status_code=429
-        )
+        return _pagina_2fa(request, "Demasiados intentos. Intenta mas tarde.", 429)
     pending_id = request.session.get("two_factor_pending_user_id")
     pending_at = float(request.session.get("two_factor_pending_at", 0))
     if not pending_id or time() - pending_at > 300:
@@ -357,9 +375,7 @@ async def two_factor_submit(
             user.two_factor_backup_hashes = updated_hashes
             db.commit()
     if not valid or not user:
-        return templates.TemplateResponse(
-            request, "auth/2fa.html", {"error": "Codigo de doble factor invalido."}, status_code=401
-        )
+        return _pagina_2fa(request, "Codigo de doble factor invalido.", 401)
 
     request.session.pop("two_factor_pending_user_id", None)
     request.session.pop("two_factor_pending_at", None)

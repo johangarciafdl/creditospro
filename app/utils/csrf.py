@@ -66,6 +66,11 @@ async def _read_form_token(request) -> str | None:
     if not content_type.startswith(("application/x-www-form-urlencoded", "multipart/form-data")):
         return None
     try:
+        # Primero body(): asi el cuerpo queda guardado y BaseHTTPMiddleware se
+        # lo reenvia a la ruta. Con form() a secas el cuerpo se consumia aqui y
+        # la ruta lo recibia vacio (422: faltaban los campos) -- el token CSRF
+        # en un campo de formulario nunca funciono; solo el de la cabecera.
+        await request.body()
         form = await request.form()
         token = form.get(CSRF_FORM_FIELD)
         return token if isinstance(token, str) else None

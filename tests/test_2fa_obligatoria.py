@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 HTML = {"accept": "text/html"}
+entorno_extra = {}
 
 
 @pytest.fixture(scope="module")
@@ -74,6 +75,7 @@ def entorno():
         return cli
 
     jefa, cobra = entrar("dpjefa"), entrar("dpcobra")
+    entorno_extra.update(clave=clave, app=app)
     yield jefa, cobra
     os.environ["EXIGIR_2FA_ADMIN"] = anterior or "0"
     for c in (jefa, cobra):
@@ -105,6 +107,7 @@ def test_activarla_con_la_contrasena_el_qr_y_un_codigo(entorno):
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["qr_svg"].lstrip().startswith("<svg") and d["secret"]
+    pytest.secreto_2fa = d["secret"]
     assert jefa.post("/auth/2fa/setup/confirm", data={"code": "000000"}).status_code == 400
     r = jefa.post("/auth/2fa/setup/confirm", data={"code": pyotp.TOTP(d["secret"]).now()})
     assert r.status_code == 200 and len(r.json()["backup_codes"]) == 10
@@ -132,3 +135,33 @@ def test_la_cuenta_de_plataforma_no_queda_encerrada():
     admin = SimpleNamespace(rol="admin", two_factor_enabled=False)
     assert exige_segundo_factor(sa, req) is False
     assert exige_segundo_factor(admin, SimpleNamespace(url=SimpleNamespace(path="/dashboard"))) is True
+
+
+
+def test_entrar_con_el_codigo_desde_el_formulario_del_navegador(entorno):
+    """El error real: con la 2FA activa, el formulario del codigo (un <form>
+    HTML, sin cabecera CSRF) se rechazaba siempre con "Solicitud bloqueada
+    por CSRF", aunque el codigo fuera el correcto."""
+    import re
+    from conftest import vaciar_limitador
+    secreto = getattr(pytest, "secreto_2fa", None)
+    assert secreto, "esta prueba va despues de activar la 2FA"
+    vaciar_limitador()
+    with TestClient(entorno_extra["app"]) as nav:      # sin cabecera x-csrf-token
+        assert nav.post("/license/activate",
+                        data={"license_key": entorno_extra["clave"]}).status_code == 200
+        r = nav.post("/auth/login", data={"username": "dpjefa", "password": "ClaveDePrueba123!"},
+                     follow_redirects=False)
+        assert r.status_code in (302, 303) and r.headers["location"] == "/auth/2fa", r.text
+        pagina = nav.get("/auth/2fa").text
+        token = re.search(r'name="csrf_token" value="([^"]+)"', pagina)
+        assert token, "el formulario del codigo no lleva el token CSRF"
+        # Un codigo malo: error del codigo, no de CSRF.
+        r = nav.post("/auth/2fa", data={"code": "000000", "csrf_token": token.group(1)},
+                     follow_redirects=False)
+        assert r.status_code == 401 and "CSRF" not in r.text
+        token = re.search(r'name="csrf_token" value="([^"]+)"', r.text).group(1)
+        r = nav.post("/auth/2fa", data={"code": pyotp.TOTP(secreto).now(), "csrf_token": token},
+                     follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/dashboard", r.text
+        assert nav.get("/dashboard", headers=HTML, follow_redirects=False).status_code == 200
