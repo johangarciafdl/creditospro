@@ -5,9 +5,12 @@ from fastapi.responses import StreamingResponse, JSONResponse, RedirectResponse
 from app.templates import templates
 from sqlalchemy.orm import Session
 
-from app.database import get_db, Zona, hoy_local
+from app.database import Empresa, Liquidacion, get_db, Zona, hoy_local
 from app.routers.auth import get_current_user
 from app.services.excel_service import reporte_cobros_diarios, reporte_cartera, reporte_resumen_zonas
+from app.services import reportes_admin as ra
+from app.utils import finanzas as fz
+from app.utils.cuadre_semanal import lunes_de
 from app.utils.permisos_rol import puede_ver_reportes
 from app.utils.rate_limit import is_rate_limited
 from app.utils.zone_permissions import get_allowed_zone_ids
@@ -41,8 +44,21 @@ async def pagina_reportes(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/cobros", status_code=302)
     hoy = hoy_local()
     zonas = db.query(Zona).filter(Zona.empresa_id == user.empresa_id).all()
+    # Las ultimas semanas (lunes) y los ciclos de 6 semanas, para elegir.
+    lunes = lunes_de(hoy)
+    semanas = [lunes - datetime.timedelta(days=7 * i) for i in range(12)]
+    ciclos = []
+    empresa = db.get(Empresa, user.empresa_id)
+    if empresa and empresa.ciclo_inicio:
+        cerrados = {n for (n,) in db.query(Liquidacion.numero)
+                    .filter(Liquidacion.empresa_id == user.empresa_id)}
+        for n in range(max(1, fz.numero_de(empresa.ciclo_inicio, hoy)), 0, -1):
+            d, h = fz.ciclo(empresa.ciclo_inicio, n)
+            ciclos.append({"numero": n, "desde": d, "hasta": h, "cerrado": n in cerrados,
+                           "en_curso": h >= hoy})
     return templates.TemplateResponse(request, "reportes.html", {
-        "page": "reportes", "zonas": zonas,
+        "page": "reportes", "zonas": zonas, "semanas": semanas, "ciclos": ciclos,
+        "estados_clientes": ra.ESTADOS_CLIENTES, "timedelta7": datetime.timedelta(days=6),
         "hoy": hoy.isoformat(),
         "desde": hoy.replace(day=1).isoformat(),
         "hasta": hoy.isoformat(),
@@ -131,3 +147,77 @@ async def descargar_resumen_zonas(
         zona_ids=get_allowed_zone_ids(db, user),
     )
     return _excel_response(data, f"resumen_zonas_{hoy.strftime('%Y%m%d')}.xlsx")
+
+
+def _admin_reportes(request: Request, db: Session, ruta: str, limite: int):
+    """Usuario, o la respuesta de error (sin sesion, sin permiso, abuso)."""
+    user = get_current_user(request, db)
+    if not user:
+        return None, JSONResponse({"error": "No autenticado"}, status_code=401)
+    if not puede_ver_reportes(user):
+        return None, JSONResponse({"error": "Sin permisos para los informes."}, status_code=403)
+    if is_rate_limited(request, ruta, limite, 60):
+        return None, JSONResponse({"error": "Demasiadas descargas. Intenta en un minuto."},
+                                  status_code=429)
+    return user, None
+
+
+def _zona_permitida(db: Session, user, zona_id: int | None):
+    permitidas = get_allowed_zone_ids(db, user)
+    if zona_id is not None and permitidas is not None and zona_id not in permitidas:
+        return permitidas, JSONResponse({"error": "Sin permisos para esa zona"}, status_code=403)
+    return permitidas, None
+
+
+@router.get("/semanal")
+async def descargar_semanal(request: Request, semana: str = Query(default=None),
+                            zona_id: int = Query(default=None), db: Session = Depends(get_db)):
+    user, error = _admin_reportes(request, db, "/reportes/semanal", 10)
+    if error:
+        return error
+    permitidas, error = _zona_permitida(db, user, zona_id)
+    if error:
+        return error
+    try:
+        dia = datetime.date.fromisoformat(semana) if semana else hoy_local()
+    except ValueError:
+        return JSONResponse({"error": "Fecha invalida. Usa el formato AAAA-MM-DD."}, status_code=400)
+    lunes = lunes_de(dia)
+    data = ra.reporte_semanal(db, user.empresa_id, lunes, zona_id=zona_id, zona_ids=permitidas)
+    return _excel_response(data, f"semana_{lunes.strftime('%Y%m%d')}.xlsx")
+
+
+@router.get("/cierre-cartera")
+async def descargar_cierre(request: Request, ciclo: int = Query(default=None),
+                           db: Session = Depends(get_db)):
+    user, error = _admin_reportes(request, db, "/reportes/cierre-cartera", 6)
+    if error:
+        return error
+    empresa = db.get(Empresa, user.empresa_id)
+    if not empresa or not empresa.ciclo_inicio:
+        return JSONResponse({"error": "Primero configura el inicio de los ciclos en Finanzas."},
+                            status_code=400)
+    actual = max(1, fz.numero_de(empresa.ciclo_inicio, hoy_local()))
+    numero = ciclo or actual
+    if not 1 <= numero <= actual:
+        return JSONResponse({"error": "Ese ciclo no existe todavia."}, status_code=400)
+    permitidas, _ = _zona_permitida(db, user, None)
+    data = ra.reporte_cierre(db, user.empresa_id, numero, zona_ids=permitidas)
+    return _excel_response(data, f"cierre_cartera_ciclo_{numero}.xlsx")
+
+
+@router.get("/clientes-prestamos")
+async def descargar_clientes_prestamos(request: Request, zona_id: int = Query(default=None),
+                                       estado: str = Query(default="con_saldo"),
+                                       db: Session = Depends(get_db)):
+    user, error = _admin_reportes(request, db, "/reportes/clientes-prestamos", 6)
+    if error:
+        return error
+    permitidas, error = _zona_permitida(db, user, zona_id)
+    if error:
+        return error
+    if estado not in ra.ESTADOS_CLIENTES:
+        return JSONResponse({"error": "Filtro de estado desconocido."}, status_code=400)
+    data = ra.reporte_clientes(db, user.empresa_id, zona_id=zona_id, estado=estado,
+                               zona_ids=permitidas)
+    return _excel_response(data, f"clientes_prestamos_{hoy_local().strftime('%Y%m%d')}.xlsx")

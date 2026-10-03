@@ -8,6 +8,52 @@
   ✓ Los reportes se generan en formato <strong>.xlsx</strong> compatible con Microsoft Excel, Google Sheets y Office 365.
 </div>
 
+<div class="rep-grid mb-3">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Reporte semanal</div></div>
+    <div class="card-body">
+      <div class="fs-12 text-2 mb-2">El cuadre de cada zona (cobro, préstamos, gastos, base, efectivo, diferencia), el movimiento y los cobros de la semana, de lunes a domingo.</div>
+      <div class="form-group"><label for="rs-semana">Semana</label>
+        <select id="rs-semana">
+          {% for s in semanas %}<option value="{{ s.isoformat() }}">{{ s.strftime('%d/%m') }}–{{ (s + timedelta7).strftime('%d/%m') }}{% if loop.first %} (esta){% elif loop.index == 2 %} (pasada){% endif %}</option>{% endfor %}
+        </select></div>
+      <div class="form-group"><label for="rs-zona">Zona</label>
+        <select id="rs-zona"><option value="">Todas las zonas</option>
+          {% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}</select></div>
+      <button class="btn btn-gold" onclick="bajar('semanal', {semana: val('rs-semana'), zona_id: val('rs-zona')})">⬇ Descargar semana</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">Cierre de cartera (6 semanas)</div></div>
+    <div class="card-body">
+      <div class="fs-12 text-2 mb-2">Resumen por zona, semana por semana y movimiento de cartera (préstamos nuevos, renovaciones, tarjetas canceladas, retirados) del ciclo.</div>
+      {% if ciclos %}
+      <div class="form-group"><label for="rc-ciclo">Ciclo</label>
+        <select id="rc-ciclo">
+          {% for c in ciclos %}<option value="{{ c.numero }}">{{ c.numero }}: {{ c.desde.strftime('%d/%m') }}–{{ c.hasta.strftime('%d/%m') }}{% if c.en_curso %} (en curso){% elif c.cerrado %} (cerrado){% endif %}</option>{% endfor %}
+        </select></div>
+      <button class="btn btn-gold" onclick="bajar('cierre-cartera', {ciclo: val('rc-ciclo')})">⬇ Descargar cierre</button>
+      {% else %}
+      <div class="fs-13">Primero indica el lunes en que empiezan los ciclos en <a href="/finanzas">Finanzas</a>.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">Clientes y préstamos</div></div>
+    <div class="card-body">
+      <div class="fs-12 text-2 mb-2">Una fila por préstamo: cliente, cédula, teléfono, capital, total, pagado, saldo (capital e interés), cuotas atrasadas y semáforo.</div>
+      <div class="form-group"><label for="rp-zona">Zona</label>
+        <select id="rp-zona"><option value="">Todas las zonas</option>
+          {% for z in zonas %}<option value="{{ z.id }}">{{ z.nombre }}</option>{% endfor %}</select></div>
+      <div class="form-group"><label for="rp-estado">Préstamos</label>
+        <select id="rp-estado">{% for k, v in estados_clientes.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+      <button class="btn btn-gold" onclick="bajar('clientes-prestamos', {zona_id: val('rp-zona'), estado: val('rp-estado')})">⬇ Descargar clientes</button>
+    </div>
+  </div>
+</div>
+
 <div class="grid-2 mb-3">
   <div class="card">
     <div class="card-header"><div class="card-title">Filtros</div></div>
@@ -88,7 +134,32 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<style>
+.rep-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;}
+.rep-grid .card-body{display:flex;flex-direction:column;gap:6px;}
+.rep-grid .btn{margin-top:auto;}
+</style>
 <script nonce="{{ csp_nonce }}">
+const val = id => document.getElementById(id).value;
+// Descarga con fetch para poder mostrar el error (sin ciclo configurado,
+// demasiadas descargas...) en vez de dejar al usuario en una pagina JSON.
+async function bajar(tipo, filtros, btn) {
+  const params = new URLSearchParams();
+  Object.entries(filtros || {}).forEach(([k, v]) => { if (v) params.append(k, v); });
+  if (typeof toast === 'function') toast('Generando Excel...');
+  const r = await window.fetch(`/reportes/${tipo}?${params}`);
+  if (!r.ok) {
+    let msg = 'No se pudo generar el reporte';
+    try { msg = (await r.json()).error || msg; } catch (e) {}
+    if (typeof toast === 'function') toast(msg, 'error');
+    return;
+  }
+  const nombre = ((r.headers.get('Content-Disposition') || '').match(/filename=([^;]+)/) || [])[1] || `${tipo}.xlsx`;
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement('a');
+  a.href = url; a.download = nombre.trim(); document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
 function descargar(tipo, usarFiltros=false) {
   let url = `/reportes/${tipo}`;
   if (usarFiltros) {
