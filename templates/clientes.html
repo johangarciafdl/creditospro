@@ -226,8 +226,8 @@ async function buscar(opciones) {
         <div class="card-body">
           <div class="flex-between mb-2">
             <div class="flex-center gap-2">
-              <div class="avatar ${aCol}" style="width:40px;height:40px;font-size:14px;">
-                ${ini}
+              <div class="avatar ${aCol}" style="width:40px;height:40px;font-size:14px;position:relative;overflow:hidden;">
+                ${ini}${(c.foto_path||'').replace('fotos/','') ? `<img src="/uploads/miniaturas/${encodeURIComponent((c.foto_path||'').replace('fotos/',''))}" alt="" loading="lazy" class="av-foto" onerror="this.remove()">` : ''}
               </div>
               <div>
                 <div class="fw-600 fs-13">${esc(c.nombre)}</div>
@@ -350,4 +350,5 @@ async function guardarCliente() {
 {% include "_modal_cobro.html" %}
 {% include "_modal_cobro_js.html" %}
 
+<style>.av-foto{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}</style>
 {% endblock %}

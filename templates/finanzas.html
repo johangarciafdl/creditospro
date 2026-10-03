@@ -15,6 +15,7 @@
 <div id="sin-config" class="card mb-3" style="display:none;">
   <div class="card-body">
     <div class="fw-600 mb-2">¿Desde qué día cuentan los ciclos?</div>
+    <div class="fs-12 mb-2" style="color:#92400E;">Debe ser un <b>lunes</b>: las 6 semanas del ciclo son las de los cuadres semanales (lunes a domingo).</div>
     <div class="fs-12 text-3 mb-2">
       Cada ciclo dura 6 semanas, lo que tarda en pagarse un préstamo. Elige el día en que empieza
       el primero (normalmente un lunes); de ahí corren solos: ciclo 1, ciclo 2...
@@ -36,6 +37,8 @@
         <select id="sel-ciclo" onchange="cargar()"></select>
       </div>
       <div class="fs-12" id="ciclo-estado"></div>
+      <button class="btn btn-ghost btn-xs" id="btn-cambiar-inicio" style="display:none;"
+              onclick="document.getElementById('sin-config').style.display='';document.getElementById('cfg-inicio').focus();">Cambiar inicio de los ciclos</button>
     </div>
   </div>
 
@@ -111,6 +114,9 @@ function pintarCiclo(){
   sel.innerHTML = _d.ciclos.map(c =>
     `<option value="${Number(c.numero)}" ${c.numero === elegido ? 'selected' : ''}>Ciclo ${Number(c.numero)} · ${fecha(c.desde)} – ${fecha(c.hasta)} · ${ETQ[c.estado]}</option>`).join('');
   const c = _d.ciclo;
+  // La fecha de inicio solo se puede cambiar mientras no haya ciclos cerrados.
+  document.getElementById('btn-cambiar-inicio').style.display =
+    _d.ciclos.some(x => x.estado === 'cerrado') ? 'none' : '';
   const est = document.getElementById('ciclo-estado');
   est.textContent = c.cerrado ? `Cerrado por ${c.cerrado_por || '—'}`
     : c.se_puede_cerrar ? 'Terminó: listo para repartir'

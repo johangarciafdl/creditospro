@@ -213,6 +213,7 @@ function renderPendientes(items, ordenable){
     return `<div class="card${marcada?'':' card-hover'}"${marcada?' style="opacity:.72;border-left:3px solid var(--amber);"':''}>
       <div style="display:flex;align-items:center;gap:12px;padding:13px 16px;">
         ${manija?'<div class="manija" title="Arrastra para mover" aria-label="Mover">☰</div>':''}
+        <div class="mini-foto">${esc((p.cliente||'?').trim().slice(0,2).toUpperCase())}${p.miniatura ? `<img src="/uploads/miniaturas/${encodeURIComponent(p.miniatura)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;font-size:13px;">${esc(p.cliente)}</div>
           <div style="font-size:11px;color:var(--t3);">CC ${esc(p.cedula)} &nbsp;&middot;&nbsp; Cuota ${Number(p.cuota_num||0)}/${Number(p.total_cuotas||0)} &nbsp;&middot;&nbsp; Vence ${esc(p.vencimiento)}</div>
@@ -386,4 +387,5 @@ async function deshacerNoPago(cuotaId){
 .tab-btn{padding:6px 14px;border:none;background:none;border-radius:var(--r-sm);font-size:12px;font-weight:500;color:var(--t2);cursor:pointer;transition:all .15s}
 .tab-btn.active{background:var(--surface);color:var(--t1);box-shadow:var(--shadow-xs)}
 </style>
+<style>.mini-foto{position:relative;width:40px;height:40px;border-radius:10px;flex-shrink:0;overflow:hidden;background:var(--bg-2);color:var(--t2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}.mini-foto img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}</style>
 {% endblock %}

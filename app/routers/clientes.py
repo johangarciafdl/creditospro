@@ -29,6 +29,7 @@ from app.utils.interfaz import redirigir_a_vista_simple
 from app.utils.money import money
 from app.utils.ubicacion import leer_coordenadas
 from app.utils.permisos_rol import (
+    es_admin,
     puede_atender_notas,
     puede_crear_clientes,
     puede_editar_clientes,
@@ -569,6 +570,7 @@ async def detalle_cliente(
         .all()
     ):
         cobros_por_cuota.setdefault(co.cuota_id, []).append({
+            "id": co.id,
             "fecha": co.fecha.strftime("%d/%m/%Y") if co.fecha else "—",
             "valor": float(co.valor_cobrado or 0),
             "metodo": co.metodo_pago or "Efectivo",
@@ -593,6 +595,10 @@ async def detalle_cliente(
             "num_cuotas": p.num_cuotas or 0,
             "valor_cuota": p.valor_cuota or 0,
             "estado": p.estado or "Activo",
+            # Para corregirlo (solo el admin): los valores con que se creo.
+            "tasa": p.tasa_interes or 0, "plazo_dias": p.plazo_dias or 1,
+            "fecha_inicio_iso": p.fecha_inicio.isoformat() if p.fecha_inicio else "",
+            "anulado_por": p.anulado_por or "", "motivo_anulacion": p.motivo_anulacion or "",
             "vencidas": sum(1 for c in p.cuotas if (c.estado or "") == "Vencida"),
             "fecha_inicio": p.fecha_inicio.strftime("%d/%m/%Y") if p.fecha_inicio else "—",
             "fecha_fin": p.fecha_fin.strftime("%d/%m/%Y") if p.fecha_fin else "—",
@@ -664,6 +670,8 @@ async def detalle_cliente(
         # Un boton que responde 403 al pulsarlo es un boton que no debe estar.
         "puede_editar": puede_editar_clientes(user),
         "puede_prestar": puede_gestionar_prestamos(user),
+        # Corregir cobros y prestamos, anular y retirar: solo el admin.
+        "es_admin": es_admin(user),
         "cliente": cliente, "zona": zona, "zonas": zonas,
         "prestamos": prestamos_data,
         "cobradores": cobradores,

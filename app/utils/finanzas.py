@@ -145,6 +145,7 @@ def resumen(db: Session, empresa_id: int, desde: datetime.date,
     for zid, capital in (
         db.query(Prestamo.zona_id, func.sum(Prestamo.capital))
         .filter(Prestamo.empresa_id == empresa_id,
+                Prestamo.estado != "Anulado",          # anulado = no salio de verdad
                 dia_salida >= desde, dia_salida <= hasta)
         .group_by(Prestamo.zona_id)
         .all()

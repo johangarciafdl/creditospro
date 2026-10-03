@@ -251,6 +251,8 @@ async def pendientes(request: Request, zona_id: int=None, q: str="", fecha: str=
         "no_pago_motivo": motivos.get(cu.id, ""),
         "no_pagos": historico.get(cu.id, 0),
         "zona_id": cl.zona_id,
+        # La foto en miniatura (el nombre; la pagina la pide al verla).
+        "miniatura": (cl.foto_path or "").replace("fotos/", "") or None,
     } for cu, p, cl in rows], "ordenable": ordenable})
 
 @router.post("/registrar")

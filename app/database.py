@@ -815,6 +815,10 @@ class Cliente(Base):
     codeudor_tel = Column(String(20), nullable=True)
     tipo_cliente = Column(String(50), default="Regular")
     activo = Column(Boolean, default=True)
+    # Retirado por el admin (activo=False): quien, cuando y por que.
+    retirado_por = Column(String(200), nullable=True)
+    retirado_en = Column(DateTime, nullable=True)
+    motivo_retiro = Column(String(300), nullable=True)
     creado = Column(DateTime, default=func.now())
     actualizado = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -853,6 +857,10 @@ class Prestamo(Base):
                                  nullable=True, index=True)
     fecha_desembolso = Column(Date, nullable=True, index=True)
     observaciones = Column(Text, nullable=True)
+    # Anulado por el admin: sigue en el historial, fuera de la ruta y la cartera.
+    anulado_por = Column(String(200), nullable=True)
+    anulado_en = Column(DateTime, nullable=True)
+    motivo_anulacion = Column(String(300), nullable=True)
     creado = Column(DateTime, default=func.now())
 
     cliente = relationship("Cliente", back_populates="prestamos")
@@ -863,7 +871,7 @@ class Prestamo(Base):
         CheckConstraint("capital > 0", name="ck_prestamo_capital_pos"),
         CheckConstraint("num_cuotas > 0 AND num_cuotas <= 365", name="ck_prestamo_cuotas_rango"),
         CheckConstraint("tasa_interes >= 0 AND tasa_interes <= 100", name="ck_prestamo_tasa_rango"),
-        CheckConstraint("estado IN ('Activo','Pagado','Mora','Castigado','Cancelado','Atrasado')",
+        CheckConstraint("estado IN ('Activo','Pagado','Mora','Castigado','Cancelado','Atrasado','Anulado')",
                         name="ck_prestamo_estado"),
     )
 
@@ -891,7 +899,8 @@ class Cuota(Base):
         CheckConstraint("valor_pagado >= 0", name="ck_cuota_pagado_no_neg"),
         CheckConstraint("valor_pagado <= valor", name="ck_cuota_pagado_no_excede"),
         CheckConstraint(
-            "estado IN ('Pendiente','Pagada','Vencida','Parcial')",
+            # 'Anulada': cuota pendiente de un prestamo anulado por el admin.
+            "estado IN ('Pendiente','Pagada','Vencida','Parcial','Anulada')",
             name="ck_cuota_estado",
         ),
     )
