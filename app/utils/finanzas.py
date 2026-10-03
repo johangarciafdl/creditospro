@@ -11,24 +11,24 @@ De cada ciclo, zona por zona:
              prestamo: de uno de 500.000 al 20 % (600.000 en total), cada
              peso es 5/6 capital y 1/6 interes.
 
-Y de la empresa entera:
+- gastos, salarios y descuento: los de los cuadres semanales que el
+             administrador verifico para esa zona (la caja del cobrador es solo
+             una guia y no sube nada). Una semana sin cuadre no aporta gastos.
 
-- gastos:     los que anotan los cobradores (no son de una zona: un
-              cobrador puede llevar varias).
-- resultado:  cobrado - prestado - gastos. Es el flujo de caja, la plata que
-              de verdad quedo de mas (o de menos, si se presto mas de lo que
-              entro: la cartera crecio). Es lo que se reparte.
-- ganancia:   intereses - gastos. Lo que el negocio gano, aunque parte siga
-              en la calle.
+Y en total:
 
-Las bases de los cobradores no son ni ganancia ni perdida: salen por la
-mañana y vuelven en la entrega de la tarde. Se muestran aparte, como la plata
-que esta ahora con los cobradores.
+- resultado:  cobrado - prestado - gastos - salarios - descuento. Es el flujo
+              de caja, la plata que de verdad quedo de mas (o de menos, si se
+              presto mas de lo que entro: la cartera crecio). Es lo que se
+              reparte al cerrar el ciclo.
+- ganancia:   intereses - gastos - salarios - descuento. Lo que el negocio
+              gano, aunque parte siga en la calle.
 
 La caja general es la plata del dueño. Su saldo no se guarda en ninguna parte:
-se calcula cada vez desde el saldo inicial que puso el administrador, mas las
-entregas de los cobradores, menos las bases que salen, mas o menos lo anotado a
-mano (retiros, aportes, pagos, reserva, ajustes). Un saldo guardado acaba
+se calcula cada vez desde el saldo inicial que puso el administrador, mas el
+efectivo de cada cuadre semanal verificado, menos la base que se llevo esa
+zona, mas o menos lo anotado a mano (retiros, aportes, pagos, reserva,
+ajustes) y lo que genera el cierre de cada ciclo. Un saldo guardado acaba
 desacordandose de los movimientos que lo explican; uno calculado no puede.
 """
 from __future__ import annotations
