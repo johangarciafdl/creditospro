@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block topbar_title %}Dashboard{% endblock %}
+{% block topbar_sub %}Cada zona por separado · en vivo{% endblock %}
+
+{% block content %}
+{#- Un tablero por zona, nunca mezcladas. Las zonas son botones arriba; la
+    abierta se refresca sola mientras la pestaña esta a la vista. -#}
+<div style="max-width:1000px;margin:0 auto;">
+
+{% if not zonas %}
+<div class="card"><div class="card-body text-3">La empresa aún no tiene zonas activas.</div></div>
+{% else %}
+<div class="zonas-tabs" role="tablist">
+  {% for z in zonas %}
+  <button class="zona-tab" role="tab" data-zona="{{ z.id }}" onclick="abrirZona({{ z.id }})">{{ z.nombre }}</button>
+  {% endfor %}
+</div>
+
+<div class="vivo fs-11 text-3"><span class="punto-vivo"></span> <span id="vivo-txt">Cargando…</span></div>
+
+<div id="tablero" style="display:none;">
+  <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));">
+    <div class="stat-card gold"><div class="stat-label">Capital por cobrar</div><div class="stat-val" id="t-capital">—</div></div>
+    <div class="stat-card blue"><div class="stat-label">Intereses por cobrar</div><div class="stat-val" id="t-interes">—</div></div>
+    <div class="stat-card"><div class="stat-label">Saldo total</div><div class="stat-val" id="t-saldo">—</div>
+      <div class="stat-sub">lo que deben los clientes de la zona</div></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card mb-3">
+      <div class="card-header"><div class="card-title">Hoy</div></div>
+      <div class="card-body filas-dato">
+        <div><span>Cobrado</span><b class="num verde" id="h-cobrado">—</b></div>
+        <div><span>Cobros</span><b class="num" id="h-num">—</b></div>
+        <div><span>Prestado</span><b class="num" id="h-prestado">—</b></div>
+        <div><span>No pagaron</span><b class="num rojo" id="h-nopago">—</b></div>
+        <div id="h-renov-fila" style="display:none;"><span>Descontado en renovaciones</span><b class="num" id="h-renov">—</b></div>
+      </div>
+    </div>
+    <div class="card mb-3">
+      <div class="card-header"><div class="card-title">Movimiento del día</div></div>
+      <div class="card-body filas-dato">
+        <div><span>Tarjetas canceladas</span><b class="num" id="m-canceladas">—</b></div>
+        <div><span>Préstamos nuevos</span><b class="num" id="m-nuevos">—</b></div>
+        <div><span>Renovaciones</span><b class="num" id="m-renov">—</b></div>
+        <div><span>Clientes nuevos</span><b class="num" id="m-clientes">—</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Cartera</div></div>
+    <div class="card-body">
+      <div class="cartera-fila">
+        <div><b class="num" id="c-clientes">—</b><span>clientes con saldo</span></div>
+        <div><b class="num verde" id="c-aldia">—</b><span>al día</span></div>
+        <div><b class="num ambar" id="c-amarillos">—</b><span>deben 1 a 3 cuotas</span></div>
+        <div><b class="num rojo" id="c-rojos">—</b><span>deben 4 o más</span></div>
+        <div><b class="num rojo" id="c-riesgo">—</b><span>en riesgo</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><div class="card-title">Últimos cobros de hoy</div></div>
+    <div class="card-body-flush"><table class="tabla-vivo">
+      <thead><tr><th>Hora</th><th>Cliente</th><th>Cobrador</th><th style="text-align:right;">Valor</th></tr></thead>
+      <tbody id="u-cobros"></tbody></table></div>
+  </div>
+</div>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+const REFRESCO = {{ segundos_refresco|int }} * 1000;
+let _zonaAbierta = null, _temporizador = null, _cargando = false;
+const pesos = v => cop(Math.round(Number(v) || 0));
+const poner = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+function abrirZona(id){
+  _zonaAbierta = Number(id);
+  try { localStorage.setItem('cp-dash-zona', String(id)); } catch(e) {}
+  document.querySelectorAll('.zona-tab').forEach(b =>
+    b.classList.toggle('activa', Number(b.dataset.zona) === _zonaAbierta));
+  cargarZona(true);
+  clearInterval(_temporizador);
+  _temporizador = setInterval(() => { if (!document.hidden) cargarZona(false); }, REFRESCO);
+}
+
+async function cargarZona(primera){
+  if (_cargando || !_zonaAbierta) return;
+  _cargando = true;
+  const zona = _zonaAbierta;
+  try {
+    const d = await leerRespuesta(await window.fetch('/dashboard/zona/' + zona));
+    if (zona !== _zonaAbierta) return;          // cambio de zona mientras cargaba
+    if (d.error) { poner('vivo-txt', d.error); return; }
+    pintar(d);
+    poner('vivo-txt', 'En vivo · actualizado ' + d.actualizado + ' · se refresca cada ' + (REFRESCO / 1000) + ' s');
+  } catch(e) {
+    poner('vivo-txt', 'Sin conexión · reintentando');
+  } finally {
+    _cargando = false;
+  }
+}
+
+function pintar(d){
+  document.getElementById('tablero').style.display = '';
+  poner('t-capital', pesos(d.capital_pendiente));
+  poner('t-interes', pesos(d.interes_pendiente));
+  poner('t-saldo', pesos(d.saldo_total));
+  poner('h-cobrado', pesos(d.hoy.cobrado));
+  poner('h-num', d.hoy.num_cobros);
+  poner('h-prestado', pesos(d.hoy.prestado));
+  poner('h-nopago', d.hoy.no_pagaron);
+  document.getElementById('h-renov-fila').style.display = d.hoy.renovado_descontado > 0 ? '' : 'none';
+  poner('h-renov', pesos(d.hoy.renovado_descontado));
+  poner('m-canceladas', d.movimiento.canceladas);
+  poner('m-nuevos', d.movimiento.nuevos + (d.movimiento.nuevos ? ' · ' + pesos(d.movimiento.nuevos_valor) : ''));
+  poner('m-renov', d.movimiento.renovaciones);
+  poner('m-clientes', d.movimiento.clientes_nuevos);
+  poner('c-clientes', d.cartera.clientes);
+  poner('c-aldia', d.cartera.al_dia);
+  poner('c-amarillos', d.cartera.amarillos);
+  poner('c-rojos', d.cartera.rojos);
+  poner('c-riesgo', pesos(d.cartera.en_riesgo));
+  document.getElementById('u-cobros').innerHTML = d.ultimos_cobros.length
+    ? d.ultimos_cobros.map(c => `<tr><td class="num">${esc(c.hora)}</td><td>${esc(c.cliente)}</td>
+        <td class="text-3 fs-12">${esc(c.cobrador)}</td><td class="num" style="text-align:right;">${pesos(c.valor)}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="text-3" style="padding:14px;">Aún no hay cobros hoy en esta zona</td></tr>';
+}
+
+// Al volver a la pestaña, ponerse al dia enseguida.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) cargarZona(false); });
+
+(function(){
+  const botones = [...document.querySelectorAll('.zona-tab')];
+  if (!botones.length) return;
+  let guardada = null;
+  try { guardada = localStorage.getItem('cp-dash-zona'); } catch(e) {}
+  const inicial = botones.find(b => b.dataset.zona === guardada) || botones[0];
+  abrirZona(inicial.dataset.zona);
+})();
+</script>
+<style>
+.zonas-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:6px;scrollbar-width:thin}
+.zona-tab{flex-shrink:0;padding:8px 14px;border-radius:20px;border:1px solid var(--border);background:var(--surface);
+  font-weight:600;font-size:13px;color:var(--t2);cursor:pointer;white-space:nowrap}
+.zona-tab.activa{background:var(--black);color:#fff;border-color:var(--black)}
+.vivo{display:flex;align-items:center;gap:6px;margin:0 2px 12px}
+.punto-vivo{width:8px;height:8px;border-radius:50%;background:var(--green);animation:latido 2s infinite}
+@keyframes latido{0%,100%{opacity:1}50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){.punto-vivo{animation:none}}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.filas-dato>div{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px}
+.filas-dato>div:last-child{border-bottom:none}
+.filas-dato b,.cartera-fila b{font-family:var(--mono)}
+.verde{color:var(--green)}.rojo{color:var(--red)}.ambar{color:var(--amber)}
+.cartera-fila{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.cartera-fila>div{display:flex;flex-direction:column;gap:2px}
+.cartera-fila b{font-size:20px}
+.cartera-fila span{font-size:11px;color:var(--t3)}
+.tabla-vivo{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.tabla-vivo th,.tabla-vivo td{padding:8px 12px;border-bottom:1px solid var(--border);text-align:left}
+.tabla-vivo th{font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px}
+</style>
+{% endblock %}

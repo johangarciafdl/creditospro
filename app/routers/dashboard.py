@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from app.templates import templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func, literal_column, select, text
@@ -17,6 +17,41 @@ from app.utils.zone_permissions import get_allowed_zone_ids
 
 router = APIRouter()
 
+# Cada cuanto se refresca solo el tablero de la zona abierta. Lo bastante
+# corto para ver los cobros entrar; lo bastante largo para no cargar el
+# servidor (y solo mientras la pestaña esta a la vista).
+SEGUNDOS_REFRESCO = 15
+
+
+@router.get("/dashboard/zona/{zona_id}")
+async def datos_zona(request: Request, zona_id: int, db: Session = Depends(get_db)):
+    """El tablero de una zona (solo admin). Cifras en pesos enteros."""
+    from decimal import Decimal
+    from app.utils.tablero import tablero_zona
+
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not es_admin(user):
+        return JSONResponse({"error": "Solo el administrador"}, status_code=403)
+    zona = db.query(Zona).filter(Zona.id == zona_id, Zona.empresa_id == user.empresa_id).first()
+    if not zona:
+        return JSONResponse({"error": "Zona no encontrada"}, status_code=404)
+
+    def plano(v):
+        if isinstance(v, Decimal):
+            return float(round(v))
+        if isinstance(v, dict):
+            return {k: plano(x) for k, x in v.items()}
+        if isinstance(v, list):
+            return [plano(x) for x in v]
+        return v
+    datos = plano(tablero_zona(db, user.empresa_id, zona.id, hoy_local()))
+    datos["zona"] = zona.nombre
+    from app.database import a_hora_local, ahora_utc
+    datos["actualizado"] = a_hora_local(ahora_utc()).strftime("%H:%M:%S")
+    return JSONResponse(datos)
+
 
 @router.get("/dashboard")
 async def dashboard(request: Request, db: Session = Depends(get_db)):
@@ -29,6 +64,17 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     simple = redirigir_a_vista_simple(db, user)
     if simple:
         return simple
+
+    # El administrador ve un tablero por zona, sin mezclar zonas (como el
+    # programa que CreditosPro reemplaza: cada ruta con su capital y sus
+    # intereses). El cobrador de la interfaz completa sigue con el de siempre.
+    if es_admin(user):
+        zonas = (db.query(Zona).filter(Zona.empresa_id == user.empresa_id, Zona.activa == True)
+                 .order_by(Zona.nombre).all())
+        return templates.TemplateResponse(request, "dashboard_zonas.html", {
+            "page": "dashboard", "current_user": user, "zonas": zonas,
+            "segundos_refresco": SEGUNDOS_REFRESCO,
+        })
 
     eid = user.empresa_id
     allowed_zones = get_allowed_zone_ids(db, user)
