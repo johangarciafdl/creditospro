@@ -53,6 +53,7 @@ ALTER TABLE orden_ruta ENABLE ROW LEVEL SECURITY;
 ALTER TABLE liquidaciones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE movimientos_caja_general ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cierres_caja ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cuadres_semanales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE no_pagos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE archivos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notas_cliente ENABLE ROW LEVEL SECURITY;
@@ -175,6 +176,11 @@ CREATE POLICY empresa_isolation_movimientos_caja_general ON movimientos_caja_gen
 
 DROP POLICY IF EXISTS empresa_isolation_cierres_caja ON cierres_caja;
 CREATE POLICY empresa_isolation_cierres_caja ON cierres_caja
+  USING (empresa_id = public.current_empresa_id())
+  WITH CHECK (empresa_id = public.current_empresa_id());
+
+DROP POLICY IF EXISTS empresa_isolation_cuadres_semanales ON cuadres_semanales;
+CREATE POLICY empresa_isolation_cuadres_semanales ON cuadres_semanales
   USING (empresa_id = public.current_empresa_id())
   WITH CHECK (empresa_id = public.current_empresa_id());
 

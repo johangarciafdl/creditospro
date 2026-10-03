@@ -15,12 +15,15 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.database import CierreCaja, MovimientoCaja, Usuario, ahora_utc, get_db, hoy_local
+from app.database import (CuadreSemanal, Liquidacion, MovimientoCaja, Usuario, Zona,
+                          ahora_utc, get_db, hoy_local)
+from sqlalchemy.exc import IntegrityError
+from app.utils import cuadre_semanal as cs
 from app.routers.auth import get_current_user
 from app.templates import templates
 from app.utils.audit import log_action
 from app.utils.caja import (NOMBRES, TIPOS, TIPOS_DEL_COBRADOR, caja_cerrada,
-                            cierre_de, cuadre, cuadre_de_todos)
+                            cuadre, cuadre_de_todos)
 from app.utils.money import money
 from app.utils.permisos_rol import (es_admin, puede_anotar_gastos,
                                     puede_registrar_movimientos_caja,
@@ -61,6 +64,14 @@ async def pagina_caja(request: Request, db: Session = Depends(get_db)):
             .order_by(Usuario.nombre)
             .all()
         )
+
+    if es_admin(user):
+        zonas = (db.query(Zona).filter(Zona.empresa_id == user.empresa_id, Zona.activa == True)
+                 .order_by(Zona.nombre).all())
+        return templates.TemplateResponse(request, "caja_semanal.html", {
+            "page": "caja", "current_user": user, "zonas": zonas,
+            "hoy": hoy_local().isoformat(),
+        })
 
     return templates.TemplateResponse(request, "caja.html", {
         "page": "caja",
@@ -151,6 +162,12 @@ async def registrar_movimiento(
     if tipo not in TIPOS:
         return JSONResponse({"error": "Tipo de movimiento invalido"}, status_code=400)
 
+    if not puede_registrar_movimientos_caja(user):
+        # La caja del cobrador es solo una guia: lo que anota se queda en su
+        # celular. Los gastos oficiales los pone el admin en el cuadre semanal.
+        return JSONResponse(
+            {"error": "Tu caja es una guía: lo que anotas se queda en tu celular."},
+            status_code=403)
     propio = tipo in TIPOS_DEL_COBRADOR and usuario_id == user.id
     if not (puede_registrar_movimientos_caja(user)
             or (propio and puede_anotar_gastos(user))):
@@ -276,115 +293,167 @@ async def borrar_movimiento(request: Request, movimiento_id: int,
     })
 
 
-# ── CIERRE DEL DIA ────────────────────────────────────────────────────────
-# El cobrador declara cuanto entrega; el administrador cuenta y confirma.
-# Al confirmar se anota la entrega (de ahi la toma tambien la caja general),
-# queda la diferencia contra lo esperado y el dia se cierra.
 
-def _pesos_form(texto: str):
-    limpio = "".join(ch for ch in str(texto or "") if ch.isdigit())
-    if not limpio:
-        return None
-    v = money(limpio)
-    if v > MAXIMO_MOVIMIENTO:
-        raise ValueError("Ese valor parece un error de tecleo. Revisalo.")
-    return v
+# ── CUADRE SEMANAL POR ZONA (admin) ───────────────────────────────────────
+# Como el cuadre del programa que CreditosPro reemplaza: COBRO y PRESTAMOS los
+# propone el sistema; GASTOS, SALARIOS, BASE, DESCUENTO y EFECTIVO los pone el
+# administrador. "Calcular" no guarda; "Verificar" guarda y deja fijo.
 
-
-@router.post("/caja/cierre/declarar")
-async def declarar_cierre(request: Request, entrego: str = Form(""), nota: str = Form(""),
-                          db: Session = Depends(get_db)):
-    """El cobrador dice cuanto entrega hoy. Puede corregirlo hasta que el
-    administrador confirme."""
+def _admin_caja(request: Request, db: Session):
     user = get_current_user(request, db)
     if not user:
-        return JSONResponse({"error": "No autorizado"}, status_code=401)
-    if es_admin(user):
-        return JSONResponse({"error": "El cierre lo declara el cobrador."}, status_code=400)
+        return None, JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not es_admin(user):
+        return None, JSONResponse({"error": "Solo el administrador"}, status_code=403)
+    return user, None
+
+
+def _zona_y_semana(db, user, zona_id, semana_txt):
+    zona = db.query(Zona).filter(Zona.id == zona_id, Zona.empresa_id == user.empresa_id).first()
+    dia = _fecha(semana_txt)
+    if not zona or dia is None:
+        return None, None
+    return zona, cs.lunes_de(dia)
+
+
+def _plano(d: dict) -> dict:
+    return {k: (float(v) if hasattr(v, "quantize") else
+                v.isoformat() if isinstance(v, datetime.date) else v) for k, v in d.items()}
+
+
+def _valores_form(form) -> dict:
+    vals = {}
+    for k in ("cobro", "prestamos") + cs.CAMPOS_ADMIN:
+        limpio = "".join(ch for ch in str(form.get(k) or "") if ch.isdigit())
+        vals[k] = money(limpio or "0")
+        if vals[k] > MAXIMO_MOVIMIENTO * 20:
+            raise ValueError(f"{k}: ese valor parece un error de tecleo")
+    return vals
+
+
+@router.get("/caja/semanal/datos")
+async def cuadre_datos(request: Request, zona_id: int, semana: str = "",
+                       db: Session = Depends(get_db)):
+    user, error = _admin_caja(request, db)
+    if error:
+        return error
+    zona, lunes = _zona_y_semana(db, user, zona_id, semana or hoy_local().isoformat())
+    if not zona:
+        return JSONResponse({"error": "Zona o semana invalida"}, status_code=400)
+    guardado = (db.query(CuadreSemanal)
+                .filter(CuadreSemanal.empresa_id == user.empresa_id,
+                        CuadreSemanal.zona_id == zona.id, CuadreSemanal.semana == lunes).first())
+    p = cs.propuesta(db, user.empresa_id, zona.id, lunes)
+    # Las ultimas 8 semanas de esa zona: cuales estan verificadas.
+    hace = lunes - datetime.timedelta(weeks=7)
+    hechas = {c.semana for c in db.query(CuadreSemanal.semana).filter(
+        CuadreSemanal.empresa_id == user.empresa_id, CuadreSemanal.zona_id == zona.id,
+        CuadreSemanal.semana >= hace)}
+    semanas = [{"semana": (hace + datetime.timedelta(weeks=i)).isoformat(),
+                "verificada": (hace + datetime.timedelta(weeks=i)) in hechas} for i in range(8)]
+    respuesta = {"zona": zona.nombre, "semana": lunes.isoformat(),
+                 "hasta": (lunes + datetime.timedelta(days=6)).isoformat(),
+                 "propuesta": _plano(p), "semanas": semanas, "verificado": None}
+    if guardado:
+        respuesta["verificado"] = _plano({
+            k: getattr(guardado, k) for k in ("cobro", "prestamos", "gastos", "salarios", "base",
+                                              "descuento", "efectivo", "esperado", "diferencia",
+                                              "intereses", "utilidad")})
+        respuesta["verificado"].update(nota=guardado.nota or "",
+                                       verificado_por=guardado.verificado_por or "")
+    return JSONResponse(respuesta)
+
+
+@router.post("/caja/semanal/calcular")
+async def cuadre_calcular(request: Request, db: Session = Depends(get_db)):
+    """Hace la cuenta con lo escrito. No guarda nada."""
+    user, error = _admin_caja(request, db)
+    if error:
+        return error
+    form = await request.form()
+    zona, lunes = _zona_y_semana(db, user, int(form.get("zona_id") or 0), str(form.get("semana") or ""))
+    if not zona:
+        return JSONResponse({"error": "Zona o semana invalida"}, status_code=400)
     try:
-        valor = _pesos_form(entrego)
-        nota = validar_descripcion(nota, "Nota", 300)
+        vals = _valores_form(form)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    intereses = cs.propuesta(db, user.empresa_id, zona.id, lunes)["intereses"]
+    return JSONResponse({"ok": True, "calculo": _plano(cs.calcular(intereses=intereses, **vals))})
+
+
+@router.post("/caja/semanal/verificar")
+async def cuadre_verificar(request: Request, db: Session = Depends(get_db)):
+    """Guarda el cuadre de la zona y la semana, y lo deja fijo."""
+    user, error = _admin_caja(request, db)
+    if error:
+        return error
+    form = await request.form()
+    zona, lunes = _zona_y_semana(db, user, int(form.get("zona_id") or 0), str(form.get("semana") or ""))
+    if not zona:
+        return JSONResponse({"error": "Zona o semana invalida"}, status_code=400)
+    if lunes > hoy_local():
+        return JSONResponse({"error": "Esa semana aun no ha empezado."}, status_code=400)
+    try:
+        vals = _valores_form(form)
+        nota = validar_descripcion(str(form.get("nota") or ""), "Nota", 300)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     except HTTPException as e:
         return JSONResponse({"error": e.detail}, status_code=e.status_code)
-    if valor is None:
-        return JSONResponse({"error": "Escribe cuanto entregas"}, status_code=400)
-
-    hoy = hoy_local()
-    c = cierre_de(db, user.id, hoy)
-    if c and c.estado == "confirmado":
-        return JSONResponse({"error": "Tu caja de hoy ya fue cerrada por el administrador."},
+    if db.query(CuadreSemanal).filter(CuadreSemanal.empresa_id == user.empresa_id,
+                                      CuadreSemanal.zona_id == zona.id,
+                                      CuadreSemanal.semana == lunes).first():
+        return JSONResponse({"error": "Esa semana ya está verificada. Para corregirla, reábrela."},
                             status_code=409)
-    esperado = money(cuadre(db, user.empresa_id, user.id, hoy)["esperado"])
-    if not c:
-        c = CierreCaja(empresa_id=user.empresa_id, usuario_id=user.id, fecha=hoy)
-        db.add(c)
-    c.esperado = esperado
-    c.declarado = valor
-    c.nota = nota or None
-    c.estado = "declarado"
-    c.declarado_en = ahora_utc()
-    db.commit()
-    log_action(db, user, "cierre_declarado", "caja", f"entrega={valor} esperado={esperado}")
-    return JSONResponse({"ok": True, "mensaje": "Entrega declarada. Falta que el administrador la confirme.",
-                         "cuadre": cuadre(db, user.empresa_id, user.id, hoy)})
-
-
-@router.post("/caja/cierre/confirmar")
-async def confirmar_cierre(request: Request, usuario_id: int = Form(...), fecha: str = Form(""),
-                           recibido: str = Form(""), nota: str = Form(""),
-                           db: Session = Depends(get_db)):
-    """El administrador confirma lo que recibio y cierra la caja de ese dia."""
-    user = get_current_user(request, db)
-    if not user:
-        return JSONResponse({"error": "No autorizado"}, status_code=401)
-    if not puede_registrar_movimientos_caja(user):
-        return JSONResponse({"error": "Solo el administrador cierra la caja."}, status_code=403)
-    dia = _fecha(fecha)
-    if dia is None or dia > hoy_local():
-        return JSONResponse({"error": "Fecha invalida"}, status_code=400)
-    objetivo = (db.query(Usuario)
-                .filter(Usuario.id == usuario_id, Usuario.empresa_id == user.empresa_id).first())
-    if not objetivo or es_admin(objetivo):
-        return JSONResponse({"error": "Cobrador no encontrado"}, status_code=404)
+    intereses = cs.propuesta(db, user.empresa_id, zona.id, lunes)["intereses"]
+    c = cs.calcular(intereses=intereses, **vals)
+    db.add(CuadreSemanal(
+        empresa_id=user.empresa_id, zona_id=zona.id, semana=lunes,
+        **{k: c[k] for k in ("cobro", "prestamos", "gastos", "salarios", "base", "descuento",
+                             "efectivo", "esperado", "diferencia", "intereses", "utilidad")},
+        nota=nota or None, verificado_por_id=user.id,
+        verificado_por=user.nombre or user.username, verificado_en=ahora_utc()))
     try:
-        valor = _pesos_form(recibido)
-        nota = validar_descripcion(nota, "Nota", 300)
-    except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
-    except HTTPException as e:
-        return JSONResponse({"error": e.detail}, status_code=e.status_code)
-    if valor is None:
-        return JSONResponse({"error": "Escribe cuanto recibiste"}, status_code=400)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return JSONResponse({"error": "Esa semana ya está verificada."}, status_code=409)
+    log_action(db, user, "cuadre_semanal_verificado", "caja",
+               f"zona={zona.nombre} semana={lunes} efectivo={c['efectivo']} "
+               f"esperado={c['esperado']} diferencia={c['diferencia']}")
+    dif = c["diferencia"]
+    texto = ("Cuadre verificado: cuadra exacto." if dif == 0 else
+             f"Cuadre verificado con {'sobrante' if dif > 0 else 'faltante'} de {abs(dif):,.0f}".replace(",", "."))
+    return JSONResponse({"ok": True, "mensaje": texto})
 
-    c = cierre_de(db, objetivo.id, dia)
-    if c and c.estado == "confirmado":
-        return JSONResponse({"error": "Esa caja ya esta cerrada."}, status_code=409)
-    esperado = money(cuadre(db, user.empresa_id, objetivo.id, dia)["esperado"])
+
+@router.post("/caja/semanal/reabrir")
+async def cuadre_reabrir(request: Request, zona_id: int = Form(...), semana: str = Form(""),
+                         db: Session = Depends(get_db)):
+    """Deshace la verificacion para poder corregir. Queda en la auditoria
+    con las cifras que tenia. No se puede si esa semana ya entro en un ciclo
+    de 6 semanas cerrado."""
+    user, error = _admin_caja(request, db)
+    if error:
+        return error
+    zona, lunes = _zona_y_semana(db, user, zona_id, semana)
+    if not zona:
+        return JSONResponse({"error": "Zona o semana invalida"}, status_code=400)
+    c = (db.query(CuadreSemanal)
+         .filter(CuadreSemanal.empresa_id == user.empresa_id, CuadreSemanal.zona_id == zona.id,
+                 CuadreSemanal.semana == lunes).first())
     if not c:
-        c = CierreCaja(empresa_id=user.empresa_id, usuario_id=objetivo.id, fecha=dia)
-        db.add(c)
-    quien = user.nombre or user.username
-    if valor > 0:
-        db.add(MovimientoCaja(
-            empresa_id=user.empresa_id, usuario_id=objetivo.id, fecha=dia, tipo="entrega",
-            valor=valor, concepto="Entrega del cierre del dia",
-            registrado_por_id=user.id, registrado_por=quien))
-    c.esperado = esperado
-    c.recibido = valor
-    c.diferencia = valor - esperado
-    if nota:
-        c.nota = ((c.nota + " · ") if c.nota else "") + nota
-    c.estado = "confirmado"
-    c.confirmado_por_id = user.id
-    c.confirmado_por = quien
-    c.confirmado_en = ahora_utc()
+        return JSONResponse({"error": "Esa semana no está verificada."}, status_code=404)
+    if db.query(Liquidacion).filter(Liquidacion.empresa_id == user.empresa_id,
+                                    Liquidacion.desde <= lunes, Liquidacion.hasta >= lunes).first():
+        return JSONResponse(
+            {"error": "Esa semana ya entró en un ciclo de 6 semanas cerrado: no se puede reabrir."},
+            status_code=409)
+    detalle = (f"zona={zona.nombre} semana={lunes} cobro={c.cobro} prestamos={c.prestamos} "
+               f"gastos={c.gastos} salarios={c.salarios} base={c.base} descuento={c.descuento} "
+               f"efectivo={c.efectivo} verificado_por={c.verificado_por}")
+    db.delete(c)
     db.commit()
-    log_action(db, user, "cierre_confirmado", "caja",
-               f"usuario={objetivo.username} fecha={dia} recibido={valor} esperado={esperado}")
-    dif = valor - esperado
-    texto = ("Caja cerrada: cuadra exacto." if dif == 0 else
-             f"Caja cerrada con {'sobrante' if dif > 0 else 'faltante'} de {abs(dif):,.0f}".replace(",", "."))
-    return JSONResponse({"ok": True, "mensaje": texto,
-                         "cuadre": cuadre(db, user.empresa_id, objetivo.id, dia)})
+    log_action(db, user, "cuadre_semanal_reabierto", "caja", detalle)
+    return JSONResponse({"ok": True, "mensaje": "Cuadre reabierto: corrígelo y vuelve a verificarlo."})

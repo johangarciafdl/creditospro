@@ -32,7 +32,7 @@ def entorno():
     if bd.exists():
         bd.unlink()
 
-    from app.database import (Base, Cliente, Cobro, Cuota, Empresa, MovimientoCaja,
+    from app.database import (Base, Cliente, Cobro, Cuota, CuadreSemanal, Empresa,
                               Prestamo, Usuario, Zona, hoy_local)
     from app.main import app
     from app.utils.company_activation import assign_company_key
@@ -53,7 +53,9 @@ def entorno():
     claves = sustituir_sesion(app, _sesion)
 
     hoy = hoy_local()
-    inicio = hoy - datetime.timedelta(days=50)
+    # Los ciclos empiezan un lunes (sus semanas son las del cuadre semanal).
+    hace50 = hoy - datetime.timedelta(days=50)
+    inicio = hace50 - datetime.timedelta(days=hace50.weekday())
     en_ciclo1 = inicio + datetime.timedelta(days=10)
     d = {"hoy": hoy, "inicio": inicio, "en_ciclo1": en_ciclo1}
     db = Sesion()
@@ -92,8 +94,10 @@ def entorno():
 
         prestamo(norte, "100000", "120000", en_ciclo1, "60000")
         prestamo(sur, "300000", "360000", inicio - datetime.timedelta(days=5), "360000")
-        db.add(MovimientoCaja(empresa_id=e.id, usuario_id=cob.id, fecha=en_ciclo1, tipo="gasto",
-                              valor=Decimal("20000"), concepto="Almuerzo"))
+        # Los gastos salen del cuadre semanal verificado de la zona.
+        db.add(CuadreSemanal(empresa_id=e.id, zona_id=norte.id,
+                             semana=en_ciclo1 - datetime.timedelta(days=en_ciclo1.weekday()),
+                             gastos=Decimal("20000")))
         db.commit()
     finally:
         db.close()
@@ -152,6 +156,8 @@ def test_solo_el_admin_ve_y_toca_las_finanzas(entorno):
 
 def test_configurar_y_las_cuentas_del_ciclo(entorno):
     jefa, _, d, _ = entorno
+    martes = d["inicio"] + datetime.timedelta(days=1)
+    assert jefa.post("/finanzas/config", data={"ciclo_inicio": martes.isoformat()}).status_code == 400
     r = jefa.post("/finanzas/config", data={"ciclo_inicio": d["inicio"].isoformat()})
     assert r.status_code == 200, r.text
     datos = _datos(jefa, 1)
@@ -188,31 +194,26 @@ def test_la_caja_general_se_activa_una_vez(entorno):
     assert k["activa"] and k["caja"] == 1000000.0 and k["reserva"] == 0.0
 
 
-def test_entregas_y_bases_desde_el_dia_siguiente(entorno):
-    """El saldo inicial es lo que habia al cerrar ese dia; las bases (la
-    automatica de 500.000 si no se anoto) y las entregas cuentan desde el dia
-    siguiente."""
+def test_la_caja_general_suma_el_efectivo_de_los_cuadres(entorno):
+    """Desde que se activa, cada cuadre semanal verificado suma el efectivo
+    que devolvio la zona y resta la base que se llevo."""
     jefa, _, d, Sesion = entorno
-    from app.database import MovimientoCaja, MovimientoCajaGeneral
+    from app.database import CuadreSemanal, MovimientoCajaGeneral, ahora_utc
     from app.utils import finanzas as fz
     db = Sesion()
     try:
-        manana = d["hoy"] + datetime.timedelta(days=1)
-        db.add(MovimientoCaja(empresa_id=d["empresa_id"], usuario_id=d["cobrador_id"],
-                              fecha=manana, tipo="entrega", valor=Decimal("650000")))
+        antes = fz.caja_general(db, d["empresa_id"], d["hoy"])["caja"]
+        db.add(CuadreSemanal(empresa_id=d["empresa_id"], zona_id=1, semana=d["hoy"],
+                             base=Decimal("500000"), efectivo=Decimal("650000"),
+                             verificado_en=ahora_utc() + datetime.timedelta(seconds=5)))
         db.flush()
-        k = fz.caja_general(db, d["empresa_id"], manana)
-        # 1.000.000 + 650.000 de entrega - 500.000 de base automatica
-        assert k["entregas"] == Decimal("650000")
-        assert k["bases"] == Decimal("500000")
-        assert k["caja"] == Decimal("1150000")
+        k = fz.caja_general(db, d["empresa_id"], d["hoy"])
+        assert k["entregas"] - k["bases"] == Decimal("150000")
+        assert k["caja"] == antes + Decimal("150000")
         db.rollback()
-        # Hoy (el dia del saldo inicial) no cuenta.
-        assert fz.caja_general(db, d["empresa_id"], d["hoy"])["caja"] == Decimal("1000000")
         assert db.query(MovimientoCajaGeneral).count() == 1
     finally:
         db.close()
-
 
 def test_movimientos_a_mano_y_reserva(entorno):
     jefa, _, _, _ = entorno

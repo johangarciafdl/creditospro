@@ -583,34 +583,29 @@ def test_la_migracion_de_la_caja_se_puede_repetir():
 
 # ── Los gastos los anota el cobrador, y solo los suyos ───────────────────
 
-def test_el_cobrador_anota_su_propio_gasto(entorno):
-    """La excepcion deliberada a "el cobrador ve su caja, no la escribe".
-
-    Quien tuvo el gasto es el unico que sabe cuanto fue y cuando; hacerle
-    esperar a que alguien en la oficina lo escriba le deja la caja
-    descuadrada hasta el dia siguiente. El control no es impedirselo: es que
-    cada gasto salga con su valor y su concepto donde el admin los ve.
-    """
-    s, d, _ = entorno
-    _anotar(s["admin"], d, d["luis_id"], "base", 500000)
+def test_el_cobrador_ya_no_sube_gastos(entorno):
+    """Su caja es una guia: lo que anota se queda en su celular. Los gastos
+    oficiales los pone el administrador en el cuadre semanal de la zona."""
+    s, d, Sesion = entorno
+    from app.database import MovimientoCaja
     r = _anotar(s["luis"], d, d["luis_id"], "gasto", 18000, concepto="almuerzo y bus")
-    assert r.status_code == 200, r.text
-
-    c = _cuadre(s["luis"], d)["cuadre"]
-    assert c["gastos"] == 18000.0
-    assert c["esperado"] == 482000.0
-    gasto = [m for m in c["movimientos"] if m["tipo"] == "gasto"][0]
-    assert gasto["concepto"] == "Almuerzo y bus"   # se guarda con mayuscula inicial
-    assert gasto["efecto"] == -1, "un gasto resta"
+    assert r.status_code == 403 and "guía" in r.json()["error"]
+    db = Sesion()
+    try:
+        assert db.query(MovimientoCaja).filter(MovimientoCaja.tipo == "gasto").count() == 0
+    finally:
+        db.close()
 
 
-def test_el_admin_ve_los_gastos_que_anoto_el_cobrador(entorno):
-    """Si no los viera, anotarlos uno mismo seria un agujero y no un control."""
-    s, d, _ = entorno
-    _anotar(s["luis"], d, d["luis_id"], "gasto", 9000, concepto="transporte")
-    c = _cuadre(s["admin"], d, d["luis_id"])["cuadre"]
-    assert c["gastos"] == 9000.0
-    assert any(m["concepto"] == "Transporte" for m in c["movimientos"])
+def test_los_gastos_del_cobrador_viven_en_su_celular():
+    from pathlib import Path
+    html = Path("templates/caja.html").read_text(encoding="utf-8")
+    assert "'cp-gastos:' + YO + ':' + _dia()" in html
+    assert "_conGastosLocales(c)" in html
+    assert "/caja/cierre/" not in html, "el cierre diario se reemplazo por el cuadre semanal"
+
+
+
 
 
 def test_el_cobrador_no_anota_gastos_en_la_caja_de_otro(entorno):
@@ -626,33 +621,18 @@ def test_el_cobrador_no_anota_gastos_en_la_caja_de_otro(entorno):
         db.close()
 
 
-def test_el_cobrador_retira_un_gasto_suyo_pero_no_una_base(entorno):
-    """Un gasto mal tecleado lo arregla quien lo escribio; la base no la
-    escribio el, asi que tampoco la borra."""
+def test_el_cobrador_no_retira_una_base(entorno):
+    """La base la escribio el admin: el cobrador no la borra."""
     s, d, Sesion = entorno
     from app.database import MovimientoCaja
-
-    _anotar(s["luis"], d, d["luis_id"], "gasto", 7000, concepto="mal tecleado")
     _anotar(s["admin"], d, d["luis_id"], "base", 500000)
     db = Sesion()
     try:
-        gasto = db.query(MovimientoCaja).filter(
-            MovimientoCaja.tipo == "gasto").order_by(MovimientoCaja.id.desc()).first()
-        base = db.query(MovimientoCaja).filter(
-            MovimientoCaja.tipo == "base").order_by(MovimientoCaja.id.desc()).first()
-        gid, bid = gasto.id, base.id
+        bid = db.query(MovimientoCaja).filter(
+            MovimientoCaja.tipo == "base").order_by(MovimientoCaja.id.desc()).first().id
     finally:
         db.close()
-
-    assert s["luis"].post(f"/caja/movimiento/{gid}/borrar").status_code == 200
     assert s["luis"].post(f"/caja/movimiento/{bid}/borrar").status_code == 403
-
-    db = Sesion()
-    try:
-        assert db.query(MovimientoCaja).filter(MovimientoCaja.id == gid).count() == 0
-        assert db.query(MovimientoCaja).filter(MovimientoCaja.id == bid).count() == 1
-    finally:
-        db.close()
 
 
 def test_el_almuerzo_ya_no_se_descuenta_solo():
@@ -726,5 +706,6 @@ def test_la_pantalla_del_cobrador_no_ofrece_elegir_dia(entorno):
     html = s["luis"].get("/caja").text
     assert 'id="sel-fecha"' not in html, "le ofrece elegir dia"
     assert "ayer()" not in html.split("<script")[0], "le ofrece el dia anterior"
-    assert 'id="sel-fecha"' in s["admin"].get("/caja").text, \
-        "al admin le quito el selector de dia"
+    # El admin entra al cuadre semanal por zona, con su selector de semana.
+    admin = s["admin"].get("/caja").text
+    assert 'id="semana-txt"' in admin and "moverSemana(" in admin

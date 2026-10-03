@@ -604,6 +604,48 @@ class MovimientoCajaGeneral(Base):
     )
 
 
+class CuadreSemanal(Base):
+    """El cuadre de una zona en una semana (lunes a domingo), verificado.
+
+    Lo hace el administrador como en el programa que CreditosPro reemplaza:
+    COBRO y PRESTAMOS los propone el sistema (y se pueden corregir); GASTOS,
+    SALARIOS, BASE, DESCUENTO y el EFECTIVO contado los escribe el. "Calcular"
+    no guarda nada; solo "Verificar" crea esta fila, y verificada no se edita
+    (para corregirla se reabre, y queda en la auditoria).
+
+        esperado   = base + cobro - prestamos - gastos - salarios - descuento
+        diferencia = efectivo - esperado
+        utilidad   = intereses cobrados - gastos - salarios - descuento
+
+    Alimenta el cierre de 6 semanas (Finanzas) y la caja general.
+    """
+    __tablename__ = "cuadres_semanales"
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False, index=True)
+    zona_id = Column(Integer, ForeignKey("zonas.id", ondelete="CASCADE"), nullable=False)
+    semana = Column(Date, nullable=False)          # el lunes de la semana
+    cobro = Column(Numeric(14, 2), nullable=False, default=0)
+    prestamos = Column(Numeric(14, 2), nullable=False, default=0)
+    gastos = Column(Numeric(14, 2), nullable=False, default=0)
+    salarios = Column(Numeric(14, 2), nullable=False, default=0)
+    base = Column(Numeric(14, 2), nullable=False, default=0)
+    descuento = Column(Numeric(14, 2), nullable=False, default=0)
+    efectivo = Column(Numeric(14, 2), nullable=False, default=0)
+    esperado = Column(Numeric(14, 2), nullable=False, default=0)
+    diferencia = Column(Numeric(14, 2), nullable=False, default=0)
+    intereses = Column(Numeric(14, 2), nullable=False, default=0)
+    utilidad = Column(Numeric(14, 2), nullable=False, default=0)
+    nota = Column(String(300), nullable=True)
+    verificado_por_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    verificado_por = Column(String(200), nullable=True)
+    verificado_en = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "zona_id", "semana", name="uq_cuadre_zona_semana"),
+        Index("ix_cuadres_empresa_semana", "empresa_id", "semana"),
+    )
+
+
 class CierreCaja(Base):
     """El cierre del dia de la caja de un cobrador.
 

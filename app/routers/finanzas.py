@@ -61,11 +61,15 @@ def _resumen_json(r: dict) -> dict:
         "desde": r["desde"].isoformat(), "hasta": r["hasta"].isoformat(),
         "zonas": [{"zona_id": z["zona_id"], "zona": z["zona"], "cobrado": _f(z["cobrado"]),
                    "prestado": _f(z["prestado"]), "intereses": _f(z["intereses"]),
-                   "flujo": _f(z["flujo"])} for z in r["zonas"]],
-        "gastos_por_cobrador": [{"usuario_id": g["usuario_id"], "nombre": g["nombre"],
-                                 "gastos": _f(g["gastos"])} for g in r["gastos_por_cobrador"]],
+                   "gastos": _f(z["gastos"]), "salarios": _f(z["salarios"]),
+                   "descuento": _f(z["descuento"]), "flujo": _f(z["flujo"]),
+                   "resultado": _f(z["resultado"]), "utilidad": _f(z["utilidad"]),
+                   "semanas_cuadradas": z["semanas_cuadradas"]} for z in r["zonas"]],
         "cobrado": _f(r["cobrado"]), "prestado": _f(r["prestado"]),
         "intereses": _f(r["intereses"]), "gastos": _f(r["gastos"]),
+        "salarios": _f(r["salarios"]), "descuento": _f(r["descuento"]),
+        "semanas": r["semanas"], "cuadres_verificados": r["cuadres_verificados"],
+        "cuadres_esperados": r["cuadres_esperados"],
         "resultado": _f(r["resultado"]), "ganancia": _f(r["ganancia"]),
     }
 
@@ -102,7 +106,7 @@ async def datos(request: Request, ciclo: int = 0, db: Session = Depends(get_db))
             "desde": caja["desde"].isoformat(), "saldo_inicial": _f(caja["saldo_inicial"]),
             "entregas": _f(caja["entregas"]), "bases": _f(caja["bases"]),
             "caja": _f(caja["caja"]), "reserva": _f(caja["reserva"]),
-            "en_calle": _f(caja["en_calle"]),
+            "cuadres": caja["cuadres"],
             "movimientos": [dict(m, fecha=m["fecha"].isoformat(), valor=_f(m["valor"]))
                             for m in caja["movimientos"]],
         })
@@ -153,6 +157,10 @@ async def configurar(request: Request, ciclo_inicio: str = Form(""),
         inicio = datetime.date.fromisoformat(ciclo_inicio.strip())
     except ValueError:
         return JSONResponse({"error": "Fecha invalida"}, status_code=400)
+    if inicio.weekday() != 0:
+        return JSONResponse(
+            {"error": "Elige un lunes: las 6 semanas del ciclo son las de los cuadres semanales (lunes a domingo)."},
+            status_code=400)
     if db.query(Liquidacion).filter(Liquidacion.empresa_id == user.empresa_id).first():
         return JSONResponse(
             {"error": "Ya hay ciclos cerrados: cambiar la fecha de inicio los descuadraria."},

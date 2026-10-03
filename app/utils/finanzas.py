@@ -40,9 +40,8 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.database import (Cobro, Cuota, Liquidacion, MovimientoCaja,
-                          MovimientoCajaGeneral, Prestamo, Usuario, Zona)
-from app.utils.caja import BASE_DIARIA, cuadre_de_todos
+from app.database import (Cobro, Cuota, Liquidacion, MovimientoCajaGeneral,
+                          Prestamo, Zona)
 from app.utils.money import money, money_int
 
 SEMANAS_CICLO = 6
@@ -152,88 +151,52 @@ def resumen(db: Session, empresa_id: int, desde: datetime.date,
     ):
         fila(zid)["prestado"] += money(capital or 0)
 
-    gastos_cobrador = []
-    gastos = CERO
-    nombres = {u.id: (u.nombre or u.username) for u in
-               db.query(Usuario).filter(Usuario.empresa_id == empresa_id)}
-    for uid, total in (
-        db.query(MovimientoCaja.usuario_id, func.sum(MovimientoCaja.valor))
-        .filter(MovimientoCaja.empresa_id == empresa_id,
-                MovimientoCaja.tipo == "gasto",
-                MovimientoCaja.fecha >= desde, MovimientoCaja.fecha <= hasta)
-        .group_by(MovimientoCaja.usuario_id)
-        .all()
-    ):
-        total = money(total or 0)
-        gastos += total
-        gastos_cobrador.append({"usuario_id": uid, "nombre": nombres.get(uid, "—"),
-                                "gastos": total})
+    # Gastos, salarios y descuentos: los de los cuadres semanales que el
+    # administrador verifico para cada zona (la caja del cobrador es solo una
+    # guia y no sube nada). Una semana sin cuadre verificado no aporta gastos:
+    # por eso se cuenta cuantos faltan, para que el resultado no se lea como
+    # definitivo si aun hay semanas sin cuadrar.
+    from app.database import CuadreSemanal
+    lunes = desde - datetime.timedelta(days=desde.weekday())
+    cuadrados = 0
+    for c in (db.query(CuadreSemanal)
+              .filter(CuadreSemanal.empresa_id == empresa_id,
+                      CuadreSemanal.semana >= lunes, CuadreSemanal.semana <= hasta)):
+        f = fila(c.zona_id)
+        f["gastos"] = f.get("gastos", CERO) + money(c.gastos)
+        f["salarios"] = f.get("salarios", CERO) + money(c.salarios)
+        f["descuento"] = f.get("descuento", CERO) + money(c.descuento)
+        f["semanas_cuadradas"] = f.get("semanas_cuadradas", 0) + 1
+        cuadrados += 1
+    semanas = ((hasta - lunes).days // 7) + 1
+    zonas_activas = db.query(func.count(Zona.id)).filter(
+        Zona.empresa_id == empresa_id, Zona.activa == True).scalar() or 0
 
     filas = sorted(por_zona.values(), key=lambda f: (f["zona"] or "").lower())
     for f in filas:
+        for k in ("gastos", "salarios", "descuento"):
+            f.setdefault(k, CERO)
+        f.setdefault("semanas_cuadradas", 0)
         f["flujo"] = f["cobrado"] - f["prestado"]
-    cobrado = sum((f["cobrado"] for f in filas), CERO)
-    prestado = sum((f["prestado"] for f in filas), CERO)
-    intereses = sum((f["intereses"] for f in filas), CERO)
+        f["resultado"] = f["flujo"] - f["gastos"] - f["salarios"] - f["descuento"]
+        f["utilidad"] = f["intereses"] - f["gastos"] - f["salarios"] - f["descuento"]
+    total = lambda k: sum((f[k] for f in filas), CERO)  # noqa: E731
+    cobrado, prestado, intereses = total("cobrado"), total("prestado"), total("intereses")
+    gastos, salarios, descuento = total("gastos"), total("salarios"), total("descuento")
+    salidas = gastos + salarios + descuento
     return {
         "desde": desde, "hasta": hasta,
         "zonas": filas,
-        "gastos_por_cobrador": gastos_cobrador,
         "cobrado": cobrado, "prestado": prestado, "intereses": intereses,
-        "gastos": gastos,
-        "resultado": cobrado - prestado - gastos,
-        "ganancia": intereses - gastos,
+        "gastos": gastos, "salarios": salarios, "descuento": descuento,
+        "semanas": semanas, "cuadres_verificados": cuadrados,
+        "cuadres_esperados": semanas * zonas_activas,
+        "resultado": cobrado - prestado - salidas,
+        "ganancia": intereses - salidas,
     }
 
 
 # ── Caja general ───────────────────────────────────────────────────────────
-
-def _bases_y_entregas(db: Session, empresa_id: int, desde: datetime.date,
-                      hasta: datetime.date) -> tuple[Decimal, Decimal]:
-    """Lo que salio en bases y lo que volvio en entregas, del periodo.
-
-    La base sigue la misma regla que el cuadre del cobrador (app/utils/caja):
-    la anotada si la hay; si no, BASE_DIARIA los dias que el cobrador se
-    movio. Los administradores no llevan base.
-    """
-    if hasta < desde:
-        return CERO, CERO
-    cobradores = {u.id for u in db.query(Usuario.id).filter(
-        Usuario.empresa_id == empresa_id, Usuario.rol.notin_(("admin", "superadmin")))}
-
-    dias: set[tuple[int, datetime.date]] = set()
-    for uid, f in (db.query(Cobro.usuario_id, Cobro.fecha).distinct()
-                   .filter(Cobro.empresa_id == empresa_id,
-                           Cobro.fecha >= desde, Cobro.fecha <= hasta)):
-        dias.add((uid, f))
-    for uid, f in (db.query(Prestamo.desembolsado_por_id, Prestamo.fecha_desembolso).distinct()
-                   .filter(Prestamo.empresa_id == empresa_id,
-                           Prestamo.fecha_desembolso >= desde,
-                           Prestamo.fecha_desembolso <= hasta)):
-        dias.add((uid, f))
-
-    base_anotada: dict[tuple[int, datetime.date], Decimal] = {}
-    entregas = CERO
-    for uid, f, tipo, valor in (
-        db.query(MovimientoCaja.usuario_id, MovimientoCaja.fecha,
-                 MovimientoCaja.tipo, MovimientoCaja.valor)
-        .filter(MovimientoCaja.empresa_id == empresa_id,
-                MovimientoCaja.fecha >= desde, MovimientoCaja.fecha <= hasta)
-    ):
-        dias.add((uid, f))
-        if tipo == "base":
-            base_anotada[(uid, f)] = base_anotada.get((uid, f), CERO) + money(valor)
-        elif tipo == "entrega":
-            entregas += money(valor)
-
-    bases = CERO
-    for clave in dias:
-        uid, _ = clave
-        if uid not in cobradores:
-            continue
-        bases += base_anotada.get(clave, BASE_DIARIA)
-    return bases, entregas
-
 
 def caja_general(db: Session, empresa_id: int, hoy: datetime.date) -> dict:
     movimientos = (
@@ -252,24 +215,25 @@ def caja_general(db: Session, empresa_id: int, hoy: datetime.date) -> dict:
         caja += money(m.valor) * efecto_caja
         reserva += money(m.valor) * efecto_reserva
 
-    # El saldo inicial es lo que habia al cerrar ese dia: las bases y
-    # entregas cuentan desde el dia siguiente.
-    desde = inicial.fecha + datetime.timedelta(days=1)
-    bases, entregas = _bases_y_entregas(db, empresa_id, desde, hoy)
+    # Desde que se activo la caja general, cada cuadre semanal verificado
+    # suma el efectivo que la zona devolvio y resta la base que se llevo.
+    from app.database import CuadreSemanal
+    cuadres = (db.query(CuadreSemanal)
+               .filter(CuadreSemanal.empresa_id == empresa_id,
+                       CuadreSemanal.verificado_en >= inicial.creado)
+               .all()) if inicial.creado else []
+    entregas = sum((money(c.efectivo) for c in cuadres), CERO)
+    bases = sum((money(c.base) for c in cuadres), CERO)
     caja += entregas - bases
-
-    # Lo que esta ahora mismo con los cobradores (su caja de hoy).
-    en_calle = sum((money(c["esperado"]) for c in cuadre_de_todos(db, empresa_id, hoy)
-                    if c["hubo_movimiento"] or c["base"]), CERO)
     return {
         "activa": True,
         "desde": inicial.fecha,
         "saldo_inicial": money(inicial.valor),
         "entregas": entregas,
         "bases": bases,
+        "cuadres": len(cuadres),
         "caja": caja,
         "reserva": reserva,
-        "en_calle": en_calle,
         "movimientos": [{
             "id": m.id, "fecha": m.fecha, "tipo": m.tipo,
             "nombre": NOMBRES_GENERAL.get(m.tipo, m.tipo),

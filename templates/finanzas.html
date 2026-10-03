@@ -42,29 +42,27 @@
   <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
     <div class="stat-card green"><div class="stat-label">Cobrado</div><div class="stat-val" id="t-cobrado">—</div></div>
     <div class="stat-card"><div class="stat-label">Prestado</div><div class="stat-val" id="t-prestado">—</div></div>
-    <div class="stat-card red"><div class="stat-label">Gastos</div><div class="stat-val" id="t-gastos">—</div></div>
+    <div class="stat-card red"><div class="stat-label">Gastos + salarios + descuentos</div><div class="stat-val" id="t-gastos">—</div>
+      <div class="stat-sub" id="t-gastos-sub"></div></div>
     <div class="stat-card gold"><div class="stat-label">Resultado</div><div class="stat-val" id="t-resultado">—</div>
-      <div class="stat-sub">cobrado − prestado − gastos</div></div>
+      <div class="stat-sub">cobrado − prestado − gastos − salarios − descuentos</div></div>
     <div class="stat-card blue"><div class="stat-label">Ganancia por intereses</div><div class="stat-val" id="t-ganancia">—</div>
-      <div class="stat-sub">intereses cobrados − gastos</div></div>
+      <div class="stat-sub">intereses − gastos − salarios − descuentos</div></div>
   </div>
   <div class="fs-11 text-3 mb-3" id="explica-resultado"></div>
+  <div class="aviso-cuadres mb-3" id="aviso-cuadres" style="display:none;"></div>
 
   <div class="card mb-3">
     <div class="card-header"><div class="card-title">Por zona</div></div>
     <div class="tabla-scroll">
       <table class="tabla-fin">
-        <thead><tr><th>Zona</th><th>Cobrado</th><th>Prestado</th><th>Intereses</th><th>Cobrado − prestado</th></tr></thead>
+        <thead><tr><th>Zona</th><th>Cobrado</th><th>Prestado</th><th>Intereses</th><th>Gastos</th><th>Salarios</th><th>Descuentos</th><th>Resultado</th><th>Utilidad</th><th>Cuadres</th></tr></thead>
         <tbody id="tb-zonas"></tbody>
         <tfoot id="tf-zonas"></tfoot>
       </table>
     </div>
   </div>
 
-  <div class="card mb-3" id="card-gastos" style="display:none;">
-    <div class="card-header"><div class="card-title">Gastos por cobrador</div></div>
-    <div class="card-body" id="lista-gastos"></div>
-  </div>
 
   <!-- REPARTO -->
   <div class="card mb-3" id="card-reparto" style="display:none;">
@@ -120,7 +118,14 @@ function pintarCiclo(){
 
   document.getElementById('t-cobrado').textContent = pesos(c.cobrado);
   document.getElementById('t-prestado').textContent = pesos(c.prestado);
-  document.getElementById('t-gastos').textContent = pesos(c.gastos);
+  document.getElementById('t-gastos').textContent = pesos(c.gastos + c.salarios + c.descuento);
+  document.getElementById('t-gastos-sub').textContent =
+    `gastos ${pesos(c.gastos)} · salarios ${pesos(c.salarios)} · descuentos ${pesos(c.descuento)}`;
+  const aviso = document.getElementById('aviso-cuadres');
+  const faltan = (c.cuadres_esperados || 0) - (c.cuadres_verificados || 0);
+  aviso.style.display = (!c.cerrado && faltan > 0) ? '' : 'none';
+  aviso.textContent = `Faltan ${faltan} cuadre(s) semanal(es) por verificar en este ciclo (${c.cuadres_verificados} de ${c.cuadres_esperados}). ` +
+    'Los gastos y salarios salen de los cuadres: hasta tenerlos todos, el resultado no es definitivo. Se hacen en Caja.';
   const tr = document.getElementById('t-resultado');
   tr.textContent = pesos(c.resultado);
   tr.className = 'stat-val ' + (c.resultado < 0 ? 'red' : 'gold');
@@ -131,16 +136,16 @@ function pintarCiclo(){
 
   document.getElementById('tb-zonas').innerHTML = (c.zonas || []).map(z => `
     <tr><td>${esc(z.zona)}</td><td>${pesos(z.cobrado)}</td><td>${pesos(z.prestado)}</td>
-        <td>${pesos(z.intereses)}</td><td class="${z.flujo < 0 ? 'neg' : ''}">${pesos(z.flujo)}</td></tr>`).join('')
-    || '<tr><td colspan="5" class="text-3">Sin movimiento en este ciclo</td></tr>';
+        <td>${pesos(z.intereses)}</td><td>${pesos(z.gastos)}</td><td>${pesos(z.salarios)}</td>
+        <td>${pesos(z.descuento)}</td><td class="${z.resultado < 0 ? 'neg' : ''}">${pesos(z.resultado)}</td>
+        <td class="${z.utilidad < 0 ? 'neg' : ''}">${pesos(z.utilidad)}</td>
+        <td>${Number(z.semanas_cuadradas || 0)}/${Number(c.semanas || 0)}</td></tr>`).join('')
+    || '<tr><td colspan="10" class="text-3">Sin movimiento en este ciclo</td></tr>';
   document.getElementById('tf-zonas').innerHTML = `
     <tr><th>Total</th><th>${pesos(c.cobrado)}</th><th>${pesos(c.prestado)}</th>
-        <th>${pesos(c.intereses)}</th><th>${pesos(c.cobrado - c.prestado)}</th></tr>`;
-
-  const gastos = c.gastos_por_cobrador || [];
-  document.getElementById('card-gastos').style.display = gastos.length ? '' : 'none';
-  document.getElementById('lista-gastos').innerHTML = gastos.map(g =>
-    `<div class="flex-between fs-13" style="padding:4px 0;"><span>${esc(g.nombre)}</span><b class="num">${pesos(g.gastos)}</b></div>`).join('');
+        <th>${pesos(c.intereses)}</th><th>${pesos(c.gastos)}</th><th>${pesos(c.salarios)}</th>
+        <th>${pesos(c.descuento)}</th><th>${pesos(c.resultado)}</th><th>${pesos(c.ganancia)}</th>
+        <th>${Number(c.cuadres_verificados || 0)}/${Number(c.cuadres_esperados || 0)}</th></tr>`;
 
   pintarReparto();
 }
@@ -237,9 +242,9 @@ function pintarCaja(){
   const cuerpo = document.getElementById('caja-cuerpo');
   if (!k.activa) {
     cuerpo.innerHTML = `
-      <div class="fs-12 text-3 mb-2">La caja general es la plata de la empresa, aparte de la caja del día de cada cobrador.
-        Escribe cuánto tienes guardado al cerrar hoy; desde mañana el sistema suma las entregas de los cobradores
-        y resta las bases que salen, los retiros y los pagos.</div>
+      <div class="fs-12 text-3 mb-2">La caja general es la plata de la empresa. Escribe cuánto tienes guardado hoy;
+        desde ahí, cada cuadre semanal que verificas suma el efectivo que devolvió la zona y resta la base que se llevó,
+        y se restan los retiros y pagos.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
         <div style="flex:0 0 200px;"><label for="cg-inicial" class="fs-11 text-3">Saldo de hoy</label>
           <input type="text" inputmode="numeric" id="cg-inicial" placeholder="0"></div>
@@ -252,11 +257,11 @@ function pintarCaja(){
     <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
       <div class="stat-card gold"><div class="stat-label">En caja</div><div class="stat-val ${k.caja < 0 ? 'red' : ''}">${pesos(k.caja)}</div></div>
       <div class="stat-card blue"><div class="stat-label">Reserva</div><div class="stat-val">${pesos(k.reserva)}</div></div>
-      <div class="stat-card"><div class="stat-label">Con los cobradores hoy</div><div class="stat-val">${pesos(k.en_calle)}</div>
-        <div class="stat-sub">bases y cobros aún sin entregar</div></div>
+      <div class="stat-card"><div class="stat-label">Cuadres sumados</div><div class="stat-val">${Number(k.cuadres || 0)}</div>
+        <div class="stat-sub">semanas verificadas desde que se activó</div></div>
     </div>
-    <div class="fs-11 text-3 mb-3">Desde el ${fecha(k.desde)}: saldo inicial ${pesos(k.saldo_inicial)} + entregas de cobradores ${pesos(k.entregas)}
-      − bases que salieron ${pesos(k.bases)} ± lo anotado abajo.</div>
+    <div class="fs-11 text-3 mb-3">Desde el ${fecha(k.desde)}: saldo inicial ${pesos(k.saldo_inicial)} + efectivo de los cuadres semanales ${pesos(k.entregas)}
+      − bases que se llevaron ${pesos(k.bases)} ± lo anotado abajo.</div>
     <div class="fw-600 fs-12 mb-1">Anotar un movimiento</div>
     <div class="form-grid">
       <div class="form-group"><label for="cg-tipo">Tipo</label>
@@ -313,5 +318,6 @@ cargar();
 .tabla-fin tfoot th{font-weight:700}
 .tabla-fin .neg{color:var(--red)}
 .tabla-fin .pos{color:var(--green)}
+.aviso-cuadres{font-size:12px;padding:10px;border-radius:var(--r-sm);background:var(--abg);color:#92400E}
 </style>
 {% endblock %}

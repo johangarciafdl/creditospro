@@ -210,23 +210,18 @@ def test_alta_de_cliente_valido_sigue_funcionando(entorno):
     assert r.status_code == 200 and r.json().get("ok"), r.text
 
 
-@pytest.mark.parametrize("concepto", [".,.,.,mtdfgdg44´+´+", "almuerzo23", ""])
-def test_el_gasto_con_en_que_basura_o_vacio_se_rechaza(entorno, concepto):
+def test_el_gasto_del_cobrador_ya_no_llega_al_servidor(entorno):
+    """La caja del cobrador es una guia: su gasto se queda en el celular. La
+    validacion del "En que" sigue en validar_descripcion (pruebas de arriba)
+    y la usa el admin en el cuadre semanal y la caja."""
     cli, d = entorno
     r = cli.post("/caja/movimiento", data={
         "usuario_id": d["cobrador_id"], "tipo": "gasto", "valor": "5000",
-        "fecha": datetime.date.today().isoformat(), "concepto": concepto})
-    assert r.status_code == 400, r.text
-    assert r.json()["error"]
+        "fecha": datetime.date.today().isoformat(), "concepto": "almuerzo"})
+    assert r.status_code == 403
 
 
-def test_el_gasto_bien_escrito_se_anota(entorno):
-    cli, d = entorno
-    from app.database import hoy_local
-    r = cli.post("/caja/movimiento", data={
-        "usuario_id": d["cobrador_id"], "tipo": "gasto", "valor": "5000",
-        "fecha": hoy_local().isoformat(), "concepto": "almuerzo"})
-    assert r.status_code == 200 and r.json().get("ok"), r.text
+
 
 
 def test_una_nota_con_html_se_rechaza(entorno):

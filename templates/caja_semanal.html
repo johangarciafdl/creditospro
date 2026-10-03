@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Caja{% endblock %}
+{% block topbar_title %}Cuadre semanal{% endblock %}
+{% block topbar_sub %}Por zona · se calcula sin guardar hasta verificar{% endblock %}
+
+{% block content %}
+{#- El cuadre del programa que CreditosPro reemplaza, por zona y por semana:
+    COBRO y PRESTAMOS los propone el sistema (se pueden corregir); el admin
+    pone GASTOS, SALARIOS, BASE, DESCUENTO y el EFECTIVO contado. Calcular no
+    guarda nada; Verificar lo guarda y lo deja fijo. -#}
+<div style="max-width:620px;margin:0 auto;">
+
+{% if not zonas %}
+<div class="card"><div class="card-body text-3">La empresa aún no tiene zonas activas.</div></div>
+{% else %}
+<div class="zonas-tabs">
+  {% for z in zonas %}<button class="zona-tab" data-zona="{{ z.id }}" onclick="elegirZona({{ z.id }})">{{ z.nombre }}</button>{% endfor %}
+</div>
+
+<div class="card mb-3">
+  <div class="card-body" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <button class="btn btn-sm" onclick="moverSemana(-1)" aria-label="Semana anterior">‹</button>
+    <div style="flex:1;text-align:center;">
+      <div class="fw-600" id="semana-txt">—</div>
+      <div class="fs-11 text-3">lunes a domingo</div>
+    </div>
+    <button class="btn btn-sm" onclick="moverSemana(1)" aria-label="Semana siguiente">›</button>
+  </div>
+  <div class="semanas-chips" id="semanas-chips"></div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><div class="card-title" id="titulo-cuadre">Cuadre</div>
+    <span class="badge" id="estado-badge"></span></div>
+  <div class="card-body">
+    <div class="cuadre">
+      <label>COBRO<span class="fs-11 text-3" id="sug-cobro"></span></label><input type="text" inputmode="numeric" id="f-cobro" class="campo">
+      <label>PRÉSTAMOS<span class="fs-11 text-3" id="sug-prestamos"></span></label><input type="text" inputmode="numeric" id="f-prestamos" class="campo">
+      <label>GASTOS</label><input type="text" inputmode="numeric" id="f-gastos" class="campo">
+      <label>SALARIOS</label><input type="text" inputmode="numeric" id="f-salarios" class="campo">
+      <label>BASE</label><input type="text" inputmode="numeric" id="f-base" class="campo">
+      <label>DESCUENTO</label><input type="text" inputmode="numeric" id="f-descuento" class="campo">
+      <label>EFECTIVO<span class="fs-11 text-3">contado</span></label><input type="text" inputmode="numeric" id="f-efectivo" class="campo">
+    </div>
+    <div class="form-group" style="margin-top:10px;"><label for="f-nota">Nota (opcional)</label><input type="text" id="f-nota"></div>
+    <div id="acciones" style="display:flex;gap:8px;margin-top:6px;">
+      <button class="btn" style="flex:1;justify-content:center;" onclick="calcular(this)">Calcular</button>
+      <button class="btn btn-gold" style="flex:1;justify-content:center;" id="btn-verificar" onclick="verificar(this)" disabled>Verificar y guardar</button>
+    </div>
+    <button class="btn btn-sm" id="btn-reabrir" style="display:none;margin-top:6px;" onclick="reabrir(this)">Reabrir para corregir</button>
+
+    <div id="resultado" class="resultado" style="display:none;">
+      <div><span>Efectivo esperado</span><b class="num" id="r-esperado">—</b></div>
+      <div><span>Verificar (contado)</span><b class="num" id="r-efectivo">—</b></div>
+      <div><span>Diferencia</span><b class="num" id="r-diferencia">—</b></div>
+      <div><span>Intereses cobrados</span><b class="num" id="r-intereses">—</b></div>
+      <div><span>Utilidad</span><b class="num" id="r-utilidad">—</b></div>
+      <div class="fs-11 text-3" style="display:block;">esperado = base + cobro − préstamos − gastos − salarios − descuento ·
+        utilidad = intereses − gastos − salarios − descuento</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+let _zona = null, _semana = null, _d = null;
+const CAMPOS = ['cobro', 'prestamos', 'gastos', 'salarios', 'base', 'descuento', 'efectivo'];
+const pesos = v => { const n = Math.round(Number(v) || 0); return n < 0 ? '−' + cop(-n) : cop(n); };
+const fechaTxt = f => f.split('-').reverse().join('/');
+// Fecha local (Colombia), nunca toISOString(): en UTC la tarde ya es mañana.
+const iso = d => hoyLocal(d);
+function lunesDe(txt){ const d = new Date(txt + 'T12:00:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d); }
+
+function elegirZona(id){
+  _zona = Number(id);
+  try { localStorage.setItem('cp-cuadre-zona', String(id)); } catch(e) {}
+  document.querySelectorAll('.zona-tab').forEach(b => b.classList.toggle('activa', Number(b.dataset.zona) === _zona));
+  cargar();
+}
+function moverSemana(n){
+  const d = new Date(_semana + 'T12:00:00'); d.setDate(d.getDate() + 7 * n);
+  if (iso(d) > lunesDe('{{ hoy }}')) return;
+  _semana = iso(d); cargar();
+}
+function irSemana(s){ _semana = s; cargar(); }
+
+// Cambiar una cifra despues de Calcular obliga a calcular de nuevo.
+document.addEventListener('input', e => {
+  if (e.target.classList && e.target.classList.contains('campo')) {
+    document.getElementById('btn-verificar').disabled = true;
+    document.getElementById('resultado').style.opacity = '.45';
+  }
+});
+
+async function cargar(){
+  const d = await leerRespuesta(await window.fetch(`/caja/semanal/datos?zona_id=${_zona}&semana=${_semana}`));
+  if (d.error) { toast(d.error, 'error'); return; }
+  _d = d;
+  document.getElementById('semana-txt').textContent = fechaTxt(d.semana) + ' – ' + fechaTxt(d.hasta);
+  document.getElementById('titulo-cuadre').textContent = 'Cuadre · ' + d.zona;
+  document.getElementById('semanas-chips').innerHTML = d.semanas.map(s =>
+    `<button class="chip ${s.semana === d.semana ? 'activa' : ''} ${s.verificada ? 'ok' : ''}" onclick="irSemana('${s.semana}')">${fechaTxt(s.semana).slice(0,5)}${s.verificada ? ' ✓' : ''}</button>`).join('');
+  const v = d.verificado, p = d.propuesta;
+  document.getElementById('sug-cobro').textContent = ' sistema: ' + pesos(p.cobro);
+  document.getElementById('sug-prestamos').textContent = ' sistema: ' + pesos(p.prestamos) +
+    (p.renovado > 0 ? ` (descontado en renovaciones ${pesos(p.renovado)})` : '');
+  CAMPOS.forEach(k => {
+    const el = document.getElementById('f-' + k);
+    el.value = v ? Math.round(v[k]) : (k === 'cobro' || k === 'prestamos' ? Math.round(p[k]) : '');
+    el.disabled = !!v;
+  });
+  document.getElementById('f-nota').value = v ? v.nota : '';
+  document.getElementById('f-nota').disabled = !!v;
+  document.getElementById('acciones').style.display = v ? 'none' : 'flex';
+  document.getElementById('btn-reabrir').style.display = v ? '' : 'none';
+  document.getElementById('btn-verificar').disabled = true;
+  const badge = document.getElementById('estado-badge');
+  badge.className = 'badge ' + (v ? 'badge-green' : 'badge-amber');
+  badge.textContent = v ? 'Verificado por ' + (v.verificado_por || '—') : 'Sin verificar';
+  if (v) pintarResultado(v); else document.getElementById('resultado').style.display = 'none';
+}
+
+function pintarResultado(c){
+  const r = document.getElementById('resultado');
+  r.style.display = ''; r.style.opacity = '1';
+  document.getElementById('r-esperado').textContent = pesos(c.esperado);
+  document.getElementById('r-efectivo').textContent = pesos(c.efectivo);
+  const dif = Math.round(c.diferencia);
+  const el = document.getElementById('r-diferencia');
+  el.textContent = dif === 0 ? 'Cuadra exacto' : (dif < 0 ? 'Faltan ' : 'Sobran ') + pesos(Math.abs(dif));
+  el.style.color = dif === 0 ? 'var(--green)' : dif < 0 ? 'var(--red)' : 'var(--amber)';
+  document.getElementById('r-intereses').textContent = pesos(c.intereses);
+  const u = document.getElementById('r-utilidad');
+  u.textContent = pesos(c.utilidad); u.style.color = c.utilidad < 0 ? 'var(--red)' : 'var(--t1)';
+}
+
+function _formulario(){
+  const fd = new FormData();
+  fd.append('zona_id', _zona); fd.append('semana', _semana);
+  CAMPOS.forEach(k => fd.append(k, String(document.getElementById('f-' + k).value).replace(/\D/g, '')));
+  fd.append('nota', document.getElementById('f-nota').value.trim());
+  return fd;
+}
+
+async function calcular(btn){
+  await conBoton(btn, 'Calculando...', async () => {
+    const d = await leerRespuesta(await window.fetch('/caja/semanal/calcular', {method:'POST', body:_formulario()}));
+    if (!d.ok) { toast(d.error || 'No se pudo calcular', 'error'); return; }
+    pintarResultado(d.calculo);
+    document.getElementById('btn-verificar').disabled = false;
+  });
+}
+
+async function verificar(btn){
+  const ok = await confirmar(`Se guardará el cuadre de ${_d.zona}, semana del ${fechaTxt(_d.semana)}. Quedará fijo; para corregirlo habrá que reabrirlo.`,
+                             {titulo: '¿Verificar y guardar?', aceptar: 'Verificar'});
+  if (!ok) return;
+  await conBoton(btn, 'Guardando...', async () => {
+    const d = await leerRespuesta(await window.fetch('/caja/semanal/verificar', {method:'POST', body:_formulario()}));
+    if (d.ok) { toast(d.mensaje, d.mensaje.includes('exacto') ? 'success' : 'warn'); cargar(); }
+    else toast(d.error || 'No se pudo guardar', 'error');
+  });
+}
+
+async function reabrir(btn){
+  const ok = await confirmar('El cuadre volverá a quedar sin verificar para que lo corrijas. Queda registrado en la auditoría.',
+                             {titulo: '¿Reabrir el cuadre?', aceptar: 'Reabrir', peligro: true});
+  if (!ok) return;
+  const fd = new FormData(); fd.append('zona_id', _zona); fd.append('semana', _semana);
+  await conBoton(btn, 'Reabriendo...', async () => {
+    const d = await leerRespuesta(await window.fetch('/caja/semanal/reabrir', {method:'POST', body:fd}));
+    if (d.ok) { toast(d.mensaje); cargar(); } else toast(d.error || 'No se pudo reabrir', 'error');
+  });
+}
+
+(function(){
+  const botones = [...document.querySelectorAll('.zona-tab')];
+  if (!botones.length) return;
+  _semana = lunesDe('{{ hoy }}');
+  let guardada = null;
+  try { guardada = localStorage.getItem('cp-cuadre-zona'); } catch(e) {}
+  elegirZona((botones.find(b => b.dataset.zona === guardada) || botones[0]).dataset.zona);
+})();
+</script>
+<style>
+.zonas-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px}
+.zona-tab{flex-shrink:0;padding:8px 14px;border-radius:20px;border:1px solid var(--border);background:var(--surface);font-weight:600;font-size:13px;color:var(--t2);cursor:pointer;white-space:nowrap}
+.zona-tab.activa{background:var(--black);color:#fff;border-color:var(--black)}
+.semanas-chips{display:flex;gap:6px;overflow-x:auto;padding:0 12px 12px}
+.chip{flex-shrink:0;padding:4px 10px;border-radius:14px;border:1px solid var(--border);background:var(--surface);font-size:12px;cursor:pointer;color:var(--t2)}
+.chip.ok{color:var(--green);border-color:var(--green)}
+.chip.activa{background:var(--bg-2);font-weight:700}
+.cuadre{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center}
+.cuadre label{font-weight:700;font-size:13px;letter-spacing:.3px;color:var(--blue,#1D4ED8);display:flex;flex-direction:column}
+.cuadre input{text-align:right;font-family:var(--mono);font-size:17px}
+.cuadre input:disabled{background:var(--bg-2);color:var(--t1)}
+.resultado{margin-top:14px;border-top:2px solid var(--border);padding-top:10px}
+.resultado>div{display:flex;justify-content:space-between;padding:5px 0;font-size:14px}
+.resultado b{font-family:var(--mono);font-size:16px}
+</style>
+{% endblock %}
